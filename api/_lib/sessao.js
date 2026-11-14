@@ -54,4 +54,5 @@ export async function exigir(req, permissao) {
 }
 
 // Dono de uma oração ou foto: a pessoa da corrente (a mesma pelo acesso da corrente ou pelo e-mail) ou o usuário sem cadastro.
-export const autorDe = (eu) => (eu.pessoaId ? 'p:' + eu.pessoaId : 'u:' + eu.id);
+// Aluno (acesso dos alunos): 'a:<aluno>'.
+export const autorDe = (eu) => (eu.alunoId ? 'a:' + eu.alunoId : eu.pessoaId ? 'p:' + eu.pessoaId : 'u:' + eu.id);

@@ -4,7 +4,7 @@
 import { db } from './db.js';
 import { HttpError, validarId, validarData } from './http.js';
 import { pode } from '../../shared/permissoes.js';
-import { chavePessoa } from '../../shared/ervas.js';
+import { chavePessoa, normalizarNome } from '../../shared/ervas.js';
 import { normalizarPerfil } from '../../shared/perfil.js';
 import { sortearIemanja, pctItens, nomeGrupoValido, listasDoSorteio, LISTA_CURIMBA, NOME_EVENTO_PADRAO } from '../../shared/iemanja.js';
 import { limparDetalhes, detalhesOk, DETALHES_LINHAS, unidadeValida, quantidadeValida, aceitaFracao } from '../../shared/oferendas.js';
@@ -56,8 +56,8 @@ function nomeEvento(v) {
 
 export async function respostaIemanja(eu, eventos = null) {
   negarCurimba(eu);
-  const lista = eventos || await lerEventos();
-  const visiveis = lista.filter((ev) => veEvento(eu, ev)).map((ev) => paraTela(ev, eu));
+  const [lista, transportes] = await Promise.all([eventos || lerEventos(), db.rpc('iemanja_transportes_listar')]);
+  const visiveis = lista.filter((ev) => veEvento(eu, ev)).map((ev) => ({ ...paraTela(ev, eu), transportes: transportes.filter((t) => t.eventoId === ev.id) }));
   const r = { eventos: visiveis, root: ehRoot(eu), eu: { chave: chaveDe(eu) }, publica: lista.some((ev) => ev.visivel) };
   if (r.root || visiveis.some((ev) => ev.admin)) {
     r.candidatos = await candidatos();
@@ -102,6 +102,8 @@ export async function acaoIemanja(eu, b) {
     || lista.find((e) => e.grupos.some((g) => g.id === b.grupoId))
     || lista.find((e) => e.grupos.some((g) => g.itens.some((i) => i.id === b.itemId)));
   if (!ev) throw new HttpError(404, 'Evento não encontrado.');
+  const transportesDoEvento = String(b.op || '').startsWith('transporte') ? (await db.rpc('iemanja_transportes_listar')).filter((t) => t.eventoId === ev.id) : [];
+  const transporteDe = (id) => (typeof id === 'string' ? transportesDoEvento.find((t) => t.id === id) : null);
   if (ev.encerradoEm) throw new HttpError(409, 'Este evento já foi encerrado.');
   const grupo = b.grupoId ? ev.grupos.find((g) => g.id === validarId(b.grupoId, 'Grupo')) : null;
   const item = b.itemId ? ev.grupos.flatMap((g) => g.itens).find((i) => i.id === validarId(b.itemId, 'Item')) : null;
@@ -117,7 +119,7 @@ export async function acaoIemanja(eu, b) {
   }
   if (!adminDe(eu, ev)) throw new HttpError(403, 'Só os admins deste evento fazem isso.');
   // Bloco ADMIN ROOT: o sorteio (listas, tirar do sorteio, sortear, cancelar) é só do root, como associar e trocar.
-  if (['listas', 'fora', 'sortear', 'cancelarSorteio'].includes(b.op) && !ehRoot(eu)) throw new HttpError(403, 'Só o admin root mexe no sorteio.');
+  if (['listas', 'fora', 'sortear', 'cancelarSorteio', 'categorias'].includes(b.op) && !ehRoot(eu)) throw new HttpError(403, 'Só o admin root faz isso (bloco Configuração evento).');
 
   switch (b.op) {
     case 'visivel':
@@ -157,6 +159,7 @@ export async function acaoIemanja(eu, b) {
     case 'grupoNovo':
       return devolver(await db.rpc('iemanja_grupo_novo', { id: ev.id }));
     case 'grupoExcluir':
+      if (!ehRoot(eu)) throw new HttpError(403, 'Só o admin root exclui uma oferenda.');
       if (!grupo) throw new HttpError(400, 'Grupo inválido.');
       if (ev.grupos.length <= 1) throw new HttpError(409, 'O evento precisa de pelo menos um grupo.');
       return devolver(await db.rpc('iemanja_grupo_excluir', { id: grupo.id }));
@@ -240,6 +243,48 @@ export async function acaoIemanja(eu, b) {
       const comItem = [[a, ga], [c, gb]].find(([k, g]) => g.itens.some((i) => i.doacoes.some((d) => d.chave === k)));
       if (comItem) throw new HttpError(400, `${comItem[1].membros.find((m) => m.chave === comItem[0]).nome} já assumiu item na oferenda dela: tire o item antes de trocar.`);
       return devolver(await db.rpc('iemanja_trocar', { id: ev.id, a, b: c }));
+    }
+    // ---------- Transporte (admins do evento; excluir, só o root) ----------
+    case 'transporteSalvar': {
+      const descricao = limpar(b.descricao);
+      if (!descricao || descricao.length > 80) throw new HttpError(400, 'Informe a descrição do transporte (até 80 letras).');
+      if (b.transporteId && !transporteDe(b.transporteId)) throw new HttpError(404, 'Transporte não encontrado.');
+      const resp = b.responsavelId ? (await db.rpc('pessoas_listar')).find((p) => p.id === validarId(b.responsavelId, 'Responsável')) : null;
+      if (b.responsavelId && !resp) throw new HttpError(400, 'Responsável não encontrado na corrente.');
+      if (!resp) throw new HttpError(400, 'Escolha o responsável.');
+      await db.rpc('iemanja_transporte_salvar', { id: b.transporteId || '', eventoId: ev.id, descricao, responsavelId: resp.id, responsavelNome: resp.nome });
+      return devolver(lista);
+    }
+    case 'transporteExcluir':
+      if (!ehRoot(eu)) throw new HttpError(403, 'Só o admin root exclui um transporte.');
+      if (!transporteDe(b.transporteId)) throw new HttpError(404, 'Transporte não encontrado.');
+      await db.rpc('iemanja_transporte_excluir', { id: b.transporteId });
+      return devolver(lista);
+    // Puxa um grupo do cadastro (corrente: corrente + curimba; alunos: todas as turmas) ou uma pessoa digitada.
+    case 'transporteIncluir': {
+      if (!transporteDe(b.transporteId)) throw new HttpError(404, 'Transporte não encontrado.');
+      let pessoas;
+      if (b.grupo === 'corrente' || b.grupo === 'alunos') {
+        const c = await candidatos();
+        pessoas = b.grupo === 'corrente'
+          ? [...c.corrente.map((p) => ({ ...p, lista: 'Corrente' })), ...c.curimba.map((p) => ({ ...p, lista: 'Curimba' }))]
+          : [...c.turmas.flatMap((t) => t.pessoas.map((p) => ({ ...p, lista: t.nome }))), ...c.semTurma.map((p) => ({ ...p, lista: 'Alunos sem turma' }))];
+      } else {
+        const nome = limpar(b.nome);
+        if (nome.length < 2 || nome.length > 60) throw new HttpError(400, 'Informe o nome da pessoa (2 a 60 letras).');
+        pessoas = [{ chave: 'n:' + normalizarNome(nome), nome, lista: 'Avulsos' }];
+      }
+      await db.rpc('iemanja_transporte_incluir', { transporteId: b.transporteId, pessoas: pessoas.map(({ chave, nome, lista: l }) => ({ chave, nome, lista: l })) });
+      return devolver(lista);
+    }
+    case 'transportePessoa': {
+      if (!transporteDe(b.transporteId)) throw new HttpError(404, 'Transporte não encontrado.');
+      const p = { transporteId: b.transporteId, chave: String(b.chave || '') };
+      if (b.remover) p.remover = true;
+      if ('pago' in b) p.pago = !!b.pago;
+      if ('pulseira' in b) p.pulseira = !!b.pulseira;
+      await db.rpc('iemanja_transporte_pessoa', p);
+      return devolver(lista);
     }
     case 'cancelarSorteio':
       // Depois que alguém assumiu um item, o sorteio não pode mais ser desfeito.

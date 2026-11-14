@@ -124,7 +124,7 @@ export async function carregarTudo() {
     estado.giras = {};
     estado.minhaCurimba = null;
     estado.curimba = null;
-    estado.oracoes = [];
+    estado.oracoes = r.oracoes || [];
     estado.alunos = null;
     prefs.tab = 'gira';
     prefs.data = hoje();
@@ -206,6 +206,13 @@ export async function atualizarDoServidor() {
     if (estado.me?.grupo === 'curimba') {
       estado.eventos = r.eventos;
       estado.minhaCurimba = r.minhaCurimba;
+      avisar();
+      return;
+    }
+    // Alunos: só os eventos e os próprios pedidos de oração.
+    if (estado.me?.grupo === 'alunos') {
+      estado.eventos = r.eventos || estado.eventos;
+      estado.oracoes = r.oracoes || estado.oracoes;
       avisar();
       return;
     }

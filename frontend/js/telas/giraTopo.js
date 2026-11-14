@@ -38,31 +38,35 @@ export function cardSemana({ ocultarAvisos = false } = {}) {
 
 // Orações (logo abaixo dos Eventos): qualquer pessoa logada pede; cada uma vale 7 dias e depois some.
 // Quem pediu (ou o admin dos eventos) exclui, com confirmação.
-export function cardOracoes() {
-  const L = estado.oracoes || [];
+// aluno: o acesso dos alunos (e a visão Alunos do root) só pede e só vê os próprios pedidos, sem vela nem excluir.
+// Borda: azul no pedido que veio de aluno, roxa no da corrente.
+export function cardOracoes({ aluno = false } = {}) {
+  const L = (estado.oracoes || []).filter((o) => !aluno || o.meu);
   const aberto = !!estado.oraNova;
   const expandido = abertos.has('oracoes');
   // Admin da aba Gira: WhatsApp com a imagem dos pedidos (abre uma janela com a prévia).
-  const wa = L.length && pode('giras:editar') ? `<button class="btn small or-wa" data-act="oraabrir" title="Mandar os pedidos de oração no WhatsApp"><span class="wa-ico" aria-hidden="true">${ICONE_WHATS}</span> WhatsApp</button>` : '';
+  const wa = !aluno && L.length && pode('giras:editar') ? `<button class="btn small or-wa" data-act="oraabrir" title="Mandar os pedidos de oração no WhatsApp"><span class="wa-ico" aria-hidden="true">${ICONE_WHATS}</span> WhatsApp</button>` : '';
   let h = `<div class="card ev-semana or-card"><div class="or-cab"><button class="grp-h dobra or-dobra" data-act="dobrarcard" data-k="oracoes" aria-expanded="${expandido}">
     <h2 class="evs-tit"><span aria-hidden="true">❤️</span> Orações</h2><span class="count">${L.length} <span class="seta" aria-hidden="true">${expandido ? '▾' : '▸'}</span></span></button>${wa}</div>`;
   if (expandido && L.length) {
     h += `<div class="evs-lista or-lista">${L.map((o) => {
       const conf = estado.confirm === 'or:' + o.id;
+      const borda = o.deAluno ? ' or-aluno' : ' or-corrente';
+      if (aluno) return `<div class="evs-l or-l${borda}"><span class="evs-nome or-txt">${esc(o.texto)}</span></div>`;
       const bt = !o.apagar ? '' : conf
         ? `<button class="btn danger or-bt" data-act="oraexcluir" data-id="${o.id}">Confirmar</button>`
         : `<button class="btn or-bt" data-act="askdel" data-k="or:${o.id}">Excluir</button>`;
       const n = o.reacoes || 0;
       const vela = `<button class="btn or-bt or-vela${o.reagi ? ' on' : ''}" data-act="orareagir" data-id="${o.id}" aria-pressed="${!!o.reagi}"
           title="${o.reagi ? 'Apagar minha vela' : 'Acender uma vela por este pedido'}"><span aria-hidden="true">🕯️</span> ${n}</button>`;
-      return `<div class="evs-l or-l"><span class="evs-nome or-txt">${esc(o.texto)}</span>
+      return `<div class="evs-l or-l${borda}"><span class="evs-nome or-txt">${esc(o.texto)}</span>
         <span class="or-dir">${vela}${bt}</span></div>`;
     }).join('')}</div>`;
-  } else if (expandido) h += '<p class="muted" style="margin:0;font-size:.88rem">Nenhum pedido de oração nos últimos 7 dias.</p>';
+  } else if (expandido) h += `<p class="muted" style="margin:0;font-size:.88rem">${aluno ? 'Você não tem pedido de oração na lista.' : 'Nenhum pedido de oração no momento.'}</p>`;
   if (expandido) h += aberto
     ? `<form id="f-oracao" class="or-form" autocomplete="off"><textarea id="or-texto" rows="3" maxlength="200" placeholder="Por quem ou pelo que rezar (até 3 linhas)">${esc(estado.oraTexto || '')}</textarea>
         <span class="row"><button class="btn primary" type="submit">Pedir oração</button><button class="btn" type="button" data-act="oranova">Cancelar</button></span>
-        <p class="muted" style="margin:0;font-size:.8rem">Fica 7 dias na lista e depois some.</p></form>`
+        <p class="muted" style="margin:0;font-size:.8rem">Fica até 4 dias na lista; toda sexta-feira a lista recomeça.</p></form>`
     : '<button class="btn small or-nova" data-act="oranova">＋ Pedir oração</button>';
   return h + '</div>';
 }

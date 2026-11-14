@@ -1669,3 +1669,33 @@ button.iem-tot-n{cursor:pointer}
 .iem-pg-nomes .iem-p.sem-item{border-color:var(--off)}
 .iem-tot-tit{margin:0;font-size:.85rem;font-weight:700;color:var(--ink)}
 .iem-tot-tit span{color:var(--muted);font-weight:500}
+/* Orações: borda azul no pedido de aluno, roxa no da corrente */
+.evs-l.or-l.or-aluno{border-color:#4f8ef7}
+.evs-l.or-l.or-corrente{border-color:#a066e8}
+.cd-item .cd-wa{justify-self:start;min-height:36px;padding:4px 12px;font-size:.88rem}
+
+/* Iemanjá, ADMIN ROOT (⚙️ Configuração evento): borda roxa e cada função minimizada */
+.card.adm.root.iem-root{border-color:#a066e8;background:color-mix(in srgb,#a066e8 6%,var(--surface))}
+.card.adm.root.iem-root::before{color:#c79bff}
+.iem-root{gap:10px}
+.iem-root>.grp-h.dobra h2{margin:0}
+.iem-sec{border:1px solid color-mix(in srgb,#a066e8 40%,var(--line));border-radius:10px;background:var(--bg);overflow:hidden}
+.iem-sec-h{display:flex;justify-content:space-between;align-items:center;gap:8px;width:100%;min-height:46px;padding:8px 12px;background:none;border:0;color:var(--ink);font:700 .95rem var(--f-body);text-align:left;cursor:pointer}
+.iem-sec-x{display:flex;align-items:center;gap:6px;color:#c79bff;font-weight:600;white-space:nowrap}
+.iem-sec-x small{color:var(--muted);font-weight:500}
+.iem-sec-c{display:grid;gap:10px;padding:4px 12px 12px}
+/* 🚗 Transporte */
+.tr-form{display:grid;gap:10px}
+.tr-add{display:grid;gap:8px}
+.tr-lista{display:grid;gap:6px}
+.tr-p{display:grid;grid-template-columns:minmax(0,1fr) auto auto;align-items:center;gap:8px;padding:6px 8px 6px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg)}
+.tr-nome{overflow-wrap:anywhere;font-size:.95rem}
+.tr-sts{display:flex;flex-wrap:wrap;gap:4px;justify-content:flex-end}
+.tr-st{cursor:pointer;font:700 .75rem var(--f-body)}
+.tr-x{color:var(--off);width:32px;height:32px;padding:0;min-width:0}
+/* Evento encerrado: selo Concluído e o Resumo */
+.iem-hist{gap:8px}
+.iem-hist-topo{display:flex;align-items:center;gap:8px}
+.iem-hist-topo .grp-h.dobra{flex:1;min-width:0}
+.iem-concl{flex:none;display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:20px;background:var(--ok-soft);color:var(--ok);border:1px solid color-mix(in srgb,var(--ok) 50%,transparent);font-size:.78rem;font-weight:700}
+.iem-resumo-bt{justify-self:end;min-height:38px;padding:4px 14px}

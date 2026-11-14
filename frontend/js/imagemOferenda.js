@@ -160,22 +160,26 @@ function cortar(ctx, t, max) {
 }
 
 // Pessoas de um grupo, separadas por lista (Corrente, Curimba, turmas): um cartão por lista, nomes em duas colunas.
-// g: { titulo, data, responsavel, listas: [[nomeDaLista, [nomes]]] }
+// g: { titulo, data, responsavel, rotulo?, listas: [[nomeDaLista, [nome | { nome, status: [[texto, ok]] }]]] }
+// Com status (transporte), cada nome ganha uma linha pequena: verde quando ok, amarela quando falta.
 function desenharPessoas(ctx, g, pintar) {
   const fonte = fonteDe(ctx);
-  let y = cabecalho(ctx, 'PESSOAS DO GRUPO', g, pintar) + 20;
+  let y = cabecalho(ctx, g.rotulo || 'PESSOAS DO GRUPO', g, pintar) + 20;
   const total = g.listas.reduce((n, [, l]) => n + l.length, 0);
   if (pintar) { fonte(500, 18); ctx.fillStyle = C.muted; ctx.fillText(`${total} ${total === 1 ? 'pessoa' : 'pessoas'}`, P + 4, y); }
   y += 34;
   const GAP = 16;
   const COL = (CW - 36 - GAP) / 2;
   const LH = 27;
-  g.listas.forEach(([lista, nomes]) => {
+  const SL = 20;   // linha do status
+  g.listas.forEach(([lista, nomesBrutos]) => {
+    const nomes = nomesBrutos.map((n) => (typeof n === 'string' ? { nome: n } : n));
     fonte(500, 19);
     // Cada nome ocupa as linhas que precisar na coluna; a linha da tabela tem a altura do maior dos dois.
-    const linhas = nomes.map((n) => quebrar(ctx, n, COL - 16));
+    const linhas = nomes.map((n) => quebrar(ctx, n.nome, COL - 16));
+    const alto = (k) => (linhas[k] ? linhas[k].length * LH + (nomes[k].status ? SL : 0) : 0);
     const alturas = [];
-    for (let k = 0; k < linhas.length; k += 2) alturas.push(Math.max(linhas[k].length, linhas[k + 1]?.length || 0) * LH + 8);
+    for (let k = 0; k < linhas.length; k += 2) alturas.push(Math.max(alto(k), alto(k + 1)) + 8);
     const h = 18 + 30 + alturas.reduce((s, a) => s + a, 0) + 10;
     if (pintar) {
       ctx.fillStyle = C.card; ctx.strokeStyle = C.line; ctx.lineWidth = 1;
@@ -195,13 +199,96 @@ function desenharPessoas(ctx, g, pintar) {
           const xc = x + c * (COL + GAP);
           ctx.fillStyle = C.soft; ctx.beginPath(); ctx.arc(xc + 4, yy + 10, 4, 0, Math.PI * 2); ctx.fill();
           ctx.fillStyle = C.ink;
+          fonte(500, 19);
           ls.forEach((l, k) => ctx.fillText(l, xc + 16, yy + k * LH));
+          const st = nomes[r * 2 + c].status;
+          if (st) {
+            fonte(700, 13);
+            let xs = xc + 16;
+            st.forEach(([t, ok]) => {
+              ctx.fillStyle = ok ? C.ok : '#9a6a10';
+              const txt = (ok ? '✓ ' : '• ') + t;
+              ctx.fillText(txt, xs, yy + ls.length * LH - 2);
+              xs += ctx.measureText(txt).width + 10;
+            });
+            fonte(500, 19);
+          }
         });
         yy += a;
       });
     }
     y += h + 12;
   });
+  return y + P - 12;
+}
+
+// Resumo do evento encerrado (informações executivas): números do evento, um cartão por oferenda
+// (responsável, pessoas em poucas linhas e dois gráficos de barra) e os transportes.
+// r: { titulo, data, participantes, oferendas: [{ nome, responsavel, pessoas: [nomes], contribuiram, itens, entregues }], transportes: [{ descricao, responsavel, pessoas }] }
+function desenharResumo(ctx, r, pintar) {
+  const fonte = fonteDe(ctx);
+  let y = cabecalho(ctx, 'RESUMO DO EVENTO · CONCLUÍDO', { titulo: r.titulo, data: r.data }, pintar) + 20;
+  // Números do evento, em dois quadros.
+  const QW = (CW - 12) / 2;
+  [[String(r.participantes), r.participantes === 1 ? 'participante' : 'participantes'], [String(r.oferendas.length), r.oferendas.length === 1 ? 'oferenda' : 'oferendas']].forEach(([n, t], k) => {
+    if (!pintar) return;
+    const x = P + k * (QW + 12);
+    ctx.fillStyle = C.card; ctx.strokeStyle = C.line; ctx.lineWidth = 1;
+    caixa(ctx, x, y, QW, 76, 12); ctx.fill(); ctx.stroke();
+    fonte(700, 32, FD); ctx.fillStyle = C.accent; ctx.fillText(n, x + 18, y + 12);
+    fonte(500, 16); ctx.fillStyle = C.muted; ctx.fillText(t, x + 18, y + 50);
+  });
+  y += 76 + 16;
+  // Barra: rótulo à esquerda, "x de y · p%" à direita, trilho cinza com o preenchido (verde 100%, amarelo 50%+, vermelho abaixo).
+  const barra = (yy, rotulo, feito, total) => {
+    const pct = total ? Math.round((feito * 100) / total) : 0;
+    const cor = pct >= 100 ? C.verde : pct >= 50 ? C.amarelo : C.vermelho;
+    if (pintar) {
+      fonte(500, 15); ctx.fillStyle = C.muted; ctx.fillText(rotulo, P + 18, yy);
+      fonte(700, 15); ctx.fillStyle = C.ink;
+      const dir = `${feito} de ${total} · ${pct}%`;
+      ctx.fillText(dir, P + CW - 18 - ctx.measureText(dir).width, yy);
+      ctx.fillStyle = C.line; caixa(ctx, P + 18, yy + 22, CW - 36, 10, 5); ctx.fill();
+      if (pct) { ctx.fillStyle = cor; caixa(ctx, P + 18, yy + 22, Math.max(10, (CW - 36) * Math.min(pct, 100) / 100), 10, 5); ctx.fill(); }
+    }
+    return 44;
+  };
+  r.oferendas.forEach((o) => {
+    fonte(400, 15);
+    const nomes = o.pessoas.length ? quebrar(ctx, o.pessoas.join(', '), CW - 36) : ['Ninguém no grupo'];
+    const pl = nomes.slice(0, 2);
+    if (nomes.length > 2) pl[1] = cortar(ctx, pl[1] + ' …', CW - 36);
+    const h = 16 + 28 + 22 + pl.length * 20 + 10 + 44 + 44 + 6;
+    if (pintar) {
+      ctx.fillStyle = C.card; ctx.strokeStyle = C.line; ctx.lineWidth = 1;
+      caixa(ctx, P, y, CW, h, 12); ctx.fill(); ctx.stroke();
+      fonte(700, 22, FD); ctx.fillStyle = C.ink; ctx.fillText(cortar(ctx, o.nome, CW - 36), P + 18, y + 14);
+      fonte(500, 15); ctx.fillStyle = C.muted;
+      ctx.fillText(`Responsável: ${o.responsavel || '—'} · ${o.pessoas.length} ${o.pessoas.length === 1 ? 'pessoa' : 'pessoas'}`, P + 18, y + 44);
+      fonte(400, 15); ctx.fillStyle = C.ink;
+      pl.forEach((l, k) => ctx.fillText(l, P + 18, y + 66 + k * 20));
+    }
+    let yy = y + 66 + pl.length * 20 + 10;
+    yy += barra(yy, 'Pessoas que contribuíram', o.contribuiram, o.pessoas.length);
+    barra(yy, 'Itens entregues', o.entregues, o.itens);
+    y += h + 12;
+  });
+  if (r.transportes.length) {
+    const h = 16 + 30 + r.transportes.length * 26 + 8;
+    if (pintar) {
+      ctx.fillStyle = C.card; ctx.strokeStyle = C.line; ctx.lineWidth = 1;
+      caixa(ctx, P, y, CW, h, 12); ctx.fill(); ctx.stroke();
+      fonte(700, 15); ctx.fillStyle = C.accent; espacado(ctx, '2px'); ctx.fillText('TRANSPORTE', P + 18, y + 16); espacado(ctx, '0px');
+      r.transportes.forEach((t, k) => {
+        fonte(700, 17); ctx.fillStyle = C.ink;
+        const yy = y + 46 + k * 26;
+        ctx.fillText(cortar(ctx, t.descricao, 220), P + 18, yy);
+        fonte(400, 16); ctx.fillStyle = C.muted;
+        ctx.fillText(cortar(ctx, `Responsável: ${t.responsavel || '—'} · ${t.pessoas} ${t.pessoas === 1 ? 'pessoa' : 'pessoas'}`, CW - 36 - 230), P + 18 + 230, yy + 1);
+      });
+    }
+    y += h + 12;
+  }
   return y + P - 12;
 }
 
@@ -230,3 +317,4 @@ async function gerarPng(desenho, dados) {
 
 export const gerarImagemOferenda = (of) => gerarPng(desenhar, of);
 export const gerarImagemPessoas = (g) => gerarPng(desenharPessoas, g);
+export const gerarImagemResumo = (r) => gerarPng(desenharResumo, r);

@@ -20,7 +20,7 @@ export const pctItens = (itens) => percentualDoado({ itens });
 
 // Pessoas do grupo separadas pela lista de cada uma (vem do banco): Corrente, Curimba, as turmas em ordem de nome
 // e "Alunos sem turma" no fim. Só as listas com alguém. Sem lista conta como Corrente.
-const ORDEM_LISTA = { Corrente: 0, Curimba: 1, 'Alunos sem turma': 3 };
+const ORDEM_LISTA = { Corrente: 0, Curimba: 1, 'Alunos sem turma': 3, Avulsos: 4 };   // Avulsos: digitados no transporte
 export function porListaIemanja(membros) {
   const grupos = new Map();
   for (const m of membros || []) {

@@ -9,7 +9,7 @@
 // Estrutura: veja db/ESTRUTURA-ESQUEMA.md para o mapa de versões, domínios e
 // quais migrações foram testadas no Postgres.
 
-export const VERSAO = 105;  // v105: quantidade quebrada (kg e litro) e troca de pessoas entre grupos da Iemanjá
+export const VERSAO = 106;  // v106: orações até 4 dias (toda sexta recomeça) e transporte da Iemanjá
 
 import { PERFIS_PADRAO } from '../shared/permissoes.js';
 
@@ -3954,6 +3954,104 @@ export const MIGRACOES = [
      update iemanja_membros set grupo_id = case when grupo_id = v_ga then v_gb else v_ga end
       where (grupo_id = v_ga and chave = p ->> 'a') or (grupo_id = v_gb and chave = p ->> 'b');
      return iemanja_estado();
+   end;
+   $$`,
+  // ================================================== v106: orações (até 4 dias; toda sexta a lista recomeça) e transporte da Iemanjá
+  // A oração some no que vier primeiro: 4 dias depois de pedida ou à 0h da sexta seguinte ao dia em que foi pedida
+  // (horário de Brasília) — a pedida numa sexta passa por aquela sexta e vai até a outra (ou os 4 dias).
+  `create or replace function oracao_expira(t timestamptz)
+   returns timestamptz language sql stable as $$
+     select least(t + interval '4 days',
+       ((t at time zone 'America/Sao_Paulo')::date
+         + coalesce(nullif((5 - extract(isodow from t at time zone 'America/Sao_Paulo')::int + 7) % 7, 0), 7))::timestamp at time zone 'America/Sao_Paulo')
+   $$`,
+  `create or replace function oracoes_listar(p jsonb default '{}'::jsonb)
+   returns jsonb language plpgsql as $$
+   begin
+     delete from oracoes where now() >= oracao_expira(criado_em);
+     return coalesce((select jsonb_agg(jsonb_build_object('id', o.id, 'texto', o.texto, 'autor', o.autor,
+                                                         'criadoEm', o.criado_em, 'expiraEm', oracao_expira(o.criado_em),
+                                                         'reacoes', coalesce((select jsonb_agg(r.autor) from oracoes_reacoes r where r.oracao_id = o.id), '[]'::jsonb))
+                                       order by o.criado_em desc)
+                      from oracoes o), '[]'::jsonb);
+   end;
+   $$`,
+  // Transporte da Iemanjá: cada evento pode ter transportes (descrição + responsável da corrente) com a lista de quem vai,
+  // separada pelo cadastro (lista: Corrente, Curimba, turma, Avulsos). pago e pulseira: o admin marca.
+  `create table if not exists iemanja_transportes (
+     id               uuid primary key default gen_random_uuid(),
+     evento_id        uuid not null references iemanja_eventos (id) on delete cascade,
+     descricao        text not null check (length(btrim(descricao)) between 1 and 80),
+     responsavel_id   uuid references pessoas (id) on delete set null,
+     responsavel_nome text not null default '',
+     criado_em        timestamptz not null default now()
+   )`,
+  `create table if not exists iemanja_transporte_pessoas (
+     transporte_id uuid not null references iemanja_transportes (id) on delete cascade,
+     chave         text not null,
+     nome          text not null,
+     lista         text not null default 'Corrente',
+     pago          boolean not null default false,
+     pulseira      boolean not null default false,
+     criado_em     timestamptz not null default now(),
+     primary key (transporte_id, chave)
+   )`,
+  `create or replace function iemanja_transportes_listar(p jsonb default '{}'::jsonb)
+   returns jsonb language sql stable as $$
+     select coalesce(jsonb_agg(jsonb_build_object('id', t.id, 'eventoId', t.evento_id, 'descricao', t.descricao,
+       'responsavelId', t.responsavel_id, 'responsavel', coalesce((select pe.nome from pessoas pe where pe.id = t.responsavel_id), nullif(t.responsavel_nome, '')),
+       'pessoas', (select coalesce(jsonb_agg(jsonb_build_object('chave', x.chave, 'nome', x.nome, 'lista', x.lista, 'pago', x.pago, 'pulseira', x.pulseira)
+                     order by lower(x.nome)), '[]'::jsonb) from iemanja_transporte_pessoas x where x.transporte_id = t.id)
+     ) order by t.criado_em), '[]'::jsonb)
+     from iemanja_transportes t
+   $$`,
+  `create or replace function iemanja_transporte_salvar(p jsonb)
+   returns jsonb language plpgsql as $$
+   begin
+     if nullif(p ->> 'id', '') is null then
+       insert into iemanja_transportes (evento_id, descricao, responsavel_id, responsavel_nome)
+       values ((p ->> 'eventoId')::uuid, p ->> 'descricao', nullif(p ->> 'responsavelId', '')::uuid, coalesce(p ->> 'responsavelNome', ''));
+     else
+       update iemanja_transportes set descricao = p ->> 'descricao', responsavel_id = nullif(p ->> 'responsavelId', '')::uuid,
+              responsavel_nome = coalesce(p ->> 'responsavelNome', '')
+       where id = (p ->> 'id')::uuid;
+       if not found then raise exception 'Transporte não encontrado.'; end if;
+     end if;
+     return iemanja_transportes_listar();
+   end;
+   $$`,
+  `create or replace function iemanja_transporte_excluir(p jsonb)
+   returns jsonb language plpgsql as $$
+   begin
+     delete from iemanja_transportes where id = (p ->> 'id')::uuid;
+     return iemanja_transportes_listar();
+   end;
+   $$`,
+  // p = { transporteId, pessoas: [{ chave, nome, lista }] } — quem já está na lista fica como está.
+  `create or replace function iemanja_transporte_incluir(p jsonb)
+   returns jsonb language plpgsql as $$
+   begin
+     insert into iemanja_transporte_pessoas (transporte_id, chave, nome, lista)
+       select (p ->> 'transporteId')::uuid, x ->> 'chave', x ->> 'nome', coalesce(x ->> 'lista', 'Corrente')
+       from jsonb_array_elements(coalesce(p -> 'pessoas', '[]'::jsonb)) x
+     on conflict (transporte_id, chave) do nothing;
+     return iemanja_transportes_listar();
+   end;
+   $$`,
+  // p = { transporteId, chave, remover? | pago? | pulseira? }
+  `create or replace function iemanja_transporte_pessoa(p jsonb)
+   returns jsonb language plpgsql as $$
+   begin
+     if coalesce((p ->> 'remover')::boolean, false) then
+       delete from iemanja_transporte_pessoas where transporte_id = (p ->> 'transporteId')::uuid and chave = p ->> 'chave';
+     else
+       update iemanja_transporte_pessoas set
+         pago = case when p ? 'pago' then (p ->> 'pago')::boolean else pago end,
+         pulseira = case when p ? 'pulseira' then (p ->> 'pulseira')::boolean else pulseira end
+       where transporte_id = (p ->> 'transporteId')::uuid and chave = p ->> 'chave';
+     end if;
+     if not found then raise exception 'Pessoa não encontrada neste transporte.'; end if;
+     return iemanja_transportes_listar();
    end;
    $$`,
 ];

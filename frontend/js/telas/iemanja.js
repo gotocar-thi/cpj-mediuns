@@ -4,14 +4,15 @@ import { estado, avisar, acaoIemanja } from '../estado.js';
 import { esc, toast, baixar } from '../util.js';
 import { ORIXAS } from '/shared/regras.js';
 import { NOMES_ENTIDADES, LISTA_CURIMBA, porListaIemanja } from '/shared/iemanja.js';
-import { gerarImagemPessoas, gerarImagemOferenda } from '../imagemOferenda.js';
+import { gerarImagemPessoas, gerarImagemOferenda, gerarImagemResumo } from '../imagemOferenda.js';
 import { dataBR, faixaPct, textoEntrega, qtdTxt, qtdAntes, situacao, arred, passoLevar } from '/shared/oferendas.js';
 import { U, Dia, camposItem, listaItens, textoCompartilhar, blocoDetalhes, salvarDetalhes } from './oferendaComum.js';
 import { ICONE_WHATS } from './giraComum.js';
 
 // sel: o que está escolhido nos combos de Associar e Trocar (para um redesenho não apagar);
 // escolha: janela "de qual oferenda?" das listas de pessoas ou de itens.
-const ui = { abertos: new Set(), edit: null, janela: null, rascunho: {}, categorias: false, sel: {}, escolha: null };
+// novoTransp: formulário do "+ Novo transporte" aberto ({ descricao, responsavelId }).
+const ui = { abertos: new Set(), edit: null, janela: null, rascunho: {}, sel: {}, escolha: null, novoTransp: null };
 const val = (id) => document.getElementById(id)?.value ?? '';
 // A visão CPJ/Alunos do root mostra o que a corrente vê.
 const comoAdmin = (ev) => ev.admin && (estado.me?.papel !== 'root' || estado.visaoRoot === 'root');
@@ -110,9 +111,9 @@ function blocoSorteio(ev) {
   const C = estado.iemanja.candidatos;
   if (!C) return '';
   const k = 'sorteio';
-  // Bloco ADMIN ROOT (só o root vê): sorteio, associar, trocar pessoas e Novo evento.
-  const cab = `<button class="grp-h dobra" data-act="iemdobra" data-k="${k}" aria-expanded="${ui.abertos.has(k)}"><h2>🎲 Sorteio</h2><span class="count">${ev.sorteado ? 'realizado' : 'a fazer'} ${seta(k)}</span></button>`;
-  if (!ui.abertos.has(k)) return `<div class="card adm root iem-sorteio">${cab}</div>`;
+  // Bloco ADMIN ROOT (só o root vê), com borda roxa: ⚙️ Configuração evento. Cada função vem minimizada.
+  const cab = `<button class="grp-h dobra" data-act="iemdobra" data-k="${k}" aria-expanded="${ui.abertos.has(k)}"><h2><span aria-hidden="true">⚙️</span> Configuração evento</h2><span class="count">${seta(k)}</span></button>`;
+  if (!ui.abertos.has(k)) return `<div class="card adm root iem-sorteio iem-root">${cab}</div>`;
   const presos = new Set(ev.grupos.flatMap((g) => g.membros.map((m) => m.chave)));
   const fora = new Set(ev.fora);
   const ativas = new Set(ev.listas);
@@ -127,11 +128,28 @@ function blocoSorteio(ev) {
     ? `<div class="cp-bts iem-uma"><button class="btn" data-act="iemjanela" data-t="cancelar" ${travado ? 'disabled' : ''}>${icone('✕', 'Cancelar sorteio')}</button></div>
       ${travado ? '<p class="muted iem-trava">Já há itens assumidos nos grupos: o sorteio não pode mais ser cancelado.</p>' : ''}`
     : `<div class="cp-bts iem-uma"><button class="btn primary" data-act="iemjanela" data-t="sortear">${icone('🎲', 'Sortear')}</button></div>`;
-  // WhatsApp: a "Lista pessoas" de todos os grupos de uma vez (uma imagem por grupo).
-  const comGente = gruposComGente(ev).length;
-  const todas = `<div class="iem-wa-bts iem-wa-uma"><button class="btn wa-bt" data-act="iemtodaspessoas" ${comGente ? '' : 'disabled title="Nenhum grupo tem pessoas ainda"'}><span class="wa-ico" aria-hidden="true">${ICONE_WHATS}</span> Listas de pessoas · todos os grupos</button></div>`;
-  const soRoot = `${blocoAssociar(ev)}${blocoTrocar(ev)}<div class="iem-cfg-sec"><div class="cp-bts iem-uma"><button class="btn" data-act="iemnovoaviso">${icone('＋', 'Novo evento')}</button></div></div>`;
-  return `<div class="card adm root iem-sorteio">${cab}${todas}${ev.sorteado ? '' : escolha + listas}${botao}${soRoot}</div>`;
+  // As listas de pessoas ficam em ADMIN OFERENDAS (Lista de pessoas, escolhendo a oferenda).
+  const secao = (kk, ico, titulo, extra, corpo) => {
+    const a = ui.abertos.has(kk);
+    return `<div class="iem-sec"><button class="iem-sec-h" data-act="iemdobra" data-k="${kk}" aria-expanded="${a}"><span><span aria-hidden="true">${ico}</span> ${titulo}</span><span class="iem-sec-x">${extra ? `<small>${extra}</small> ` : ''}${a ? '▾' : '▸'}</span></button>${a ? `<div class="iem-sec-c">${corpo}</div>` : ''}</div>`;
+  };
+  const transportes = ev.transportes || [];
+  return `<div class="card adm root iem-sorteio iem-root">${cab}
+    ${secao('rs:sorteio', '🎲', 'Sorteio', ev.sorteado ? 'realizado' : 'a fazer', (ev.sorteado ? '' : escolha + listas) + botao)}
+    ${secao('rs:cat', '🏷️', 'Categorias', String(categoriasDe(ev).length), blocoCategorias(ev))}
+    ${secao('rs:assoc', '＋', 'Associar pessoa a uma oferenda', '', blocoAssociar(ev))}
+    ${secao('rs:troca', '⇄', 'Trocar pessoas de oferenda', '', blocoTrocar(ev))}
+    ${secao('rs:excluir', '🗑️', 'Excluir oferenda ou transporte', '', blocoExcluir(ev, transportes))}
+    ${secao('rs:novo', '＋', 'Novo evento', '', `<div class="cp-bts iem-uma"><button class="btn" data-act="iemnovoaviso">${icone('＋', 'Novo evento')}</button></div>`)}</div>`;
+}
+
+// Excluir uma oferenda (grupo) ou um transporte do evento, depois de confirmar (só o root).
+function blocoExcluir(ev, transportes) {
+  const s = ui.sel.excluir || '';
+  return `<div class="iem-add"><select data-act="iemsel" data-campo="excluir" aria-label="O que excluir"><option value="">Escolha…</option>
+      <optgroup label="Oferendas">${ev.grupos.map((g) => `<option value="g:${g.id}" ${s === 'g:' + g.id ? 'selected' : ''}>${esc(nomeGrupo(g))}</option>`).join('')}</optgroup>
+      ${transportes.length ? `<optgroup label="Transportes">${transportes.map((t) => `<option value="t:${t.id}" ${s === 't:' + t.id ? 'selected' : ''}>${esc(t.descricao)}</option>`).join('')}</optgroup>` : ''}</select>
+    <button class="btn danger" data-act="iemexcluir">Excluir</button></div>`;
 }
 
 // Os quadradinhos (em grupos / sem grupo e com itens / sem itens), no bloco ADMIN OFERENDAS.
@@ -196,11 +214,15 @@ const dadosPessoas = (ev, g) => ({ titulo: `${ev.nome} · ${nomeGrupo(g)}`, data
 // tipo 'pessoas' (Lista de pessoas) ou 'itens' (Lista de itens). As imagens são feitas quando a janela abre:
 // o compartilhar do celular só funciona logo depois de um toque.
 const gruposComGente = (ev) => ev.grupos.filter((g) => g.membros.length);
+const transportesComGente = (ev) => (ev.transportes || []).filter((t) => t.pessoas.length);
+const dadosTransporte = (ev, t) => ({ titulo: `${ev.nome} · ${t.descricao}`, data: ev.data, responsavel: t.responsavel, rotulo: 'TRANSPORTE',
+  listas: porListaIemanja(t.pessoas).map(([lista, ps]) => [lista, ps.map((p) => ({ nome: p.nome, status: [[p.pago ? 'Pago' : 'Não pago', p.pago], [p.pulseira ? 'Pulseira ok' : 'Pulseira pendente', p.pulseira]] }))]) });
 const gruposComItens = (ev) => ev.grupos.filter((g) => g.itens.length);
 const gruposPara = (ev, tipo) => (tipo === 'itens' ? gruposComItens(ev) : gruposComGente(ev));
 const dadosDe = (ev, g, tipo) => (tipo === 'itens' ? paraCompartilhar(ev, g) : dadosPessoas(ev, g));
 const tipoTodas = () => ui.todas?.tipo || 'pessoas';
-const chaveTodas = (ev) => JSON.stringify([tipoTodas(), ...gruposPara(ev, tipoTodas()).map((g) => dadosDe(ev, g, tipoTodas()))]);
+const chaveTodas = (ev) => JSON.stringify([tipoTodas(), ...gruposPara(ev, tipoTodas()).map((g) => dadosDe(ev, g, tipoTodas())),
+  ...(tipoTodas() === 'pessoas' ? transportesComGente(ev).map((t) => dadosTransporte(ev, t)) : [])]);
 const todasProntas = (ev) => !!(ui.todas?.imgs && ui.todas.key === chaveTodas(ev));
 async function prepararTodas(ev) {
   if (!ev || todasProntas(ev) || ui.todas.gerando) return;
@@ -213,6 +235,12 @@ async function prepararTodas(ev) {
       const blob = tipo === 'itens' ? await gerarImagemOferenda(paraCompartilhar(ev, g)) : await gerarImagemPessoas(dadosPessoas(ev, g));
       imgs.push({ blob, url: URL.createObjectURL(blob), nome: `${tipo}-${arquivo(g)}-${ev.data}.png`, grupo: nomeGrupo(g) });
     }
+    if (tipo === 'pessoas') {
+      for (const t of transportesComGente(ev)) {
+        const blob = await gerarImagemPessoas(dadosTransporte(ev, t));
+        imgs.push({ blob, url: URL.createObjectURL(blob), nome: `transporte-${arquivo({ nome: t.descricao })}-${ev.data}.png`, grupo: '🚗 ' + t.descricao });
+      }
+    }
     (ui.todas.imgs || []).forEach((i) => URL.revokeObjectURL(i.url));
     ui.todas.imgs = imgs;
     ui.todas.key = key;
@@ -221,6 +249,13 @@ async function prepararTodas(ev) {
   avisar();
   // Trocou de tipo enquanto preparava: prepara de novo.
   if (ui.todas.aberta && !todasProntas(ev)) prepararTodas(ev);
+}
+// Imagem da lista de um transporte (nomes e status, em duas colunas).
+async function imgTransporte(id) {
+  const ev = eventoAberto();
+  const t = (ev?.transportes || []).find((x) => x.id === id);
+  if (!t) return;
+  try { compartilharPng(await gerarImagemPessoas(dadosTransporte(ev, t)), `transporte-${arquivo({ nome: t.descricao })}-${ev.data}.png`, `${ev.nome} · ${t.descricao}`); } catch (e) { toast(e.message); }
 }
 const abrirTodas = (tipo) => { ui.todas = { ...(ui.todas || {}), tipo, aberta: true }; avisar(); prepararTodas(eventoAberto()); };
 const arquivosTodas = () => ui.todas.imgs.map((i) => new File([i.blob], i.nome, { type: 'image/png' }));
@@ -252,8 +287,9 @@ function janelaEscolha() {
   return `<div class="modal-fundo" role="dialog" aria-modal="true" aria-labelledby="iem-esc-t"><div class="modal">
     <h3 id="iem-esc-t"><span class="wa-ico" aria-hidden="true">${ICONE_WHATS}</span> ${itens ? 'Lista de itens' : 'Lista de pessoas'}</h3>
     <p style="margin:0">De qual oferenda?</p>
-    <div class="iem-escolha"><button class="btn wa-bt" data-act="iemescolhe" data-g="todas" ${com.length ? '' : 'disabled'}><b>Todas as oferendas</b> <small>· ${com.length}</small></button>
-      ${ev.grupos.map((g) => `<button class="btn" data-act="iemescolhe" data-g="${g.id}" ${com.includes(g) ? '' : 'disabled'}><b>${esc(nomeGrupo(g))}</b> <small class="muted">· ${n(g)}</small></button>`).join('')}</div>
+    <div class="iem-escolha"><button class="btn wa-bt" data-act="iemescolhe" data-g="todas" ${com.length || (!itens && transportesComGente(ev).length) ? '' : 'disabled'}><b>${itens ? 'Todas as oferendas' : 'Todas (oferendas e transportes)'}</b> <small>· ${com.length + (itens ? 0 : transportesComGente(ev).length)}</small></button>
+      ${ev.grupos.map((g) => `<button class="btn" data-act="iemescolhe" data-g="${g.id}" ${com.includes(g) ? '' : 'disabled'}><b>${esc(nomeGrupo(g))}</b> <small class="muted">· ${n(g)}</small></button>`).join('')}
+      ${itens ? '' : (ev.transportes || []).map((t) => `<button class="btn" data-act="iemescolhe" data-g="tr:${t.id}" ${t.pessoas.length ? '' : 'disabled'}><b>🚗 ${esc(t.descricao)}</b> <small class="muted">· ${t.pessoas.length} ${t.pessoas.length === 1 ? 'pessoa' : 'pessoas'}</small></button>`).join('')}</div>
     <div class="row" style="justify-content:flex-end"><button class="btn" data-act="iemescolhafechar">Voltar</button></div></div></div>`;
 }
 
@@ -281,19 +317,63 @@ function blocoEvento(ev) {
   const adm = comoAdmin(ev);
   const grupos = `<div class="iem-grupos">${ev.grupos.map((g) => cardGrupo(ev, g, adm)).join('')}</div>`;
   const cabecalho = `<div class="datehead"><span class="eyebrow">${dataBR(ev.data)}</span><span class="dia of-titulo">${esc(ev.nome)}</span><span class="ent">${esc(Dia(ev.data))}</span></div>`;
-  if (!adm) return `<div class="card iem-topo">${cabecalho}${grupos}</div>`;
+  if (!adm) return `<div class="card iem-topo">${cabecalho}${grupos}</div>${blocoTransporte(ev, false)}`;
   // Admin: ⚙️ Configurações (minimizado) em cima, separado do bloco 🕯️ Oferendas.
   return `${blocoConfig(ev)}<div class="card iem-topo">${cabecalho}
     <div class="of-sec"><h2><span aria-hidden="true">🕯️</span> Oferendas</h2><span class="of-sec-n">${ev.grupos.length}</span></div>
     ${grupos}</div>
+    ${blocoTransporte(ev, true)}
     ${souRoot() ? blocoSorteio(ev) : ''}`;
 }
 
-// Bloco ADMIN OFERENDAS (⚙️ Configurações do evento): começa minimizado; abre sozinho enquanto edita ou mexe nas categorias.
+// ---------- 🚗 Transporte: aparece quando o evento tem algum. Todos veem nomes e status; os admins editam. ----------
+function blocoTransporte(ev, adm) {
+  const L = ev.transportes || [];
+  if (!L.length) return '';
+  return `<div class="card iem-topo"><div class="of-sec"><h2><span aria-hidden="true">🚗</span> Transporte</h2><span class="of-sec-n">${L.length}</span></div>
+    <div class="iem-grupos">${L.map((t) => cardTransporte(ev, t, adm && !ev.encerradoEm)).join('')}</div></div>`;
+}
+
+function cardTransporte(ev, t, adm) {
+  const k = 't:' + t.id;
+  const aberto = ui.abertos.has(k);
+  const cab = `<button class="grp-h dobra iem-cab" data-act="iemdobra" data-k="${k}" aria-expanded="${aberto}"><span class="iem-tit"><b>${esc(t.descricao)}</b><small class="muted">${t.responsavel ? 'Responsável: ' + esc(t.responsavel) : 'Sem responsável'}</small></span><span class="of-res iem-pct"><b>${t.pessoas.length}</b></span>${seta(k)}</button>`;
+  if (!aberto) return `<div class="card iem-grupo">${cab}</div>`;
+  const kp = 'tp:' + t.id;   // presente = lista de pessoas fechada (começa aberta)
+  const pessoasAbertas = !ui.abertos.has(kp);
+  const st = (p, campo, sim, nao, cls) => {
+    const v = !!p[campo];
+    const rot = `${campo === 'pago' ? '💰' : '🎟️'} ${v ? sim : nao}`;
+    return adm ? `<button class="st-med tr-st ${v ? cls[0] : cls[1]}" data-act="iemtrst" data-t="${t.id}" data-c="${esc(p.chave)}" data-campo="${campo}" data-v="${v ? 0 : 1}" title="Tocar para mudar">${rot}</button>`
+      : `<span class="st-med ${v ? cls[0] : cls[1]}">${rot}</span>`;
+  };
+  const linha = (p) => `<div class="tr-p"><span class="tr-nome">${esc(p.nome)}</span><span class="tr-sts">${st(p, 'pago', 'Pago', 'Não pago', ['pago', 'nao_pago'])}${st(p, 'pulseira', 'Entregue', 'Pendente', ['entregue', 'pendente'])}</span>
+    ${adm ? `<button class="btn small tr-x" data-act="iemtrretirar" data-t="${t.id}" data-c="${esc(p.chave)}" aria-label="Tirar ${esc(p.nome)} do transporte">✕</button>` : ''}</div>`;
+  const listas = porListaIemanja(t.pessoas).map(([lista, ps]) => `<div class="iem-pg-l"><h4 class="iem-pg-t">${esc(lista)} <span>· ${ps.length}</span></h4><div class="tr-lista">${ps.map(linha).join('')}</div></div>`).join('');
+  const add = adm ? `<div class="tr-add"><span class="ofg-tit">Adicionar pessoas</span>
+      <div class="cp-bts"><button class="btn small" data-act="iemtrpuxar" data-t="${t.id}" data-g="corrente">${icone('＋', 'Corrente + curimba')}</button><button class="btn small" data-act="iemtrpuxar" data-t="${t.id}" data-g="alunos">${icone('＋', 'Alunos')}</button></div>
+      <div class="iem-add"><input type="text" id="tr-nome-${t.id}" maxlength="60" placeholder="Ou digite o nome de uma pessoa" aria-label="Nome da pessoa"><button class="btn small primary" data-act="iemtrmanual" data-t="${t.id}">Adicionar</button></div></div>` : '';
+  return `<div class="card iem-grupo">${cab}${add}
+    <div class="iem-mini"><button class="iem-itens-bt" data-act="iemdobra" data-k="${kp}" aria-expanded="${pessoasAbertas}"><span><span aria-hidden="true">👥</span> Pessoas <span class="iem-itens-n">${t.pessoas.length}</span></span><span class="iem-itens-acao">${pessoasAbertas ? 'Fechar ▾' : 'Ver pessoas ▸'}</span></button>
+      ${pessoasAbertas ? (listas ? `<div class="iem-pg">${listas}</div>` : '<p class="muted" style="margin:0">Ninguém neste transporte ainda.</p>') : ''}</div></div>`;
+}
+
+// Formulário do "+ Novo transporte" (ADMIN OFERENDAS): descrição e responsável da corrente.
+function formTransporte() {
+  const C = estado.iemanja.candidatos;
+  const N = ui.novoTransp;
+  const pessoas = [...(C?.corrente || []), ...(C?.curimba || [])].sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+  return `<div class="iem-cfg-sec tr-form"><span class="ofg-tit">Novo transporte</span>
+    <label class="field">Descrição<input type="text" data-act="iemtrcampo" data-campo="descricao" maxlength="80" value="${esc(N.descricao || '')}" placeholder="Ex.: Van 1, Ônibus da manhã"></label>
+    <label class="field">Responsável<select data-act="iemtrcampo" data-campo="responsavelId"><option value="">— escolha da corrente —</option>${pessoas.map((p) => `<option value="${p.pessoaId}" ${p.pessoaId === N.responsavelId ? 'selected' : ''}>${esc(p.nome)}</option>`).join('')}</select></label>
+    <div class="cp-bts"><button class="btn" data-act="iemnovotransp">Cancelar</button><button class="btn primary" data-act="iemtrcriar">Criar</button></div></div>`;
+}
+
+// Bloco ADMIN OFERENDAS (⚙️ Configurações do evento): começa minimizado; abre sozinho enquanto edita ou cria um transporte.
 function blocoConfig(ev) {
   const k = 'cfg';
   const editando = ui.edit?.id === ev.id;
-  const aberto = ui.abertos.has(k) || editando || ui.categorias;
+  const aberto = ui.abertos.has(k) || editando || !!ui.novoTransp;
   const cab = `<button class="grp-h dobra" data-act="iemdobra" data-k="${k}" aria-expanded="${aberto}"><h2><span aria-hidden="true">⚙️</span> Configurações</h2><span class="count"><span class="seta" aria-hidden="true">${aberto ? '▾' : '▸'}</span></span></button>`;
   if (!aberto) return `<div class="card adm adm-oferendas iem-cfg">${cab}</div>`;
   const dados = editando
@@ -307,8 +387,8 @@ function blocoConfig(ev) {
     <div class="cp-bts">${editando ? `<button class="btn" data-act="iemcancelar">${icone('✕', 'Cancelar')}</button><button class="btn primary" data-act="iemsalvar">${icone('✓', 'Salvar')}</button>` : `<button class="btn" data-act="iemeditar">${icone('✎', 'Editar')}</button>`}
       <button class="btn" data-act="iemjanela" data-t="encerrar">${icone('🔒', 'Encerrar')}</button></div>
     ${dados}
-    <div class="cp-bts"><button class="btn" data-act="iemjanela" data-t="novaOferenda">${icone('＋', 'Nova oferenda')}</button><button class="btn ${ui.categorias ? 'primary' : ''}" data-act="iemcats" aria-pressed="${ui.categorias}">${icone('🏷️', `Categorias (${categoriasDe(ev).length})`)}</button></div>
-    ${ui.categorias ? blocoCategorias(ev) : ''}
+    <div class="cp-bts"><button class="btn" data-act="iemjanela" data-t="novaOferenda">${icone('＋', 'Nova oferenda')}</button><button class="btn ${ui.novoTransp ? 'primary' : ''}" data-act="iemnovotransp" aria-pressed="${!!ui.novoTransp}">${icone('🚗', 'Novo transporte')}</button></div>
+    ${ui.novoTransp ? formTransporte() : ''}
     <div class="iem-wa-bts">${wa('iemescolherpessoas', 'Lista de pessoas')}${wa('iemescolheritens', 'Lista de itens')}</div></div>`;
 }
 
@@ -322,10 +402,9 @@ function blocoAssociar(ev) {
   if (!C) return '';
   const ja = new Set(ev.grupos.flatMap((g) => g.membros.map((m) => m.chave)));
   const s = ui.sel;
-  return `<div class="ofg-sec iem-cfg-sec"><span class="ofg-tit">Associar pessoa a uma oferenda</span>
-    <div class="iem-add iem-add2"><select data-act="iemsel" data-campo="assocP" aria-label="Pessoa"><option value="">Pessoa…</option>${opcoesPessoas(C, ja).replace(`value="${esc(s.assocP || '')}"`, `value="${esc(s.assocP || '')}" selected`)}</select>
+  return `<div class="iem-add iem-add2"><select data-act="iemsel" data-campo="assocP" aria-label="Pessoa"><option value="">Pessoa…</option>${opcoesPessoas(C, ja).replace(`value="${esc(s.assocP || '')}"`, `value="${esc(s.assocP || '')}" selected`)}</select>
       <select data-act="iemsel" data-campo="assocG" aria-label="Oferenda"><option value="">Oferenda…</option>${ev.grupos.map((g) => `<option value="${g.id}" ${g.id === s.assocG ? 'selected' : ''}>${esc(nomeGrupo(g))}</option>`).join('')}</select></div>
-    <div class="cp-bts iem-uma"><button class="btn" data-act="iemassociar">${icone('＋', 'Associar')}</button></div></div>`;
+    <div class="cp-bts iem-uma"><button class="btn" data-act="iemassociar">${icone('＋', 'Associar')}</button></div>`;
 }
 
 // Trocar duas pessoas de oferendas diferentes (cada uma vai para a oferenda da outra), depois de confirmar.
@@ -335,20 +414,19 @@ function blocoTrocar(ev) {
   const a = todos.find((m) => m.chave === s.trocaA);
   const outros = a ? todos.filter((m) => m.grupoId !== a.grupoId) : [];
   const op = (m, sel) => `<option value="${esc(m.chave)}" ${m.chave === sel ? 'selected' : ''}>${esc(m.nome)} · ${esc(m.oferenda)}</option>`;
-  return `<div class="ofg-sec iem-cfg-sec"><span class="ofg-tit">Trocar pessoas de oferenda</span>
-    <div class="iem-add iem-add2"><select data-act="iemsel" data-campo="trocaA" aria-label="Primeira pessoa"><option value="">Pessoa…</option>${todos.map((m) => op(m, s.trocaA)).join('')}</select>
+  return `<div class="iem-add iem-add2"><select data-act="iemsel" data-campo="trocaA" aria-label="Primeira pessoa"><option value="">Pessoa…</option>${todos.map((m) => op(m, s.trocaA)).join('')}</select>
       <select data-act="iemsel" data-campo="trocaB" aria-label="Trocar com" ${a ? '' : 'disabled'}><option value="">Trocar com…</option>${outros.map((m) => op(m, s.trocaB)).join('')}</select></div>
-    <div class="cp-bts iem-uma"><button class="btn" data-act="iemtrocar">${icone('⇄', 'Trocar')}</button></div></div>`;
+    <div class="cp-bts iem-uma"><button class="btn" data-act="iemtrocar">${icone('⇄', 'Trocar')}</button></div>`;
 }
 
-// Painel do botão Categorias: a lista do evento, com subir, excluir e adicionar.
+// Categorias do evento (seção do bloco Configuração evento): subir, excluir e adicionar.
 function blocoCategorias(ev) {
   const l = categoriasDe(ev);
   const usos = (c) => ev.grupos.reduce((n, g) => n + g.itens.filter((i) => (i.categoria || '').toLocaleLowerCase('pt-BR') === c.toLocaleLowerCase('pt-BR')).length, 0);
   const linhas = l.map((c, k) => `<div class="iem-p"><span>${esc(c)} <small class="muted">· ${usos(c)} ${usos(c) === 1 ? 'item' : 'itens'}</small></span><span class="iem-cat-bts">
       <button class="btn small" data-act="iemcatsobe" data-k="${k}" ${k ? '' : 'disabled'} aria-label="Subir ${esc(c)}">↑</button>
       <button class="btn small" data-act="iemcatdel" data-k="${k}" aria-label="Excluir ${esc(c)}">✕</button></span></div>`).join('');
-  return `<div class="iem-cats"><div class="grp-h"><h3>🏷️ Categorias</h3><button class="btn small" data-act="iemcats">Fechar</button></div>
+  return `<div class="iem-cats">
     <p class="muted" style="margin:0;font-size:.88rem">Valem para todas as oferendas deste evento. Os itens aparecem nesta ordem.</p>
     <div class="iem-lista">${linhas || '<p class="muted" style="margin:0">Nenhuma categoria ainda.</p>'}</div>
     <form class="iem-add" data-form="iemcat" autocomplete="off"><input type="text" name="categoria" maxlength="40" required placeholder="Nova categoria (ex.: Flores)" aria-label="Nova categoria"><button class="btn primary" type="submit">Adicionar</button></form></div>`;
@@ -358,7 +436,53 @@ function blocoHistorico(lista) {
   if (!lista.length) return '';
   const k = 'hist';
   return `<div class="card"><button class="grp-h dobra" data-act="iemdobra" data-k="${k}" aria-expanded="${ui.abertos.has(k)}"><h2>🧾 Histórico</h2><span class="count">${lista.length} ${seta(k)}</span></button>
-    ${ui.abertos.has(k) ? lista.map((ev) => { const ke = 'e:' + ev.id; return `<div class="iem-mini"><button class="grp-h dobra" data-act="iemdobra" data-k="${ke}" aria-expanded="${ui.abertos.has(ke)}"><h3>${esc(ev.nome)} · ${dataBR(ev.data)}</h3><span class="count">${seta(ke)}</span></button>${ui.abertos.has(ke) ? `<div class="iem-grupos">${ev.grupos.map((g) => cardGrupo(ev, g, false)).join('')}</div>` : ''}</div>`; }).join('') : ''}</div>`;
+    ${ui.abertos.has(k) ? lista.map((ev) => { const ke = 'e:' + ev.id; return `<div class="iem-mini iem-hist"><div class="iem-hist-topo"><button class="grp-h dobra" data-act="iemdobra" data-k="${ke}" aria-expanded="${ui.abertos.has(ke)}"><h3>${esc(ev.nome)} · ${dataBR(ev.data)}</h3><span class="count">${seta(ke)}</span></button><span class="iem-concl"><span aria-hidden="true">✅</span> Concluído</span></div>
+      ${comoAdmin(ev) ? `<button class="btn wa-bt iem-resumo-bt" data-act="iemresumo" data-id="${ev.id}"><span class="wa-ico" aria-hidden="true">${ICONE_WHATS}</span> Resumo</button>` : ''}
+      ${ui.abertos.has(ke) ? `<div class="iem-grupos">${ev.grupos.map((g) => cardGrupo(ev, g, false)).join('')}</div>` : ''}</div>`; }).join('') : ''}</div>`;
+}
+
+// ---------- Resumo do evento encerrado (texto ou imagem) ----------
+function dadosResumo(ev) {
+  const chaves = new Set(ev.grupos.flatMap((g) => g.membros.map((m) => m.chave)));
+  return {
+    titulo: ev.nome, data: ev.data, participantes: chaves.size,
+    oferendas: ev.grupos.map((g) => ({
+      nome: nomeGrupo(g), responsavel: g.responsavel || '', pessoas: g.membros.map((m) => m.nome),
+      contribuiram: g.membros.filter((m) => g.itens.some((i) => i.doacoes.some((d) => d.chave === m.chave))).length,
+      itens: g.itens.length, entregues: g.itens.filter((i) => i.entregue).length,
+    })),
+    transportes: (ev.transportes || []).map((t) => ({ descricao: t.descricao, responsavel: t.responsavel || '', pessoas: t.pessoas.length })),
+  };
+}
+const barraTxt = (feito, total) => {
+  const pct = total ? Math.round((feito * 100) / total) : 0;
+  const n = Math.round(pct / 10);
+  return `${'▰'.repeat(n)}${'▱'.repeat(10 - n)} ${pct}%`;
+};
+function textoResumo(ev) {
+  const r = dadosResumo(ev);
+  const L = [`*RESUMO · ${r.titulo}*`, `${dataBR(r.data)} · ✅ Concluído`, `👥 ${r.participantes} participantes · 🕯️ ${r.oferendas.length} ${r.oferendas.length === 1 ? 'oferenda' : 'oferendas'}`, ''];
+  r.oferendas.forEach((o) => {
+    const mais = o.pessoas.length > 8 ? ` e mais ${o.pessoas.length - 8}` : '';
+    L.push(`*${o.nome}* · Resp.: ${o.responsavel || '—'}`);
+    L.push(`Pessoas (${o.pessoas.length}): ${o.pessoas.slice(0, 8).join(', ') || '—'}${mais}`);
+    L.push(`🙋 Contribuíram: ${o.contribuiram} de ${o.pessoas.length}  ${barraTxt(o.contribuiram, o.pessoas.length)}`);
+    L.push(`📦 Itens entregues: ${o.entregues} de ${o.itens}  ${barraTxt(o.entregues, o.itens)}`, '');
+  });
+  if (r.transportes.length) {
+    L.push('🚗 *Transporte*');
+    r.transportes.forEach((t) => L.push(`• ${t.descricao} — Resp.: ${t.responsavel || '—'} (${t.pessoas} ${t.pessoas === 1 ? 'pessoa' : 'pessoas'})`));
+  }
+  return L.join('\n').trimEnd();
+}
+function janelaResumo() {
+  const ev = ui.resumo && estado.iemanja.eventos.find((e) => e.id === ui.resumo);
+  if (!ev) return '';
+  return `<div class="modal-fundo" role="dialog" aria-modal="true" aria-labelledby="iem-res-t"><div class="modal">
+    <h3 id="iem-res-t"><span class="wa-ico" aria-hidden="true">${ICONE_WHATS}</span> Resumo do evento</h3>
+    <p style="margin:0"><b>${esc(ev.nome)}</b>: compartilhar como texto ou como imagem?</p>
+    <div class="iem-wa-bts"><a class="btn wa-bt" href="https://wa.me/?text=${encodeURIComponent(textoResumo(ev))}" target="_blank" rel="noopener" data-act="iemresumofechar">${icone('📝', 'Texto')}</a><button class="btn wa-bt" data-act="iemresumoimg" data-id="${ev.id}">${icone('🖼️', 'Imagem')}</button></div>
+    <div class="row" style="justify-content:flex-end"><button class="btn" data-act="iemresumofechar">Voltar</button></div></div></div>`;
 }
 
 const eventoAberto = () => estado.iemanja.eventos.find((e) => !e.encerradoEm);
@@ -377,6 +501,13 @@ function textosJanela(j) {
     const resp = i.doacoes.map((d) => `${esc(d.nome)} (${qtdTxt(d.quantidade, i.unidade)})`).join(', ');
     return ['Confirmar entrega', `Confirma que <b>${esc(i.nome)}</b> foi entregue?${resp ? `<br><span class="muted">Responsáveis: ${resp}</span>` : ''}`, 'OK', 'primary', 'Cancelar'];
   }
+  if (j.t === 'excluirTransporte' || j.t === 'trRetirar') {
+    const t = (eventoAberto()?.transportes || []).find((x) => x.id === j.tr);
+    if (!t) return null;
+    if (j.t === 'excluirTransporte') return ['Excluir este transporte?', `<b>${esc(t.descricao)}</b> e a lista de pessoas dele saem do evento. Não dá para desfazer.`, 'Excluir transporte', 'danger', 'Cancelar'];
+    const p = t.pessoas.find((x) => x.chave === j.c);
+    return p ? ['Tirar do transporte?', `Tirar <b>${esc(p.nome)}</b> de <b>${esc(t.descricao)}</b>?`, 'OK', 'danger', 'Cancelar'] : null;
+  }
   if (j.t === 'trocar') {
     const todos = membrosDoEvento(eventoAberto());
     const [a, b] = [j.a, j.b].map((k) => todos.find((m) => m.chave === k));
@@ -391,7 +522,7 @@ function textosJanela(j) {
     if (!m) return null;
     return ['Tirar do grupo?', `Tem certeza que quer tirar <b>${esc(m.nome)}</b> do grupo <b>${esc(nomeGrupo(g))}</b>?`, 'OK', 'danger', 'Cancelar'];
   }
-  if (j.t === 'excluirGrupo') return ['Excluir este grupo?', `<b>${esc(nomeGrupo(g))}</b>: os itens, as doações e as pessoas deste grupo saem do evento. Não dá para desfazer.`, 'Excluir grupo', 'danger'];
+  if (j.t === 'excluirGrupo') return ['Excluir esta oferenda?', `<b>${esc(nomeGrupo(g))}</b>: os itens, as doações e as pessoas desta oferenda saem do evento. Não dá para desfazer.`, 'Excluir oferenda', 'danger', 'Cancelar'];
   const r = ui.rascunho[j.g];
   return ['Adicionar este item?', `${r.categoria ? `${esc(r.categoria)}: ` : ''}<b>${esc(qtdTxt(r.quantidade, r.unidade))}</b> · ${esc(r.nome)} no grupo <b>${esc(nomeGrupo(g))}</b>.<br><span class="muted">Entrega: ${textoEntrega(r)}</span>`, 'Adicionar', 'primary'];
 }
@@ -421,7 +552,7 @@ export function conteudo() {
     <div class="cp-bts"><button class="btn primary" data-act="iemnovo">${icone('＋', 'Novo evento')}</button></div></div>` : '';
   // Detalhes do evento em andamento, acima do bloco do evento (ADMIN).
   const det = aberto ? blocoDetalhes(aberto.id, aberto.detalhes, comoAdmin(aberto), 'iemdetsalvar') : '';
-  return `${novo}${det}${aberto ? blocoEvento(aberto) : ''}${blocoHistorico(I.eventos.filter((e) => e.encerradoEm))}${janela()}${janelaEscolha()}${janelaItens()}${janelaTodas()}`;
+  return `${novo}${det}${aberto ? blocoEvento(aberto) : ''}${blocoHistorico(I.eventos.filter((e) => e.encerradoEm))}${janela()}${janelaEscolha()}${janelaItens()}${janelaTodas()}${janelaResumo()}`;
 }
 
 // Oferenda criada ou excluída durante a edição: mantém o que já foi escolhido nas outras.
@@ -449,7 +580,11 @@ export const cliques = {
     const { t, g, i, c } = ui.janela;
     ui.trocaPendente = ui.janela;
     ui.janela = null;
-    if (t === 'trocar') {
+    if (t === 'excluirTransporte') {
+      if (await acaoIemanja('transporteExcluir', { id: eventoAberto().id, transporteId: ui.trocaPendente.tr })) { ui.sel.excluir = ''; toast('Transporte excluído.'); }
+    } else if (t === 'trRetirar') {
+      await acaoIemanja('transportePessoa', { id: eventoAberto().id, transporteId: ui.trocaPendente.tr, chave: c, remover: true });
+    } else if (t === 'trocar') {
       if (await acaoIemanja('trocar', { id: eventoAberto().id, a: ui.trocaPendente.a, b: ui.trocaPendente.b })) { ui.sel.trocaA = ''; ui.sel.trocaB = ''; toast('Troca feita.'); }
     } else if (t === 'retirar') {
       const nome = grupoDe(g).g?.membros.find((m) => m.chave === c)?.nome || 'A pessoa';
@@ -462,11 +597,11 @@ export const cliques = {
       // A lista de itens abre para mostrar o item novo.
       if (await acaoIemanja('item', { grupoId: g, ...ui.rascunho[g] })) { delete ui.rascunho[g]; ui.abertos.add('i:' + g); toast('Item adicionado.'); }
     } else if (t === 'excluirGrupo') {
-      if (await acaoIemanja('grupoExcluir', { grupoId: g })) { sincronizarEdicao(); toast('Grupo excluído.'); }
+      if (await acaoIemanja('grupoExcluir', { grupoId: g })) { sincronizarEdicao(); ui.sel.excluir = ''; toast('Oferenda excluída.'); }
     } else {
       const id = eventoAberto()?.id;
       const op = { sortear: 'sortear', cancelar: 'cancelarSorteio', encerrar: 'encerrar' }[t];
-      if (await acaoIemanja(op, { id })) { if (t === 'encerrar') ui.edit = null; toast({ sortear: 'Sorteio realizado.', cancelar: 'Sorteio cancelado.', encerrar: 'Evento encerrado.' }[t]); }
+      if (await acaoIemanja(op, { id })) { if (t === 'encerrar') { ui.edit = null; ui.abertos.add('hist'); } toast({ sortear: 'Sorteio realizado.', cancelar: 'Sorteio cancelado.', encerrar: 'Evento encerrado.' }[t]); }
     }
     avisar();
   },
@@ -481,6 +616,15 @@ export const cliques = {
   // Sorteio: "Listas de pessoas" de todos os grupos — abre a janela e já prepara as imagens.
   iemtodaspessoas() { abrirTodas('pessoas'); },
   // ⚙️ Configurações: Lista de pessoas / Lista de itens → escolhe a oferenda (ou todas).
+  iemresumo(el) { ui.resumo = el.dataset.id; avisar(); },
+  iemresumofechar() { ui.resumo = null; avisar(); },
+  async iemresumoimg(el) {
+    ui.resumo = null;
+    avisar();
+    const ev = estado.iemanja.eventos.find((e) => e.id === el.dataset.id);
+    if (!ev) return;
+    try { compartilharPng(await gerarImagemResumo(dadosResumo(ev)), `resumo-${arquivo({ nome: ev.nome })}-${ev.data}.png`, `Resumo · ${ev.nome}`); } catch (e) { toast(e.message); }
+  },
   iemescolherpessoas() { ui.escolha = 'pessoas'; avisar(); },
   iemescolheritens() { ui.escolha = 'itens'; avisar(); },
   iemescolhafechar() { ui.escolha = null; avisar(); },
@@ -488,7 +632,12 @@ export const cliques = {
     const tipo = ui.escolha;
     ui.escolha = null;
     const g = el.dataset.g;
-    if (tipo === 'pessoas') { if (g === 'todas') abrirTodas('pessoas'); else { avisar(); cliques.iemimgpessoas(el); } return; }
+    if (tipo === 'pessoas') {
+      if (g === 'todas') abrirTodas('pessoas');
+      else if (g.startsWith('tr:')) { avisar(); imgTransporte(g.slice(3)); }
+      else { avisar(); cliques.iemimgpessoas(el); }
+      return;
+    }
     ui.compItens = g;
     avisar();
   },
@@ -519,7 +668,34 @@ export const cliques = {
     } catch (e) { toast(e.message); }
   },
   iemdetsalvar(el) { return salvarDetalhes((detalhes) => acaoIemanja('detalhes', { id: el.dataset.id, detalhes })); },
-  iemcats() { ui.categorias = !ui.categorias; avisar(); },
+  // ---------- Transporte ----------
+  iemnovotransp() { ui.novoTransp = ui.novoTransp ? null : { descricao: '', responsavelId: '' }; avisar(); },
+  async iemtrcriar() {
+    const N = ui.novoTransp || {};
+    const descricao = document.querySelector('[data-act="iemtrcampo"][data-campo="descricao"]')?.value ?? N.descricao;
+    const responsavelId = document.querySelector('[data-act="iemtrcampo"][data-campo="responsavelId"]')?.value ?? N.responsavelId;
+    if (!String(descricao || '').trim()) { toast('Informe a descrição do transporte.'); return; }
+    if (!responsavelId) { toast('Escolha o responsável.'); return; }
+    if (await acaoIemanja('transporteSalvar', { id: eventoAberto().id, descricao, responsavelId })) { ui.novoTransp = null; toast('Transporte criado.'); avisar(); }
+  },
+  async iemtrpuxar(el) {
+    if (await acaoIemanja('transporteIncluir', { id: eventoAberto().id, transporteId: el.dataset.t, grupo: el.dataset.g })) toast(el.dataset.g === 'alunos' ? 'Alunos adicionados.' : 'Corrente e curimba adicionadas.');
+  },
+  async iemtrmanual(el) {
+    const campo = document.getElementById('tr-nome-' + el.dataset.t);
+    const nome = campo?.value.trim();
+    if (!nome) { toast('Digite o nome da pessoa.'); return; }
+    if (await acaoIemanja('transporteIncluir', { id: eventoAberto().id, transporteId: el.dataset.t, nome })) toast('Pessoa adicionada.');
+  },
+  iemtrst(el) { acaoIemanja('transportePessoa', { id: eventoAberto().id, transporteId: el.dataset.t, chave: el.dataset.c, [el.dataset.campo]: el.dataset.v === '1' }); },
+  iemtrretirar(el) { ui.janela = { t: 'trRetirar', tr: el.dataset.t, c: el.dataset.c }; avisar(); },
+  // Configuração evento (root): excluir oferenda ou transporte, depois de confirmar.
+  iemexcluir() {
+    const v = ui.sel.excluir || '';
+    if (!v) { toast('Escolha a oferenda ou o transporte.'); return; }
+    ui.janela = v.startsWith('g:') ? { t: 'excluirGrupo', g: v.slice(2) } : { t: 'excluirTransporte', tr: v.slice(2) };
+    avisar();
+  },
   iemcatsobe(el) {
     const l = [...categoriasDe(eventoAberto())];
     const k = Number(el.dataset.k);
@@ -617,6 +793,7 @@ export async function enviar(form) {
 }
 
 export const mudancas = {
+  iemtrcampo(t) { if (ui.novoTransp) ui.novoTransp[t.dataset.campo] = t.value; },
   // Combos de Associar e Trocar (bloco ADMIN ROOT): guarda a escolha; trocar a primeira pessoa limpa a segunda.
   iemsel(t) {
     ui.sel[t.dataset.campo] = t.value;

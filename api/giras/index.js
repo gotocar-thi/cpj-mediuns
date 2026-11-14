@@ -8,7 +8,7 @@
 //                  { acao: 'videosPublicar', publicada: true|false }  → { publicada }
 // GET  /api/giras?lista=ausencias — ausências antecipadas (datas de hoje em diante ainda sem gira; admin)  → [{ data, pessoaId }]
 // POST /api/giras  { acao: 'ausenciaPrevia', data, pessoaId, ausente: true|false } (admin)  → ausências antecipadas
-// GET  /api/giras?lista=oracoes — orações dos últimos 7 dias (todos logados)  → [{ id, texto, criadoEm, expiraEm, apagar, reacoes, reagi }]
+// GET  /api/giras?lista=oracoes — orações (até 4 dias; toda sexta recomeça) — todos logados; aluno só as próprias  → [{ id, texto, criadoEm, expiraEm, apagar, reacoes, reagi }]
 // POST /api/giras  { acao: 'oracao', texto } (qualquer um logado) · { acao: 'excluirOracao', id } (quem pediu ou admin)
 //                  { acao: 'reagirOracao', id } (qualquer um logado; liga/desliga a 🕯️)  → orações
 // GET  /api/giras?lista=conduta — Gestão de Conduta e Risco: o root vê todos os relatos; os outros, só os próprios (e nada com o bloco desligado)
@@ -68,7 +68,7 @@ export default rota({
     }
     if (req.query.lista === 'oracoes') {
       const eu = await exigir(req);
-      if (eu.grupo) throw new HttpError(403, 'Este acesso não tem permissão para ver as orações.');
+      if (eu.grupo === 'curimba') throw new HttpError(403, 'Este acesso não tem permissão para ver as orações.');
       return oracoes(eu);
     }
     if (req.query.lista === 'conduta') {
@@ -113,7 +113,7 @@ export default rota({
     }
     if (ACOES_ORACOES.includes(b.acao)) {
       const eu = await exigir(req);
-      if (eu.grupo) throw new HttpError(403, 'Este acesso não tem permissão para alterar as orações.');
+      if (eu.grupo === 'curimba') throw new HttpError(403, 'Este acesso não tem permissão para alterar as orações.');
       return acaoOracao(eu, b);
     }
     if (ACOES_CONDUTA.includes(b.acao)) {

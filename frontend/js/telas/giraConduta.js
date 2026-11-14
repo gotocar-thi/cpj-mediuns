@@ -5,6 +5,7 @@
 
 import { estado, pode, carregarConduta, acaoConduta, avisar } from '../estado.js';
 import { esc, toast } from '../util.js';
+import { ICONE_WHATS } from './giraComum.js';
 
 const ehRoot = () => pode('usuarios:gerenciar');
 const relatos = () => estado.conduta?.relatos || [];
@@ -60,9 +61,12 @@ function itemRoot(c) {
           <span class="row"><button class="btn small primary" data-act="cdpublicar" data-id="${esc(c.id)}">Publicar</button><button class="btn small" data-act="cdcancel">Cancelar</button></span></div>`
         : `<button class="btn small primary cd-pub" data-act="askdel" data-k="cdpub:${esc(c.id)}">Publicar resposta</button>`}</div>`;
   }
+  // WhatsApp (padrão do app): compartilha o relato recebido, com quem abriu e quando.
+  const txt = `*Gestão de Conduta e Risco*\nDe: ${c.anonimo ? 'Sem identificação' : c.autorNome || '(sem nome)'}\nEm: ${quando(c.criadoEm)}\n\n${c.texto}`;
+  const wa = `<a class="btn wa-bt cd-wa" href="https://wa.me/?text=${encodeURIComponent(txt)}" target="_blank" rel="noopener"><span class="wa-ico" aria-hidden="true">${ICONE_WHATS}</span> Compartilhar</a>`;
   return `<div class="cd-item${lido ? '' : ' novo'}"><div class="cd-topo">${c.anonimo ? '<b class="cd-nome cd-anon">Sem identificação</b>' : `<b class="cd-nome">${esc(c.autorNome || '(sem nome)')}</b>`}
       <span class="muted cd-quando">${quando(c.criadoEm)}${c.editadoEm ? ' · editado' : ''}</span>${marca}</div>
-    <p class="cd-txt">${esc(c.texto)}</p>${resp}</div>`;
+    <p class="cd-txt">${esc(c.texto)}</p>${wa}${resp}</div>`;
 }
 
 export function cardConduta() {

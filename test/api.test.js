@@ -631,9 +631,20 @@ test('acessos alunos e curimba: nome do cadastro, dados restritos e eventos sem 
   assert.equal((await api('GET', '/api/pessoas', loginAluna.json.token)).status, 403);
   assert.equal((await api('GET', '/api/giras', loginAluna.json.token)).status, 403);
   assert.equal((await api('GET', '/api/giras?lista=eventos', loginAluna.json.token)).status, 200);
-  assert.equal((await api('GET', '/api/giras?lista=oracoes', loginAluna.json.token)).status, 403);
   assert.equal((await api('POST', '/api/auth/senha', loginAluna.json.token, { atual: 'x', nova: 'senha-forte-1' })).status, 403);
-  assert.equal((await api('POST', '/api/giras', loginAluna.json.token, { acao: 'oracao', texto: 'Oração de teste' })).status, 403);
+  // Orações: o aluno pede e vê só os próprios pedidos; não reage nem exclui. A corrente vê o pedido marcado como de aluno.
+  await api('POST', '/api/giras', ADMIN, { acao: 'oracao', texto: 'Pedido da corrente' });
+  const pedido = await api('POST', '/api/giras', loginAluna.json.token, { acao: 'oracao', texto: 'Oração da aluna' });
+  assert.equal(pedido.status, 200, JSON.stringify(pedido.json));
+  assert.deepEqual(pedido.json.map((o) => o.texto), ['Oração da aluna'], 'aluno só vê os próprios pedidos');
+  assert.equal(pedido.json[0].deAluno, true);
+  assert.equal(pedido.json[0].apagar, false, 'aluno não exclui');
+  assert.deepEqual((await api('GET', '/api/giras?lista=oracoes', loginAluna.json.token)).json.map((o) => o.texto), ['Oração da aluna']);
+  assert.equal((await api('POST', '/api/giras', loginAluna.json.token, { acao: 'reagirOracao', id: pedido.json[0].id })).status, 403);
+  const vistas = (await api('GET', '/api/giras?lista=oracoes', ADMIN)).json;
+  assert.equal(vistas.find((o) => o.texto === 'Oração da aluna').deAluno, true);
+  assert.equal(vistas.find((o) => o.texto === 'Pedido da corrente').deAluno, false);
+  for (const o of vistas) await api('POST', '/api/giras', ADMIN, { acao: 'excluirOracao', id: o.id });
 
   await api('POST', '/api/pessoas', ADMIN, { acao: 'curimbaAluno', nome: 'Aluna de Curimba' });
   await api('POST', '/api/pessoas', ADMIN, { acao: 'curimbaAluno', nome: 'Outra Aluna de Curimba' });
@@ -1861,4 +1872,36 @@ test('oferendas: kg e litro aceitam quantidade quebrada; as outras unidades só 
   assert.equal(Number(r.json.oferendas.find((x) => x.id === o.id).itens.find((i) => i.id === arroz.id).doacoes[0].quantidade), 0.5);
   assert.equal((await of({ acao: 'doarPor', itemId: arroz.id, pessoaId: RESP(), quantidade: 2 })).status, 400, 'não passa do que falta');
   await of({ acao: 'excluir', id: o.id });
+});
+
+test('orações: some em até 4 dias ou na sexta seguinte ao dia em que foi pedida (horário de Brasília)', async () => {
+  const exp = (iso) => sql(`select to_char(oracao_expira('${iso}'::timestamptz) at time zone 'America/Sao_Paulo', 'YYYY-MM-DD HH24:MI')`);
+  assert.equal(exp('2026-11-16 12:00-03'), '2026-11-20 00:00', 'segunda: vai até a 0h de sexta (antes dos 4 dias)');
+  assert.equal(exp('2026-11-19 12:00-03'), '2026-11-20 00:00', 'quinta: some na sexta');
+  assert.equal(exp('2026-11-20 10:00-03'), '2026-11-24 10:00', 'pedida na sexta: passa por aquela sexta e vale 4 dias');
+  assert.equal(exp('2026-11-21 09:00-03'), '2026-11-25 09:00', 'sábado: 4 dias');
+});
+
+test('iemanjá: transporte — admin cria, puxa a corrente, adiciona alguém, marca pago e pulseira; só o root exclui', async () => {
+  const iem = (b, tok = ADMIN) => api('POST', '/api/oferendas', tok, { acao: 'iemanja', ...b });
+  const ev = (await api('GET', '/api/oferendas?lista=iemanja', ADMIN)).json.eventos.find((e) => !e.encerradoEm);
+  assert.equal((await iem({ op: 'transporteSalvar', id: ev.id, descricao: 'Van 1' })).status, 400, 'sem responsável');
+  let r = await iem({ op: 'transporteSalvar', id: ev.id, descricao: 'Van 1', responsavelId: RESP() });
+  assert.equal(r.status, 200, JSON.stringify(r.json));
+  const t = r.json.eventos.find((e) => e.id === ev.id).transportes.find((x) => x.descricao === 'Van 1');
+  assert.equal(t.responsavel, 'Ana');
+  r = await iem({ op: 'transporteIncluir', id: ev.id, transporteId: t.id, grupo: 'corrente' });
+  const pessoas = r.json.eventos.find((e) => e.id === ev.id).transportes.find((x) => x.id === t.id).pessoas;
+  assert.ok(pessoas.length > 0 && pessoas.every((p) => ['Corrente', 'Curimba'].includes(p.lista)));
+  r = await iem({ op: 'transporteIncluir', id: ev.id, transporteId: t.id, nome: 'Visitante da Van' });
+  const vis = r.json.eventos.find((e) => e.id === ev.id).transportes.find((x) => x.id === t.id).pessoas.find((p) => p.nome === 'Visitante da Van');
+  assert.equal(vis.lista, 'Avulsos');
+  r = await iem({ op: 'transportePessoa', id: ev.id, transporteId: t.id, chave: vis.chave, pago: true });
+  r = await iem({ op: 'transportePessoa', id: ev.id, transporteId: t.id, chave: vis.chave, pulseira: true });
+  const v2 = r.json.eventos.find((e) => e.id === ev.id).transportes.find((x) => x.id === t.id).pessoas.find((p) => p.chave === vis.chave);
+  assert.deepEqual([v2.pago, v2.pulseira], [true, true]);
+  assert.equal((await iem({ op: 'transportePessoa', id: ev.id, transporteId: t.id, chave: vis.chave, remover: true })).status, 200);
+  r = await iem({ op: 'transporteExcluir', id: ev.id, transporteId: t.id });
+  assert.equal(r.status, 200);
+  assert.equal(r.json.eventos.find((e) => e.id === ev.id).transportes.length, 0);
 });

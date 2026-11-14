@@ -7,13 +7,18 @@ import { pode } from '../../shared/permissoes.js';
 export const ACOES_ORACOES = ['oracao', 'excluirOracao', 'reagirOracao'];
 
 // Admin dos eventos exclui qualquer oração; os outros, só a que pediram.
+// Aluno: só pede e só vê os próprios pedidos (até serem apagados). deAluno: a tela põe a borda azul.
 export async function oracoes(eu, lista) {
   const L = lista || (await db.rpc('oracoes_listar'));
   const admin = pode(eu, 'eventos:editar');
   const meu = autorDe(eu);
-  return L.map(({ autor, reacoes = [], ...o }) => ({ ...o, apagar: admin || autor === meu, reacoes: reacoes.length, reagi: reacoes.includes(meu) }));
+  const aluno = eu.grupo === 'alunos';
+  return L.filter((o) => !aluno || o.autor === meu).map(({ autor, reacoes = [], ...o }) => ({
+    ...o, deAluno: autor.startsWith('a:'), meu: autor === meu, apagar: !aluno && (admin || autor === meu), reacoes: reacoes.length, reagi: reacoes.includes(meu),
+  }));
 }
 export async function acaoOracao(eu, b) {
+  if (eu.grupo === 'alunos' && b.acao !== 'oracao') throw new HttpError(403, 'Os alunos só pedem oração.');
   if (b.acao === 'reagirOracao') return oracoes(eu, await db.rpc('oracao_reagir', { id: validarId(b.id, 'Oração'), autor: autorDe(eu) }));
   if (b.acao === 'excluirOracao') {
     return oracoes(eu, await db.rpc('oracao_excluir', { id: validarId(b.id, 'Oração'), autor: autorDe(eu), admin: pode(eu, 'eventos:editar') }));

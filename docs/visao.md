@@ -53,6 +53,7 @@ PWA da **Casa do Pai João (CPJ)** para organizar a corrente e as giras:
 - **Aba Compras (pedidos de guias) não foi testada no banco.** A migração v103 (tabelas `guias_*`, perfis com a aba nova, `inicio_dados` refeita) e o teste novo de `test/api.test.js` só rodam no CI; a tela foi conferida com uma API falsa (sem Postgres local). A foto do item não foi testada num celular.
 - **Unidade do item das oferendas não foi testada no banco.** A migração v104 (`unidade` em `oferenda_itens` e `iemanja_itens`, funções de item e de estado refeitas) e o teste novo só rodam no CI.
 - **Quantidade quebrada (v105) e troca de pessoas da Iemanjá não foram testadas no banco.** A migração muda o tipo da quantidade dos itens e doações para numeric; o teste novo só roda no CI.
+- **Orações de 4 dias e transporte (v106) não foram testados no banco.** A migração e os testes novos só rodam no CI.
 - **Testes no Windows.** `npm test` depende de Linux (`runuser`) e de Postgres local; na pasta atual não roda.
 - O doc `claude/regras-sort-mediuns.md` do Project é antigo (out/2026); [regras.md](regras.md) é a referência atual.
 

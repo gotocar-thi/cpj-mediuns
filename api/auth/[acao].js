@@ -123,7 +123,10 @@ const opcional = (promessa) => promessa.catch((e) => {
 // Acessos de grupo (alunos, curimba): poucas listas, buscadas aqui.
 async function listasDoGrupo(eu) {
   const config = opcional(db.rpc('config_casa'));
-  if (eu.grupo === 'alunos') return { eventos: await db.rpc('eventos_listar'), config: await config };
+  if (eu.grupo === 'alunos') {
+    const [eventos, ora] = await Promise.all([db.rpc('eventos_listar'), opcional(db.rpc('oracoes_listar'))]);
+    return { eventos, oracoes: ora ? await oracoes(eu, ora) : undefined, config: await config };
+  }
   const [eventos, minhaCurimba] = await Promise.all([db.rpc('eventos_listar'), db.rpc('curimba_minha', { alunoId: eu.curimbaAlunoId })]);
   return { eventos: eventos.filter((x) => x.tipo !== 'aviso'), minhaCurimba, config: await config };
 }
