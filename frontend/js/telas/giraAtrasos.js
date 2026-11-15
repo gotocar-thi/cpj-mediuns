@@ -2,13 +2,15 @@
 // Pessoa: só as próprias cobranças vencidas, com o link para pagar; sem nenhuma, o bloco não aparece.
 // Admin root: todas, com o nome (da corrente, pelo CPF do Perfil, ou o do cliente no ASAAS) e lembrete no WhatsApp.
 // Atualizar: para todos (quem acabou de pagar vê sumir); o servidor segura toques repetidos da pessoa.
+// É o primeiro bloco da aba Geral. O root minimiza tocando no título (começa aberto; vale até sair do app).
 
-import { estado, pode, carregarAtrasos } from '../estado.js';
+import { estado, pode, carregarAtrasos, avisar } from '../estado.js';
 import { esc, dShort, hoje, pd } from '../util.js';
 import { centavos, reais } from '/shared/ervas.js';
 import { ICONE_WHATS } from './giraComum.js';
 
 const R = (v) => reais(centavos(v));
+let minimizado = false;
 const ehRoot = () => pode('usuarios:gerenciar');
 const dias = (venc) => Math.max(0, Math.round((pd(hoje()) - pd(venc)) / 86400000));
 const atraso = (venc) => (venc ? `Venceu em ${dShort(venc)}${dias(venc) ? ` · ${dias(venc)} ${dias(venc) === 1 ? 'dia' : 'dias'}` : ''}` : 'Sem vencimento');
@@ -37,7 +39,11 @@ export function cardAtrasos() {
   const root = A.root && ehRoot();
   const lista = A.atrasos || [];
   if (!root && (!A.configurado || A.semSenha || !lista.length)) return '';
-  const titulo = `<div class="grp-h"><h2><span aria-hidden="true">💳</span> Pagamentos em atraso</h2><span class="count">${lista.length}</span></div>`;
+  const titulo = root
+    ? `<button class="grp-h dobra" data-act="atdobrar" aria-expanded="${!minimizado}" aria-label="${minimizado ? 'Expandir' : 'Minimizar'}"><h2><span aria-hidden="true">💳</span> Pagamentos em atraso</h2>
+        <span class="count">${lista.length} <span class="seta" aria-hidden="true">${minimizado ? '▸' : '▾'}</span></span></button>`
+    : `<div class="grp-h"><h2><span aria-hidden="true">💳</span> Pagamentos em atraso</h2><span class="count">${lista.length}</span></div>`;
+  if (root && minimizado) return `<div class="card adm">${titulo}</div>`;
   if (!A.configurado) {
     return `<div class="card adm">${titulo}<p class="muted" style="margin:0">A conta B do ASAAS não está conectada (variável <code>ASAAS2_API_KEY</code> na Vercel).</p></div>`;
   }
@@ -54,4 +60,5 @@ export function cardAtrasos() {
 
 export const cliquesAtrasos = {
   atatualizar() { carregarAtrasos({ atualizar: true }); },
+  atdobrar() { minimizado = !minimizado; avisar(); },
 };

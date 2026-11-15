@@ -256,7 +256,7 @@ export function render() {
   if (visaoAtiva() === 'alunos') return `<section class="panel">${cardSemana()}${cardOracoes({ aluno: true })}</section>`;
   const g = giraAtual();
   const eu = estado.me?.pessoaId && (estado.giras[g.data] || licencaEm(estado.pessoas.find((x) => x.id === estado.me.pessoaId) || {}, g.data)) ? blocoEu(g) : '';
-  return `<section class="panel">${eu}${cardAulaCurimba()}${cardCompromissos()}${cardAtrasos()}${cardSemana()}${cardOracoes()}${cardConduta()}</section>`;
+  return `<section class="panel">${cardAtrasos()}${eu}${cardAulaCurimba()}${cardCompromissos()}${cardSemana()}${cardOracoes()}${cardConduta()}</section>`;
 }
 
 function renderGira() {
