@@ -9,7 +9,7 @@
 // Estrutura: veja db/ESTRUTURA-ESQUEMA.md para o mapa de versões, domínios e
 // quais migrações foram testadas no Postgres.
 
-export const VERSAO = 114;  // v114: pagamentos em atraso da conta B do ASAAS (aba Geral)
+export const VERSAO = 115;  // v115: funções dos atrasos sem número no nome (db.rpc só aceita letras e _)
 
 import { PERFIS_PADRAO } from '../shared/permissoes.js';
 
@@ -4595,7 +4595,7 @@ export const MIGRACOES = [
      select coalesce(jsonb_agg(jsonb_build_object('pessoaId', c.pessoa_id, 'cifrado', c.cifrado)), '[]'::jsonb)
        from pessoas_cpf c join pessoas pe on pe.id = c.pessoa_id where pe.saida is null
    $$`,
-  `create or replace function asaas2_atrasos_salvar(p jsonb)
+  `create or replace function atrasos_salvar(p jsonb)
    returns jsonb language plpgsql as $$
    begin
      delete from asaas2_atrasos;
@@ -4610,7 +4610,7 @@ export const MIGRACOES = [
    end;
    $$`,
   // Nome e celular da corrente quando a cobrança está ligada a uma pessoa; senão, os do cliente no ASAAS.
-  `create or replace function asaas2_atrasos_ler(p jsonb default '{}'::jsonb)
+  `create or replace function atrasos_ler(p jsonb default '{}'::jsonb)
    returns jsonb language sql stable as $$
      select jsonb_build_object(
        'atualizadoEm', (select to_char(valor::timestamptz at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') from sistema where chave = 'asaas2_atualizado'),
@@ -4622,4 +4622,8 @@ export const MIGRACOES = [
            order by a.vencimento nulls last, lower(coalesce(pe.nome, a.nome)))
          from asaas2_atrasos a left join pessoas pe on pe.id = a.pessoa_id and pe.saida is null), '[]'::jsonb))
    $$`,
+  // ================================================== v115: funções dos atrasos sem número no nome
+  // db.rpc só aceita nomes com letras e _: as da v114 (asaas2_atrasos_*) nunca podiam ser chamadas; agora são atrasos_*.
+  `drop function if exists asaas2_atrasos_salvar(jsonb)`,
+  `drop function if exists asaas2_atrasos_ler(jsonb)`,
 ];

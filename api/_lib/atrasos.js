@@ -66,14 +66,14 @@ export async function atrasos(eu, atualizar) {
   if (!configuradoB()) return { configurado: false, root, atrasos: [] };
   // Pelo acesso da corrente, só com a senha criada: sem ela, qualquer um entra com o nome de outra pessoa.
   if (!root && eu.papel === 'corrente' && !eu.temSenha) return { configurado: true, root, semSenha: true, atrasos: [] };
-  let s = await db.rpc('asaas2_atrasos_ler');
+  let s = await db.rpc('atrasos_ler');
   let erro;
   const idade = s.atualizadoEm ? Date.now() - Date.parse(s.atualizadoEm) : Infinity;
   const forcar = atualizar && (root || idade > INTERVALO_PESSOA_MS);
   if (forcar || idade > VALIDADE_MS) {
     try {
-      await db.rpc('asaas2_atrasos_salvar', { itens: await buscarNoAsaas() });
-      s = await db.rpc('asaas2_atrasos_ler');
+      await db.rpc('atrasos_salvar', { itens: await buscarNoAsaas() });
+      s = await db.rpc('atrasos_ler');
     } catch (e) {
       if (forcar && root) throw e;
       console.error('[asaas2] leitura', e.message);
