@@ -9,7 +9,7 @@
 // Estrutura: veja db/ESTRUTURA-ESQUEMA.md para o mapa de versões, domínios e
 // quais migrações foram testadas no Postgres.
 
-export const VERSAO = 109;  // v109: ASAAS (Pix dos pedidos da aba Compras, webhook e aba ASAAS do root)
+export const VERSAO = 110;  // v110: Pedir já gera o link de pagamento do ASAAS
 
 import { PERFIS_PADRAO } from '../shared/permissoes.js';
 
@@ -4385,6 +4385,71 @@ export const MIGRACOES = [
        'cobrancas', coalesce((select jsonb_agg(x.j order by x.criado_em desc) from (
            select c.criado_em, jsonb_build_object('id', c.id, 'nome', c.nome, 'pedido', c.pedido, 'valor', c.valor, 'status', c.status,
                     'asaasId', c.asaas_id, 'criadoEm', c.criado_em, 'pagoEm', c.pago_em) as j
+             from asaas_cobrancas c where c.status <> 'criando' order by c.criado_em desc limit 100) x), '[]'::jsonb),
+       'eventos', coalesce((select jsonb_agg(x.j order by x.recebido_em desc) from (
+           select e.recebido_em, jsonb_build_object('id', e.id, 'evento', e.evento, 'recebidoEm', e.recebido_em, 'resultado', e.resultado,
+                    'paymentId', e.dados -> 'payment' ->> 'id', 'valor', e.dados -> 'payment' ->> 'value',
+                    'status', e.dados -> 'payment' ->> 'status', 'nome', c.nome, 'pedido', c.pedido) as j
+             from asaas_eventos e left join asaas_cobrancas c on c.id = e.cobranca_id order by e.recebido_em desc limit 50) x), '[]'::jsonb))
+   $$`,
+  // ================================================== v110: Pedir já gera o link de pagamento (ASAAS)
+  // Linha não paga traz a situação da cobrança (pendente, vencida, cancelada, estornada) para a pessoa acompanhar (substitui a da v109).
+  `create or replace function guias_estado(p jsonb default '{}'::jsonb)
+   returns jsonb language sql stable as $$
+     select jsonb_build_object(
+       'publicada', guias_publicada(),
+       'grupos', (select coalesce(jsonb_agg(jsonb_build_object('id', g.id, 'descricao', g.descricao, 'visivel', g.visivel,
+           'itens', (select coalesce(jsonb_agg(jsonb_build_object('id', i.id, 'descricao', i.descricao, 'foto', i.foto, 'quantidade', i.quantidade,
+                       'valor', i.valor, 'visivel', i.visivel) order by i.criado_em), '[]'::jsonb)
+                     from guias_itens i where i.grupo_id = g.id)) order by g.criado_em), '[]'::jsonb)
+                  from guias_grupos g),
+       'pedidos', (select coalesce(jsonb_agg(jsonb_build_object('numero', pe.numero, 'criadoEm', pe.criado_em, 'encerradoEm', pe.encerrado_em,
+           'linhas', (select coalesce(jsonb_agg(jsonb_build_object('id', l.id, 'itemId', l.item_id, 'descricao', l.descricao, 'valor', l.valor,
+                       'quantidade', l.quantidade, 'chave', l.chave, 'nome', l.nome, 'ok', l.ok, 'criadoEm', l.criado_em,
+                       'pago', l.pago_em is not null,
+                       'pix', case when l.pago_em is not null then null when c.status = 'criando' then 'pendente' else c.status end) order by lower(l.nome), l.criado_em), '[]'::jsonb)
+                      from guias_linhas l left join asaas_cobrancas c on c.id = l.cobranca_id where l.pedido = pe.numero)) order by pe.numero desc), '[]'::jsonb)
+                   from guias_pedidos pe))
+   $$`,
+  // Cada Pedir gera um link: o limite sobe para 20 por pessoa por hora (substitui a da v109).
+  `create or replace function asaas_cobranca_reservar(p jsonb)
+   returns jsonb language plpgsql as $$
+   declare
+     v_id uuid;
+     v_valor numeric(10, 2);
+   begin
+     delete from asaas_cobrancas where status = 'criando' and criado_em < now() - interval '10 minutes';
+     if (select count(*) from asaas_cobrancas where chave = p ->> 'chave' and criado_em > now() - interval '1 hour') >= 20 then
+       raise exception 'Muitos links de pagamento gerados em pouco tempo. Tente de novo mais tarde.';
+     end if;
+     perform 1 from guias_linhas where pedido = (p ->> 'pedido')::int and chave = p ->> 'chave' for update;
+     select coalesce(sum(l.valor * l.quantidade), 0) into v_valor
+       from guias_linhas l left join asaas_cobrancas c on c.id = l.cobranca_id
+      where l.pedido = (p ->> 'pedido')::int and l.chave = p ->> 'chave' and l.pago_em is null
+        and (c.id is null or c.status in ('vencida', 'cancelada', 'estornada'));
+     if v_valor <= 0 then
+       if exists (select 1 from guias_linhas l join asaas_cobrancas c on c.id = l.cobranca_id
+                   where l.pedido = (p ->> 'pedido')::int and l.chave = p ->> 'chave' and l.pago_em is null and c.status in ('criando', 'pendente')) then
+         raise exception 'O link de pagamento deste pedido já foi gerado. Use o que está na tela.';
+       end if;
+       raise exception 'Não há nada a pagar neste pedido.';
+     end if;
+     insert into asaas_cobrancas (chave, nome, pedido, valor) values (p ->> 'chave', p ->> 'nome', (p ->> 'pedido')::int, v_valor) returning id into v_id;
+     update guias_linhas l set cobranca_id = v_id
+      where l.pedido = (p ->> 'pedido')::int and l.chave = p ->> 'chave' and l.pago_em is null
+        and (l.cobranca_id is null or exists (select 1 from asaas_cobrancas c where c.id = l.cobranca_id and c.status in ('vencida', 'cancelada', 'estornada')));
+     return jsonb_build_object('id', v_id, 'valor', v_valor);
+   end;
+   $$`,
+  // Aba ASAAS: cada cobrança com os itens e o vencimento, para acompanhar o pedido (substitui a da v109).
+  `create or replace function asaas_estado(p jsonb default '{}'::jsonb)
+   returns jsonb language sql stable as $$
+     select jsonb_build_object(
+       'ativo', asaas_ativo(),
+       'cobrancas', coalesce((select jsonb_agg(x.j order by x.criado_em desc) from (
+           select c.criado_em, jsonb_build_object('id', c.id, 'nome', c.nome, 'pedido', c.pedido, 'valor', c.valor, 'status', c.status,
+                    'asaasId', c.asaas_id, 'link', c.link, 'vencimento', c.vencimento, 'criadoEm', c.criado_em, 'pagoEm', c.pago_em,
+                    'itens', (select coalesce(jsonb_agg(l.quantidade || 'x ' || l.descricao order by l.criado_em), '[]'::jsonb) from guias_linhas l where l.cobranca_id = c.id)) as j
              from asaas_cobrancas c where c.status <> 'criando' order by c.criado_em desc limit 100) x), '[]'::jsonb),
        'eventos', coalesce((select jsonb_agg(x.j order by x.recebido_em desc) from (
            select e.recebido_em, jsonb_build_object('id', e.id, 'evento', e.evento, 'recebidoEm', e.recebido_em, 'resultado', e.resultado,

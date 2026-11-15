@@ -1,6 +1,6 @@
 // Aba Compras (rota: GET /api/oferendas?lista=guias · POST /api/oferendas { acao: 'guias', op, ... }).
 //   todos:  pedir { itemId, quantidade }  — no pedido aberto, sem passar do disponível
-//           pix { pedido, cpf? }  — gera a cobrança Pix do que a pessoa pediu nesse pedido (veja api/_lib/asaas.js)
+//           (com o Pix ligado, pedir { ..., cpf? } já gera o link de pagamento; pix { pedido, cpf? } tenta de novo — veja api/_lib/asaas.js)
 //   admin:  publicar { publicada } · grupo { id?, descricao?, visivel? } · excluirGrupo { id }
 //           item { id?, grupoId, descricao?, foto? (base64 JPEG | null tira), quantidade?, valor?, visivel? } · excluirItem { id }
 //           cancelar { id } (a quantidade volta para o item) · ok { id, ok } · encerrar · novo (próximo número)
@@ -10,7 +10,7 @@ import { db } from './db.js';
 import { HttpError, validarId } from './http.js';
 import { pode } from '../../shared/permissoes.js';
 import { chavePessoa } from '../../shared/ervas.js';
-import { pixDaPessoa, gerarPix } from './asaas.js';
+import { pixDaPessoa, gerarPix, pixAntesDePedir } from './asaas.js';
 
 const ehAdmin = (eu) => pode(eu, 'guias:gerenciar');
 
@@ -73,10 +73,22 @@ const booleano = (v, oque) => {
 export async function acaoGuias(eu, b) {
   await exigirAba(eu);
   if (b.op === 'pedir') {
-    const estado = await db.rpc('guia_pedir', {
-      itemId: validarId(b.itemId, 'Item'), quantidade: inteiro(b.quantidade, 'Quantidade', 1, 999), chave: chavePessoa(eu), nome: eu.nome,
-    });
-    return comPix(paraTela(estado, eu), eu);
+    const p = { itemId: validarId(b.itemId, 'Item'), quantidade: inteiro(b.quantidade, 'Quantidade', 1, 999), chave: chavePessoa(eu), nome: eu.nome };
+    const pix = await pixAntesDePedir(eu, b.cpf);
+    let estado = await db.rpc('guia_pedir', p);
+    // Com o Pix ligado, o pedido já gera o link de pagamento. Se o ASAAS falhar, o pedido fica
+    // e a tela mostra "Gerar link de pagamento" para tentar de novo.
+    let aviso;
+    if (pix) {
+      try {
+        await gerarPix(eu, { pedido: estado.pedidos.find((x) => !x.encerradoEm).numero, cpf: b.cpf });
+        estado = await db.rpc('guias_estado');
+      } catch (e) {
+        if (!(e instanceof HttpError)) console.error('[asaas] pedir', e);
+        aviso = 'Pedido feito, mas o link de pagamento não foi gerado' + (e instanceof HttpError ? ': ' + e.message.replace(/[.!]?$/, '.') : '.') + ' Toque em Gerar link de pagamento.';
+      }
+    }
+    return { ...(await comPix(paraTela(estado, eu), eu)), ...(aviso ? { aviso } : {}) };
   }
   if (b.op === 'pix') {
     await gerarPix(eu, b);

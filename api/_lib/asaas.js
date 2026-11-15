@@ -67,6 +67,16 @@ export async function pixDaPessoa(eu) {
   return { pix: true, pixPrecisaCpf: !r.cliente, cobrancas: r.cobrancas.map((c) => ({ ...c, valor: Number(c.valor) })) };
 }
 
+// Antes de pedir com o Pix ligado: sem cliente no ASAAS, o CPF tem de vir válido (senão nem faz o pedido).
+// Devolve se o Pix está ligado.
+export async function pixAntesDePedir(eu, cpf) {
+  if (!(await pixLigado())) return false;
+  if (!(await db.rpc('asaas_minhas', { chave: chavePessoa(eu) })).cliente && !cpfValido(cpf)) {
+    throw new HttpError(400, 'Informe um CPF válido para gerar o link de pagamento.');
+  }
+  return true;
+}
+
 function amanhaBR() {
   const [y, m, d] = hojeBR().split('-').map(Number);
   return new Date(Date.UTC(y, m - 1, d + 1)).toISOString().slice(0, 10);

@@ -25,11 +25,12 @@ const ui = {
   img: null,                // imagem gerada: { chave, blob, url, nome }
   zoom: null,               // id do item com a foto aberta em tela cheia
   pix: null,                // pedido com o campo de CPF aberto (primeiro Pix da pessoa)
-  gerando: false,           // Pix sendo gerado (evita toque duplo)
+  gerando: false,           // link de pagamento sendo gerado (evita toque duplo)
+  cpf: '',                  // CPF digitado (guardado para um redesenho não apagar)
 };
 export function limpar() {
   ui.abertos.clear(); ui.feitos.clear(); ui.minimizados.clear();
-  Object.assign(ui, { grupoRen: null, item: null, qtd: {}, pedir: null, exportar: null, zoom: null, pix: null, gerando: false });
+  Object.assign(ui, { grupoRen: null, item: null, qtd: {}, pedir: null, exportar: null, zoom: null, pix: null, gerando: false, cpf: '' });
   if (ui.img) URL.revokeObjectURL(ui.img.url);
   ui.img = null;
 }
@@ -86,39 +87,48 @@ function cardItens(G) {
   }).join('');
 }
 
-// Situação de pagamento da linha (só existe com o Pix).
-const selo = (l) => (l.pago ? ' <span class="badge pleno">Pago</span>' : l.pix === 'pendente' ? ' <span class="badge new">Pix pendente</span>' : '');
+// Situação de pagamento da linha (só existe com o Pix): é o que avisa quem comprou.
+const SELO = { pendente: ['Aguardando pagamento', 'new'], vencida: ['Link vencido', 're'], cancelada: ['Link cancelado', 're'], estornada: ['Estornado', 're'] };
+const selo = (l) => {
+  if (l.pago) return ' <span class="badge pleno">Pago</span>';
+  const s = SELO[l.pix];
+  return s ? ` <span class="badge ${s[1]}">${s[0]}</span>` : '';
+};
 
-// Pix: cobranças pendentes (QR e copia e cola) e o botão para pagar o que ainda não tem Pix, por pedido.
+// Link de pagamento: cobranças pendentes (link, QR e copia e cola) e, para o que ficou sem link
+// (o ASAAS falhou no Pedir, ou o link venceu ou foi cancelado), o botão para gerar de novo.
 function blocoPix(G) {
   if (!G.pix) return '';
   const M = G.meus || [];
   const pendentes = (G.cobrancas || []).filter((c) => c.status === 'pendente');
   let h = pendentes.map((c) => `<div class="gi-pix">
-    <div class="gi-pix-h"><b>Pix · pedido nº ${c.pedido}</b><b>${R(c.valor)}</b></div>
+    <div class="gi-pix-h"><b>Pagamento · pedido nº ${c.pedido}</b><b>${R(c.valor)}</b></div>
     ${c.itens?.length ? `<span class="muted">${esc(c.itens.join(', '))}</span>` : ''}
+    ${c.link ? `<a class="btn primary" href="${esc(c.link)}" target="_blank" rel="noopener">Pagar pelo link (Pix)</a>` : ''}
     ${c.pixImagem ? `<img class="gi-pix-qr" src="data:image/png;base64,${c.pixImagem}" alt="QR Code do Pix de ${R(c.valor)}">` : ''}
     ${c.pixPayload ? `<label class="field">Pix copia e cola<textarea id="gp-cc-${c.id}" readonly rows="3">${esc(c.pixPayload)}</textarea></label>
-      <div class="cp-bts"><button class="btn primary" data-act="guiapixcopiar" data-id="${c.id}"><span aria-hidden="true">📋</span> Copiar código</button>
-      ${c.link ? `<a class="btn" href="${esc(c.link)}" target="_blank" rel="noopener">Abrir fatura</a>` : ''}</div>`
-      : c.link ? `<div class="cp-bts"><a class="btn primary" href="${esc(c.link)}" target="_blank" rel="noopener">Abrir fatura para pagar</a></div>` : ''}
+      <div class="cp-bts"><button class="btn" data-act="guiapixcopiar" data-id="${c.id}"><span aria-hidden="true">📋</span> Copiar código Pix</button></div>` : ''}
+    ${c.vencimento ? `<span class="muted">Vence em ${dia(c.vencimento + 'T12:00:00')}.</span>` : ''}
     <p class="muted" style="margin:0">Depois de pagar, a confirmação chega sozinha do banco (pode levar alguns minutos).</p>
     <button class="btn small" data-act="guiapixatualizar">↻ Já paguei, atualizar</button></div>`).join('');
-  // O que ainda não está pago nem num Pix pendente, por pedido.
+  // O que ainda não está pago nem num link pendente, por pedido.
   const porPedido = new Map();
   M.filter((l) => !l.pago && l.pix !== 'pendente').forEach((l) => porPedido.set(l.pedido, (porPedido.get(l.pedido) || 0) + l.valor * l.quantidade));
   [...porPedido].filter(([, v]) => v > 0).sort((a, b) => a[0] - b[0]).forEach(([n, v]) => {
     if (ui.pix === n) {
       h += `<form id="f-guia-pix" class="gi-pix" data-pedido="${n}" autocomplete="off">
         <div class="gi-pix-h"><b>Pagar pedido nº ${n}</b><b>${R(v)}</b></div>
-        <label class="field">Seu CPF (pedido só no primeiro Pix, vai direto para o ASAAS)<input type="text" id="gp-cpf" inputmode="numeric" maxlength="14" placeholder="000.000.000-00" required></label>
-        <div class="row" style="justify-content:flex-end;gap:8px"><button type="button" class="btn" data-act="guiapixcancel">Voltar</button><button class="btn primary" type="submit" ${ui.gerando ? 'disabled' : ''}>${ui.gerando ? 'Gerando…' : 'Gerar Pix'}</button></div></form>`;
+        ${campoCpf('gp-cpf')}
+        <div class="row" style="justify-content:flex-end;gap:8px"><button type="button" class="btn" data-act="guiapixcancel">Voltar</button><button class="btn primary" type="submit" ${ui.gerando ? 'disabled' : ''}>${ui.gerando ? 'Gerando…' : 'Gerar link'}</button></div></form>`;
     } else {
-      h += `<button class="btn primary gi-pix-bt" data-act="guiapix" data-n="${n}" ${ui.gerando ? 'disabled' : ''}>${ui.gerando ? 'Gerando Pix…' : `Pagar com Pix · pedido nº ${n} · ${R(v)}`}</button>`;
+      h += `<button class="btn primary gi-pix-bt" data-act="guiapix" data-n="${n}" ${ui.gerando ? 'disabled' : ''}>${ui.gerando ? 'Gerando link…' : `Gerar link de pagamento · pedido nº ${n} · ${R(v)}`}</button>`;
     }
   });
   return h;
 }
+
+// CPF: pedido só no primeiro link da pessoa; vai direto para o ASAAS (o app não guarda).
+const campoCpf = (id) => `<label class="field">Seu CPF (só no primeiro pagamento; vai direto para o ASAAS)<input type="text" id="${id}" data-guia="cpf" inputmode="numeric" maxlength="14" placeholder="000.000.000-00" value="${esc(ui.cpf)}" required></label>`;
 
 function cardMeus(G) {
   const M = G.meus || [];
@@ -138,8 +148,10 @@ function janelaPedir() {
   return `<div class="modal-fundo" role="dialog" aria-modal="true" aria-labelledby="gp-t"><div class="modal">
     <h3 id="gp-t">Confirmar pedido?</h3>
     <p style="margin:0"><b>${P.quantidade}x ${esc(i.descricao)}</b> · ${R(i.valor * P.quantidade)}</p>
+    ${estado.guias.pix ? `<p class="muted" style="margin:0">Ao confirmar, geramos o link de pagamento Pix (ASAAS). O pedido aparece como pago quando o banco confirmar.</p>
+      ${estado.guias.pixPrecisaCpf ? campoCpf('gp-cpf-pedir') : ''}` : ''}
     <p class="muted" style="margin:0">Para cancelar depois, só entrando em contato com o suporte.</p>
-    <div class="row" style="justify-content:flex-end;gap:8px"><button class="btn" data-act="guiapedircancel">Voltar</button><button class="btn primary" data-act="guiapedirok">Confirmar pedido</button></div>
+    <div class="row" style="justify-content:flex-end;gap:8px"><button class="btn" data-act="guiapedircancel">Voltar</button><button class="btn primary" data-act="guiapedirok" ${ui.gerando ? 'disabled' : ''}>${ui.gerando ? 'Gerando link…' : 'Confirmar pedido'}</button></div>
   </div></div>`;
 }
 
@@ -323,6 +335,7 @@ const fazer = (op, dados) => acaoGuias(op, dados);
 
 // Campos do formulário de item: guardados a cada letra, para um redesenho não apagar.
 export function digitando(t) {
+  if (t.dataset.guia === 'cpf') { ui.cpf = t.value; return; }
   if (ui.item && t.dataset.guia) ui.item[t.dataset.guia] = t.value;
 }
 
@@ -332,7 +345,7 @@ async function gerarPix(pedido, cpf) {
   avisar();
   const ok = await fazer('pix', cpf ? { pedido, cpf } : { pedido });
   ui.gerando = false;
-  if (ok) { ui.pix = null; toast('Pix gerado. Pague pelo QR Code ou pelo copia e cola.'); }
+  if (ok) { ui.pix = null; ui.cpf = ''; toast('Link de pagamento gerado.'); }
   avisar();
 }
 
@@ -393,8 +406,20 @@ export const cliques = {
   guiazoomfechar() { ui.zoom = null; avisar(); },
   async guiapedirok() {
     const P = ui.pedir;
-    ui.pedir = null;
-    if (P && await fazer('pedir', P)) { delete ui.qtd[P.itemId]; toast('Pedido feito.'); }
+    if (!P || ui.gerando) return;
+    const cpf = document.getElementById('gp-cpf-pedir')?.value;
+    ui.gerando = true;
+    avisar();
+    const ok = await fazer('pedir', cpf ? { ...P, cpf } : P);
+    ui.gerando = false;
+    if (ok) {
+      ui.pedir = null;
+      ui.cpf = '';
+      delete ui.qtd[P.itemId];
+      const G = estado.guias;
+      toast(G.aviso || (G.pix ? 'Pedido feito. Pague pelo link em Seus pedidos.' : 'Pedido feito.'));
+    }
+    avisar();
   },
   async guiacancelar(el) { if (await fazer('cancelar', { id: el.dataset.id })) toast('Pedido cancelado.'); },
   async guiaencerrar() { if (await fazer('encerrar')) toast('Pedido encerrado.'); },
