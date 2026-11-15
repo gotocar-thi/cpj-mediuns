@@ -1751,3 +1751,7 @@ button.iem-tot-n{cursor:pointer}
 .as-lista li{display:grid;gap:2px;border:1px solid var(--line);border-radius:8px;padding:8px 10px;background:var(--bg);min-width:0}
 .as-l1,.as-l3{display:flex;justify-content:space-between;align-items:center;gap:8px;min-width:0}
 .as-l2{font-size:.88rem;overflow-wrap:anywhere}
+/* Aba Compras: ação no servidor — sem clique em nada até responder (evita duplo clique) */
+.gi-ocupado{cursor:progress}
+.gi-ocupado :is(button,input,select,textarea,label,a.btn){pointer-events:none}
+.gi-ocupado .btn{opacity:.7}

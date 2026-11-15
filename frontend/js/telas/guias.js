@@ -27,15 +27,18 @@ const ui = {
   pix: null,                // pedido com o campo de CPF aberto (primeiro Pix da pessoa)
   gerando: false,           // link de pagamento sendo gerado (evita toque duplo)
   cpf: '',                  // CPF digitado (guardado para um redesenho não apagar)
+  ocupado: null,            // ação enviada ao servidor e ainda sem resposta (trava o duplo clique)
 };
 export function limpar() {
   ui.abertos.clear(); ui.feitos.clear(); ui.minimizados.clear();
-  Object.assign(ui, { grupoRen: null, item: null, qtd: {}, pedir: null, exportar: null, zoom: null, pix: null, gerando: false, cpf: '' });
+  Object.assign(ui, { grupoRen: null, item: null, qtd: {}, pedir: null, exportar: null, zoom: null, pix: null, gerando: false, cpf: '', ocupado: null });
   if (ui.img) URL.revokeObjectURL(ui.img.url);
   ui.img = null;
 }
 
 const admin = () => pode('guias:gerenciar') && estado.guias?.admin;
+// Texto do botão: enquanto a ação dele está no servidor, mostra o "carregando".
+const rot = (op, normal, carregando) => (ui.ocupado === op ? carregando : normal);
 // O que a corrente vê (o admin recebe tudo, inclusive o oculto): só grupos e itens visíveis.
 const gruposVisiveis = (G) => G.grupos.filter((g) => g.visivel).map((g) => ({ ...g, itens: g.itens.filter((i) => i.visivel) })).filter((g) => g.itens.length);
 const acharItem = (id) => estado.guias.grupos.flatMap((g) => g.itens).find((i) => i.id === id);
@@ -156,7 +159,7 @@ function janelaPedir() {
     ${estado.guias.pix ? `<p class="muted" style="margin:0">Ao confirmar, geramos o link de pagamento Pix (ASAAS). O pedido aparece como pago quando o banco confirmar.</p>
       ${estado.guias.pixPrecisaCpf ? campoCpf('gp-cpf-pedir') : ''}` : ''}
     <p class="muted" style="margin:0">Para cancelar depois, só entrando em contato com o suporte.</p>
-    <div class="row" style="justify-content:flex-end;gap:8px"><button class="btn" data-act="guiapedircancel">Voltar</button><button class="btn primary" data-act="guiapedirok" ${ui.gerando ? 'disabled' : ''}>${ui.gerando ? 'Gerando link…' : 'Confirmar pedido'}</button></div>
+    <div class="row" style="justify-content:flex-end;gap:8px"><button class="btn" data-act="guiapedircancel">Voltar</button><button class="btn primary" data-act="guiapedirok" ${ui.gerando ? 'disabled' : ''}>${ui.gerando ? (estado.guias.pix ? 'Gerando link…' : 'Enviando…') : 'Confirmar pedido'}</button></div>
   </div></div>`;
 }
 
@@ -178,7 +181,7 @@ function formItem(I) {
       <label class="field">Valor (R$)<input type="text" id="gi-valor" data-guia="valor" inputmode="decimal" placeholder="0,00" value="${esc(I.valor)}" required></label>
     </div>
     <label class="of-sw"><input type="checkbox" role="switch" data-act="guiaitemvisform" ${I.visivel ? 'checked' : ''}><span class="of-sw-t" aria-hidden="true"></span><b>Visível</b></label>
-    <div class="row" style="justify-content:flex-end;gap:8px"><button type="button" class="btn" data-act="guiaitemcancel">Cancelar</button><button class="btn primary" type="submit">Salvar item</button></div>
+    <div class="row" style="justify-content:flex-end;gap:8px"><button type="button" class="btn" data-act="guiaitemcancel">Cancelar</button><button class="btn primary" type="submit">${rot('item', 'Salvar item', 'Salvando…')}</button></div>
   </form>`;
 }
 
@@ -191,17 +194,17 @@ function grupoAdmin(g) {
   h += `<div class="gg-corpo"><div class="gg-bts">
     <label class="of-sw"><input type="checkbox" role="switch" data-act="guiagrupovis" data-id="${g.id}" ${g.visivel ? 'checked' : ''}><span class="of-sw-t" aria-hidden="true"></span><b>Visível</b></label>
     <span class="gg-acoes"><button class="btn small" data-act="guiarenomear" data-id="${g.id}">✎ Renomear</button>
-    ${estado.confirm === 'gg:' + g.id ? `<button class="btn small danger" data-act="guiaexcluirgrupo" data-id="${g.id}">Confirmar exclusão</button>` : `<button class="btn small danger" data-act="askdel" data-k="gg:${g.id}">Excluir</button>`}</span></div>`;
+    ${estado.confirm === 'gg:' + g.id ? `<button class="btn small danger" data-act="guiaexcluirgrupo" data-id="${g.id}">${rot('excluirGrupo', 'Confirmar exclusão', 'Excluindo…')}</button>` : `<button class="btn small danger" data-act="askdel" data-k="gg:${g.id}">Excluir</button>`}</span></div>`;
   if (estado.confirm === 'gg:' + g.id) h += `<p class="muted gg-aviso">Excluir apaga o grupo e os ${plural(g.itens.length, 'item', 'itens')} dele. Os pedidos já feitos continuam na lista.</p>`;
   if (ui.grupoRen === g.id) {
     h += `<form id="f-guia-ren" class="row" data-id="${g.id}" autocomplete="off"><label class="field" style="flex:1">Descrição do grupo<input type="text" id="gg-ren" maxlength="80" value="${esc(g.descricao)}" required></label>
-      <button class="btn primary" type="submit">Salvar</button><button type="button" class="btn" data-act="guiarenomear" data-id="">Cancelar</button></form>`;
+      <button class="btn primary" type="submit">${rot('grupo', 'Salvar', 'Salvando…')}</button><button type="button" class="btn" data-act="guiarenomear" data-id="">Cancelar</button></form>`;
   }
   h += g.itens.length ? `<div class="gi-lista">${g.itens.map((i) => `<div class="gi-item gi-adm${i.visivel ? '' : ' oculto'}">${fotoItem(i, 'gi-foto', true)}
       <div class="gi-info"><b>${esc(i.descricao)}</b><span class="gi-valor">${R(i.valor)}</span><span class="muted gi-disp">${plural(i.quantidade, 'disponível', 'disponíveis')}</span>
         <label class="of-sw"><input type="checkbox" role="switch" data-act="guiaitemvis" data-id="${i.id}" ${i.visivel ? 'checked' : ''}><span class="of-sw-t" aria-hidden="true"></span><span class="muted">Visível</span></label></div>
       <div class="gi-acao gi-acao-adm"><button class="btn small" data-act="guiaeditaritem" data-id="${i.id}" aria-label="Editar ${esc(i.descricao)}">✎</button>
-        ${estado.confirm === 'gi:' + i.id ? `<button class="btn small danger" data-act="guiaexcluiritem" data-id="${i.id}">Excluir?</button>` : `<button class="btn small danger" data-act="askdel" data-k="gi:${i.id}" aria-label="Excluir ${esc(i.descricao)}">✕</button>`}</div>
+        ${estado.confirm === 'gi:' + i.id ? `<button class="btn small danger" data-act="guiaexcluiritem" data-id="${i.id}">${rot('excluirItem', 'Excluir?', 'Excluindo…')}</button>` : `<button class="btn small danger" data-act="askdel" data-k="gi:${i.id}" aria-label="Excluir ${esc(i.descricao)}">✕</button>`}</div>
     </div>`).join('')}</div>` : '<p class="muted" style="margin:0">Nenhum item neste grupo.</p>';
   h += ui.item && ui.item.grupoId === g.id ? formItem(ui.item) : `<button class="btn" data-act="guianovoitem" data-id="${g.id}">+ Cadastrar item</button>`;
   return h + '</div></div>';
@@ -210,7 +213,7 @@ function grupoAdmin(g) {
 function cardGrupos(G) {
   return `<div class="card adm"><div class="grp-h"><h2>Grupos</h2><span class="count">${G.grupos.length}</span></div>
     <form id="f-guia-grupo" class="row" autocomplete="off"><label class="field" style="flex:1">Novo grupo<input type="text" id="gg-nova" maxlength="80" placeholder="Descrição do grupo" required></label>
-      <button class="btn primary" type="submit">Cadastrar grupo</button></form>
+      <button class="btn primary" type="submit">${rot('grupo', 'Cadastrar grupo', 'Salvando…')}</button></form>
     ${G.grupos.length ? `<div class="gg-lista">${G.grupos.map(grupoAdmin).join('')}</div>` : '<p class="muted" style="margin:0">Nenhum grupo cadastrado ainda.</p>'}</div>`;
 }
 
@@ -222,7 +225,7 @@ function listaPedido(linhas) {
     <ul class="gp-linhas">${p.linhas.map((l) => `<li class="${l.ok ? 'ok' : ''}">
       <label class="gp-ok"><input type="checkbox" data-act="guiaok" data-id="${l.id}" ${l.ok ? 'checked' : ''} aria-label="Ok: ${esc(p.nome)}, ${esc(l.descricao)}"></label>
       <span class="gp-desc"><b>${l.quantidade}x</b> ${esc(l.descricao)}${selo(l)}</span><span class="gp-val">${R(l.valor * l.quantidade)}</span>
-      ${estado.confirm === 'gl:' + l.id ? `<button class="btn small danger" data-act="guiacancelar" data-id="${l.id}">Cancelar?</button>` : `<button class="btn small link gp-x" data-act="askdel" data-k="gl:${l.id}" aria-label="Cancelar este pedido">✕</button>`}
+      ${estado.confirm === 'gl:' + l.id ? `<button class="btn small danger" data-act="guiacancelar" data-id="${l.id}">${rot('cancelar', 'Cancelar?', 'Cancelando…')}</button>` : `<button class="btn small link gp-x" data-act="askdel" data-k="gl:${l.id}" aria-label="Cancelar este pedido">✕</button>`}
     </li>`).join('')}</ul></div>`).join('')}</div>
     <div class="meu-tot"><span>${plural(porPessoa(linhas).length, 'pessoa', 'pessoas')} · ${plural(itensDe(linhas), 'item', 'itens')}</span><b>${R(totalDe(linhas))}</b></div>`;
 }
@@ -233,12 +236,13 @@ function cardPainel(G) {
   let h = '<div class="card adm"><div class="grp-h"><h2>Painel de pedidos</h2></div>';
   if (atual) {
     h += `<div class="gp-status"><span><span class="badge new">Aberto</span> <b>Pedido nº ${atual.numero}</b> <span class="muted">desde ${dia(atual.criadoEm)}</span></span>
-      ${estado.confirm === 'genc' ? `<button class="btn small danger" data-act="guiaencerrar">Confirmar encerramento</button>` : `<button class="btn small danger" data-act="askdel" data-k="genc">Encerrar pedido</button>`}</div>`;
+      ${estado.confirm === 'genc' ? `<button class="btn small danger" data-act="guiaencerrar">${rot('encerrar', 'Confirmar encerramento', 'Encerrando…')}</button>` : `<button class="btn small danger" data-act="askdel" data-k="genc">Encerrar pedido</button>`}</div>`;
     if (estado.confirm === 'genc') h += '<p class="muted gg-aviso">Depois de encerrar, ninguém pede mais neste número. Para receber pedidos de novo, toque em Novo pedido.</p>';
     h += listaPedido(atual.linhas);
   } else {
     h += `<div class="gp-status"><span class="muted">Nenhum pedido aberto${ultimo ? ` · último: nº ${ultimo.numero}, encerrado em ${dia(ultimo.encerradoEm)}` : ''}.</span>
-      <button class="btn small primary" data-act="guianovo">Novo pedido nº ${(ultimo?.numero || 0) + 1}</button></div>`;
+      ${estado.confirm === 'gnovo' ? `<button class="btn small primary" data-act="guianovo">${rot('novo', `Confirmar novo pedido nº ${(ultimo?.numero || 0) + 1}`, 'Abrindo…')}</button>` : `<button class="btn small primary" data-act="askdel" data-k="gnovo">Novo pedido nº ${(ultimo?.numero || 0) + 1}</button>`}</div>`;
+    if (estado.confirm === 'gnovo') h += '<p class="muted gg-aviso">O pedido novo passa a receber os pedidos de todos. O número não volta atrás.</p>';
   }
   return h + '</div>';
 }
@@ -306,7 +310,7 @@ function telaFoto() {
 export function render() {
   if (estado.guias === null) { carregarGuias(); return '<div class="loading">Carregando as compras…</div>'; }
   const G = estado.guias;
-  let h = '<section class="panel">';
+  let h = `<section class="panel${ui.ocupado ? ' gi-ocupado' : ''}" aria-busy="${!!ui.ocupado}">`;
   if (admin()) h += cardTopo(G);
   h += cardMeus(G) + cardItens(G);
   if (admin()) h += cardGrupos(G) + cardPainel(G) + cardExportar(G) + cardFeitos(G);
@@ -336,7 +340,22 @@ async function reduzirFoto(arquivo) {
 }
 
 // ---------- eventos ----------
-const fazer = (op, dados) => acaoGuias(op, dados);
+// Uma ação por vez: enquanto uma está no servidor, as outras são ignoradas (devolve false; o toggle volta)
+// e a tela fica marcada como ocupada (sem clique nos botões, com o texto de carregando no botão da ação).
+async function fazer(op, dados) {
+  if (ui.ocupado) return false;
+  ui.ocupado = op;
+  avisar();
+  try { return await acaoGuias(op, dados); } finally { ui.ocupado = null; avisar(); }
+}
+// Ação de um botão de confirmar: a confirmação fica na tela (com o carregando) até o servidor responder.
+async function confirmado(k, op, dados) {
+  estado.confirm = k;
+  const ok = await fazer(op, dados);
+  if (estado.confirm === k) estado.confirm = null;
+  avisar();
+  return ok;
+}
 
 // Campos do formulário de item: guardados a cada letra, para um redesenho não apagar.
 export function digitando(t) {
@@ -379,7 +398,7 @@ export const cliques = {
   guiaminimizar(el) { const id = el.dataset.id; if (ui.minimizados.has(id)) ui.minimizados.delete(id); else ui.minimizados.add(id); avisar(); },
   guiafeito(el) { const n = Number(el.dataset.n); if (ui.feitos.has(n)) ui.feitos.delete(n); else ui.feitos.add(n); avisar(); },
   guiarenomear(el) { ui.grupoRen = el.dataset.id || null; avisar(); },
-  async guiaexcluirgrupo(el) { if (await fazer('excluirGrupo', { id: el.dataset.id })) { ui.abertos.delete(el.dataset.id); toast('Grupo excluído.'); } },
+  async guiaexcluirgrupo(el) { if (await confirmado('gg:' + el.dataset.id, 'excluirGrupo', { id: el.dataset.id })) { ui.abertos.delete(el.dataset.id); toast('Grupo excluído.'); } },
   guianovoitem(el) { ui.item = { grupoId: el.dataset.id, descricao: '', quantidade: '', valor: '', visivel: true }; avisar(); },
   guiaeditaritem(el) {
     const i = acharItem(el.dataset.id);
@@ -388,7 +407,7 @@ export const cliques = {
   },
   guiaitemcancel() { ui.item = null; avisar(); },
   guiatirafoto() { if (ui.item) { ui.item.foto = null; avisar(); } },
-  async guiaexcluiritem(el) { if (await fazer('excluirItem', { id: el.dataset.id })) toast('Item excluído.'); },
+  async guiaexcluiritem(el) { if (await confirmado('gi:' + el.dataset.id, 'excluirItem', { id: el.dataset.id })) toast('Item excluído.'); },
   guiapedir(el) {
     const i = acharItem(el.dataset.id);
     if (!i) return;
@@ -426,9 +445,9 @@ export const cliques = {
     }
     avisar();
   },
-  async guiacancelar(el) { if (await fazer('cancelar', { id: el.dataset.id })) toast('Pedido cancelado.'); },
-  async guiaencerrar() { if (await fazer('encerrar')) toast('Pedido encerrado.'); },
-  async guianovo() { if (await fazer('novo')) toast('Novo pedido aberto.'); },
+  async guiacancelar(el) { if (await confirmado('gl:' + el.dataset.id, 'cancelar', { id: el.dataset.id })) toast('Pedido cancelado.'); },
+  async guiaencerrar() { if (await confirmado('genc', 'encerrar')) toast('Pedido encerrado.'); },
+  async guianovo() { if (await confirmado('gnovo', 'novo')) toast('Novo pedido aberto.'); },
   guiacopiar() {
     const txt = document.getElementById('gx-txt')?.value || '';
     const fb = () => { const t = document.getElementById('gx-txt'); t.focus(); t.select(); toast('Lista selecionada. Copie com o menu do aparelho.'); };
