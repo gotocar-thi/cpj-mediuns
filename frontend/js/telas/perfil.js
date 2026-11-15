@@ -6,6 +6,7 @@ import { POSICOES_ORIXA, POSICOES_GUIA, GUIAS, NOME_GUIA_MAX, respondeu, lerNasc
   ANAMNESE_TIPOS, ANAMNESE_PERGUNTA_MAX, ANAMNESE_TEXTO_MAX, ANAMNESE_SIMNAO, ANAMNESE_TIPO_LABEL, anamnesePreenchida, respostasPorPessoa, textoAnamnese, valorAnamnese } from '/shared/perfil.js';
 import { estado, pode, visaoAtiva, avisar, carregarPerfil, mudarPerfil, salvarAfinidade, carregarFoto, salvarFoto, salvarInfoDe, carregarAnamnese, acaoAnamnese, lerCpf, salvarCpf } from '../estado.js';
 import { esc, toast, iniciais, baixar, hoje } from '../util.js';
+import { ICONE_WHATS } from './giraComum.js';
 
 const GUIA_LABEL = Object.fromEntries(GUIAS);
 const ROT_ORIXA = { frente: 'frente', ancestral: 'ancestral', adjunto: 'adjunto' };
@@ -27,6 +28,25 @@ function card(k, titulo, count, padrao, corpo, dobra = admin(), adm = false) {
 
 // ---------- Admin root: Ajustes perfil ----------
 // Exibe informações espirituais e gerencia data de entrada e senhas por pessoa.
+
+// Quem ainda não criou a senha do acesso da corrente (sem ela, Perfil, CPF e pagamentos não abrem).
+// Tocar no nome abre a Senha da pessoa logo abaixo; o WhatsApp leva um lembrete pronto (celular do Perfil).
+function listaSemSenha(todos, A) {
+  if (!estado.senhas) return '';
+  const sem = estado.senhas.filter((s) => !s.temSenha);
+  if (!sem.length) return '<p class="muted aj-sem-ok">✓ Todos da corrente já criaram a senha.</p>';
+  const aberto = !!A.semAberto;
+  const app = location.origin;
+  const zap = (s) => {
+    const tel = soNumeros(todos.find((t) => t.pessoaId === s.pessoaId)?.perfil?.info?.celular || '');
+    if (tel.length < 10) return '';
+    const txt = `Olá, ${s.nome.split(/\s+/)[0]}! Falta criar a sua senha no app da corrente: entre em ${app} com "cpj" e o seu nome e toque em 🔒 Criar senha (4 a 8 números). Sem ela, o seu Perfil e os seus pagamentos não abrem.`;
+    return `<a class="btn small wa-bt" href="https://wa.me/55${tel}?text=${encodeURIComponent(txt)}" target="_blank" rel="noopener noreferrer" aria-label="Lembrar ${esc(s.nome)} no WhatsApp"><span class="wa-ico" aria-hidden="true">${ICONE_WHATS}</span></a>`;
+  };
+  return `<div class="aj-sem"><button class="grp-h dobra" data-act="ajsemdobrar" aria-expanded="${aberto}"><h3>🔒 Sem senha</h3>
+      <span class="count">${sem.length} <span class="seta" aria-hidden="true">${aberto ? '▾' : '▸'}</span></span></button>
+    ${aberto ? `<div class="aj-sem-lista">${sem.map((s) => `<div class="aj-sem-l"><button class="btn link" data-act="ajsemsenha" data-id="${s.pessoaId}">${esc(s.nome)}</button>${zap(s)}</div>`).join('')}</div>` : ''}</div>`;
+}
 export function renderAjustesPerfil(todos) {
   const A = (estado.ajUi ||= { pessoa: '', campo: '' });
   const root = pode('usuarios:gerenciar');
@@ -36,7 +56,7 @@ export function renderAjustesPerfil(todos) {
   const CAMPOS = [...(!x || cadastraEspiritual(x.funcao) ? [['espiritual', 'Orixás e guias']] : []),
     ['entrada', 'Entrada na corrente'], ['senha', 'Senha']];
   if (!CAMPOS.some(([k]) => k === A.campo)) A.campo = '';
-  let h = `<div class="aj-sel">
+  let h = listaSemSenha(todos, A) + `<div class="aj-sel">
       <label class="field">Pessoa<select data-act="ajpessoa" aria-label="Pessoa"><option value="">— escolha a pessoa —</option>${todos.map((t) => `<option value="${t.pessoaId}" ${t.pessoaId === A.pessoa ? 'selected' : ''}>${esc(t.nome)}</option>`).join('')}</select></label>
       <label class="field">O que ver, incluir ou alterar<select data-act="ajcampo" aria-label="O que alterar" ${x ? '' : 'disabled'}><option value="">— escolha —</option>${CAMPOS.map(([k, l]) => `<option value="${k}" ${k === A.campo ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
     </div>`;

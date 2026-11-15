@@ -929,6 +929,14 @@ body.deslogado .rodape{display:none}
 .ev-grupo>.card.adm{margin-top:0;padding-top:12px;background:var(--bg)}
 .card.adm .card.adm::before{content:none}
 /* Perfil: Ajustes */
+.aj-sem{display:grid;gap:6px;padding:8px 10px;border:1px solid var(--line);border-radius:10px}
+.aj-sem h3{margin:0;font-size:1rem}
+.aj-sem-lista{display:grid}
+.aj-sem-l{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 0;border-top:1px solid var(--line)}
+.aj-sem-l:first-child{border-top:0}
+.aj-sem-l .btn.link{text-align:left;overflow-wrap:anywhere}
+.aj-sem-l .wa-bt{min-height:34px;padding:4px 8px;text-decoration:none}
+.aj-sem-ok{margin:0;font-size:.85rem;color:var(--ok)}
 .aj-sel{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px}
 .aj-form{display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end}
 .aj-form .field{flex:1 1 180px}

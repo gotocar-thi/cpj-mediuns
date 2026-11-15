@@ -244,6 +244,9 @@ export const cliques = {
     document.getElementById('sn-in')?.focus();
   },
   snfechar() { estado.senhaEdit = null; avisar(); },
+  // Ajustes perfil → Sem senha: abre/fecha a lista; o nome leva para a Senha da pessoa.
+  ajsemdobrar() { estado.ajUi.semAberto = !estado.ajUi.semAberto; avisar(); },
+  ajsemsenha(el) { Object.assign(estado.ajUi, { pessoa: el.dataset.id, campo: 'senha' }); estado.senhaEdit = null; avisar(); },
   novoperfil() { estado.novoPerfil = true; avisar(); document.getElementById('pn-nome')?.focus(); },
   cancelanovoperfil() { estado.novoPerfil = false; avisar(); },
   async delperfil(el) {
