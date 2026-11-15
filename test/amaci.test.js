@@ -12,9 +12,11 @@ test('amaci: 14 orixás, cada um com todos os blocos e as imagens que existem', 
   assert.deepEqual(Object.keys(AMACI).sort(), [...ORIXA_KEYS].sort());
   for (const k of ORIXA_KEYS) {
     const o = AMACI[k];
-    for (const campo of ['velas', 'ervas']) assert.ok(o[campo].length, `${k}.${campo}`);
-    for (const campo of ['itens', 'pratos', 'onde']) assert.ok(o.oferenda[campo].length, `${k}.oferenda.${campo}`);
-    assert.ok(o.pontos.length || o.nota, `${k}: sem desenho, precisa da nota`);
+    const itemOk = (t) => (typeof t === 'string' ? t.trim().length > 0 : Array.isArray(t) && typeof t[0] === 'string' && t[1].length && t[1].every(itemOk));
+    for (const campo of ['velas', 'ervas']) assert.ok(o[campo].length && o[campo].every(itemOk), `${k}.${campo}`);
+    for (const campo of ['itens', 'pratos', 'onde']) assert.ok(o.oferenda[campo].length && o.oferenda[campo].every(itemOk), `${k}.oferenda.${campo}`);
+    assert.ok((o.firmeza || []).every(itemOk), `${k}.firmeza`);
+    assert.equal(o.nota, undefined, `${k}: nada de texto que não seja da apostila`);
     for (const p of o.pontos) assert.ok(existsSync(new URL(`../frontend/img/amaci/${p.img}`, import.meta.url)), p.img);
   }
 });

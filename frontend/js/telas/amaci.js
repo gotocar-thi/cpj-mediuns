@@ -11,17 +11,20 @@ const NOME = Object.fromEntries(ORIXAS.map((o) => [o.k, o]));
 // Estado só desta tela (volta ao padrão ao trocar de aba, como o estado.amaci).
 const ui = {
   sel: '',              // orixá escolhido ('' = o último liberado)
+  config: false,        // bloco ⚙️ Configuração do admin aberto (começa minimizado)
   turmas: new Set(),    // turmas abertas no bloco do admin
   editando: null,       // orientação em edição: { orixa, texto }
 };
 export function limpar() {
   ui.sel = '';
+  ui.config = false;
   ui.turmas.clear();
   ui.editando = null;
 }
 
 const admin = () => pode('amaci:editar') && !!estado.amaci?.admin;
-const lista = (itens) => `<ul class="am-lista">${itens.map((t) => `<li>${esc(t)}</li>`).join('')}</ul>`;
+// Item: texto ou [título, [subitens]] (como na apostila).
+const lista = (itens) => `<ul class="am-lista">${itens.map((t) => (Array.isArray(t) ? `<li>${esc(t[0])}${lista(t[1])}</li>` : `<li>${esc(t)}</li>`)).join('')}</ul>`;
 const linhas = (s) => (s ? s.split('\n').length : 0);
 
 // ---------- admin ----------
@@ -38,7 +41,11 @@ function cardAdmin(A) {
       ${aberta ? `<div class="am-chips">${ORIXAS.map((o) => `<label class="chip"><input type="checkbox" data-act="amlib" data-id="${t.id}" value="${o.k}" ${lib.includes(o.k) ? 'checked' : ''}> ${esc(o.curto)}</label>`).join('')}</div>` : ''}
     </div>`;
   }).join('') : '<p class="muted" style="margin:0">Nenhuma turma de alunos cadastrada (aba Pessoas → Alunos).</p>';
-  return `<div class="card adm am-adm">
+  const lib = turmas.filter((t) => t.orixas.length).length;
+  const resumo = `${A.publicada ? 'Visível para todos' : 'Escondida'} · ${lib} de ${turmas.length} ${turmas.length === 1 ? 'turma' : 'turmas'} com orixás`;
+  const topo = `<button class="grp-h dobra am-cfg-h" data-act="amconfig" aria-expanded="${ui.config}"><h2><span aria-hidden="true">⚙️</span> Configuração</h2><span class="am-turma-x">${ui.config ? '' : `<small>${resumo}</small>`}<span class="seta" aria-hidden="true">${ui.config ? '▴' : '▾'}</span></span></button>`;
+  if (!ui.config) return `<div class="card adm am-adm">${topo}</div>`;
+  return `<div class="card adm am-adm">${topo}
     <label class="of-sw"><input type="checkbox" role="switch" data-act="ampub" ${A.publicada ? 'checked' : ''}><span class="of-sw-t" aria-hidden="true"></span><b>Visível para todos</b></label>
     <div class="am-adm-t"><h3>Orixás liberados por turma</h3><span class="muted">Cada turma só vê os orixás marcados.</span></div>
     ${corpo}
@@ -51,15 +58,17 @@ function seletor(A, sel) {
   return `<div class="am-sel" role="tablist" aria-label="Escolher orixá">${A.orixas.map((o) => `<button role="tab" class="am-sel-b" data-act="amsel" data-k="${o.k}" aria-selected="${o.k === sel}">${esc(NOME[o.k].curto)}</button>`).join('')}</div>`;
 }
 
+// Sem desenho nem firmeza na apostila, o bloco não aparece.
 function blocoPontos(o) {
+  if (!o.pontos.length && !o.firmeza?.length) return '';
   const imgs = o.pontos.length
-    ? `<div class="am-pontos${o.pontos.length > 1 ? ' varios' : ''}">${o.pontos.map((p) => `<figure class="am-ponto"><img src="/img/amaci/${esc(p.img)}" alt="${esc(p.legenda)}" loading="lazy"><figcaption>${esc(p.legenda)}</figcaption></figure>`).join('')}</div>`
+    ? `<div class="am-pontos${o.pontos.length > 1 ? ' varios' : ''}">${o.pontos.map((p) => `<figure class="am-ponto"><img src="/img/amaci/${esc(p.img)}" alt="${esc(p.legenda)}" loading="lazy">${p.legenda ? `<figcaption>${esc(p.legenda)}</figcaption>` : ''}</figure>`).join('')}</div>`
     : '';
-  return `<div class="card am-bloco"><h3><span aria-hidden="true">✴️</span> Pontos riscados</h3>${imgs}${o.nota ? `<p class="am-nota">${esc(o.nota)}</p>` : ''}</div>`;
+  return `<div class="card am-bloco"><h3><span aria-hidden="true">✴️</span> Pontos riscados</h3>${imgs}${o.firmeza?.length ? `<div class="am-sub"><span class="eyebrow">Firmezas possíveis para serem feitas em casa</span>${lista(o.firmeza)}</div>` : ''}</div>`;
 }
 
 function blocoOferenda(of) {
-  return `<div class="card am-bloco"><h3><span aria-hidden="true">🧺</span> Exemplo de oferenda</h3>
+  return `<div class="card am-bloco"><h3><span aria-hidden="true">🧺</span> Informações</h3>
     <div class="am-sub"><span class="eyebrow">Elementos</span>${lista(of.itens)}</div>
     <div class="am-sub"><span class="eyebrow">Pratos</span>${lista(of.pratos)}</div>
     <div class="am-sub"><span class="eyebrow">Onde e quando</span>${lista(of.onde)}</div>
@@ -77,9 +86,11 @@ function blocoOrientacao(o) {
       <div class="row" style="justify-content:flex-end;gap:8px"><button type="button" class="btn" data-act="amoricancel">Cancelar</button><button class="btn primary" type="submit">Salvar</button></div>
     </form>`;
   }
+  // Sem texto, o bloco não aparece; quem administra vê para poder escrever.
+  if (!o.orientacao && !admin()) return '';
   const bt = admin() ? `<button class="btn link small" data-act="amoried">✎ ${o.orientacao ? 'Editar' : 'Escrever'}</button>` : '';
   return `<div class="card am-bloco am-ori"><div class="grp-h"><h3><span aria-hidden="true">📝</span> Orientação</h3>${bt}</div>
-    ${o.orientacao ? `<p class="am-ori-txt">${esc(o.orientacao)}</p>` : '<p class="muted" style="margin:0">Ainda sem orientação para este orixá.</p>'}</div>`;
+    ${o.orientacao ? `<p class="am-ori-txt">${esc(o.orientacao)}</p>` : '<p class="muted" style="margin:0">Sem orientação: o bloco fica escondido para a corrente e os alunos.</p>'}</div>`;
 }
 
 export function render() {
@@ -100,11 +111,11 @@ export function render() {
     <div><span class="eyebrow">${esc(info.trono)}</span><h2>Amaci de ${esc(info.nome)}</h2>${A.turmaNome ? `<span class="muted am-turma-nome">${esc(A.turmaNome)} · ${libs.length} de ${ORIXAS.length} orixás liberados</span>` : ''}</div>
     ${seletor(A, sel)}
   </div>`;
-  h += blocoPontos(o);
+  h += blocoOrientacao(o);
   h += `<div class="card am-bloco"><h3><span aria-hidden="true">🕯️</span> Velas</h3>${lista(o.velas)}</div>`;
   h += `<div class="card am-bloco"><h3><span aria-hidden="true">🌿</span> Banho de ervas</h3>${lista(o.ervas)}</div>`;
+  h += blocoPontos(o);
   h += blocoOferenda(o.oferenda);
-  h += blocoOrientacao(o);
   return h + '<p class="muted am-fonte">Fonte: Apostila Orixás da Casa do Pai João.</p></section>';
 }
 
@@ -130,6 +141,7 @@ export async function enviar(form) {
 
 export const cliques = {
   amsel(el) { ui.sel = el.dataset.k; ui.editando = null; avisar(); },
+  amconfig() { ui.config = !ui.config; avisar(); },
   amturma(el) {
     const id = el.dataset.id;
     if (ui.turmas.has(id)) ui.turmas.delete(id); else ui.turmas.add(id);

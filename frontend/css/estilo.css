@@ -1715,6 +1715,7 @@ button.iem-tot-n{cursor:pointer}
 .am-bloco h3{display:flex;align-items:center;gap:8px}
 .am-lista{margin:0;padding-left:20px;display:grid;gap:6px}
 .am-lista li{overflow-wrap:anywhere}
+.am-lista .am-lista{margin-top:4px;gap:3px;list-style:circle}
 .am-sub{display:grid;gap:4px}
 .am-pontos{display:grid;grid-template-columns:minmax(0,1fr);gap:10px}
 .am-pontos.varios{grid-template-columns:repeat(2,minmax(0,1fr))}
@@ -1728,6 +1729,8 @@ button.iem-tot-n{cursor:pointer}
 .am-conta{font-size:.82rem}
 .am-fonte{font-size:.8rem;text-align:center;margin:0}
 .am-adm{gap:10px}
+.am-cfg-h h2{display:flex;align-items:center;gap:8px;margin:0;flex:0 1 auto}
+.am-cfg-h .am-turma-x small{color:var(--muted);font-size:.8rem;white-space:normal;text-align:right}
 .am-adm-t{display:grid;gap:2px}
 .am-adm-t .muted{font-size:.85rem}
 .am-turma{border:1px solid var(--line);border-radius:10px;background:var(--bg);overflow:hidden}
