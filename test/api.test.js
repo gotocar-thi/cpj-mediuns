@@ -247,10 +247,13 @@ test('remanejar falta mantém as outras duplas', async () => {
   // Todo médium/extra presente continua com cambone.
   const presentes = new Set(g.pares.map((p) => p.m).filter((m) => m !== alvo.m));
   for (const m of presentes) assert.ok(novas.some((p) => p.m === m), 'médium ficou sem cambone');
-  // No máximo uma dupla válida muda: a do cambone que estava com dois médiuns (regra 6.2).
+  // Dupla válida só muda para aliviar cambone que estava com dois médiuns (regra 6.2). Podem ser várias:
+  // nesta gira (Pretos Velhos) os passes sem a linha viram "Não atende" e sobram como cambones livres.
   const depois = new Set(novas.map((p) => p.m + '|' + p.c));
-  const mudaram = g.pares.filter((p) => p.m !== alvo.m && !depois.has(p.m + '|' + p.c)).length;
-  assert.ok(mudaram <= 1, 'duplas válidas alteradas: ' + mudaram);
+  const cargaAntes = {};
+  g.pares.filter((p) => p.m !== alvo.m).forEach((p) => { cargaAntes[p.c] = (cargaAntes[p.c] || 0) + 1; });
+  const mudaram = g.pares.filter((p) => p.m !== alvo.m && !depois.has(p.m + '|' + p.c));
+  for (const p of mudaram) assert.ok(cargaAntes[p.c] >= 2, 'dupla válida alterada sem precisar: ' + p.m + '|' + p.c);
   // Ninguém acompanha mais de um médium se há cambones suficientes.
   const carga = {};
   novas.forEach((p) => { carga[p.c] = (carga[p.c] || 0) + 1; });
