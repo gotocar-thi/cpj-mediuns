@@ -28,7 +28,7 @@ import { ocultarSorteios } from '../_lib/escala.js';
 import { oracoes } from '../_lib/oracoes.js';
 import { temAbaPublica } from '../../shared/oferendas.js';
 import { gerarHash, conferirSenha, emitirToken, emitirTokenCorrente, emitirTokenGrupo, iguaisSeguro, SENHA_MINIMA } from '../_lib/senhas.js';
-import { permissoesDe, ehAcessoCorrente, grupoAcesso, pode, PIN_VALIDO } from '../../shared/permissoes.js';
+import { permissoesDe, ehAcessoCorrente, grupoAcesso, pode, PIN_VALIDO, PERMISSOES_GRUPO } from '../../shared/permissoes.js';
 import { normalizarNome, nomesParecidos } from '../../shared/ervas.js';
 import { normalizarPerfil, perfilDaFuncao, blocosAfinidade, ANAMNESE_TIPOS, ANAMNESE_PERGUNTA_MAX, ANAMNESE_TEXTO_MAX, ANAMNESE_SIMNAO, ANAMNESE_OPCOES_MAX, ANAMNESE_OPCAO_MAX, limparRespostaTexto, limparRespostaData } from '../../shared/perfil.js';
 import { LINHA_KEYS, compactarRetratos } from '../../shared/regras.js';
@@ -353,7 +353,7 @@ const acoes = {
         }
         const usuario = {
           id: null, nome: pessoa.nome, email: '', papel: grupo, papelNome: grupo === 'alunos' ? 'Aluno' : 'Curimba',
-          grupo, pessoaId: null, permissoes: grupo === 'alunos' ? ['alunos:ver'] : [],
+          grupo, pessoaId: null, permissoes: PERMISSOES_GRUPO[grupo] || [],
         };
         return { token: await emitirTokenGrupo(grupo, pessoa.id, pessoa.nome, versao), usuario: publico(usuario) };
       }

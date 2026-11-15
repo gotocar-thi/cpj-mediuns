@@ -96,6 +96,8 @@ export const grupoAcesso = (email) => {
   return GRUPOS_ACESSO.includes(valor) ? valor : ehAcessoCorrente(valor) ? 'cpj' : '';
 };
 export const ehAcessoGrupo = (email) => !!grupoAcesso(email);
+// O que os acessos de grupo podem fazer: o aluno vê o próprio registro; os dois pedem na aba Compras (quando ela está visível para todos).
+export const PERMISSOES_GRUPO = { alunos: ['alunos:ver', 'guias:pedir'], curimba: ['guias:pedir'] };
 
 // Senha (PIN) de quem entra pelo acesso da corrente: só números, de 4 a 8.
 export const PIN_VALIDO = /^\d{4,8}$/;

@@ -43,6 +43,7 @@ export function nomesParecidos(nomes, digitado, max = 8) {
 //   acesso da corrente: "p:<id da pessoa cadastrada>" (o mesmo em qualquer aparelho, mesmo se o nome mudar)
 //   pedido de alguém fora da lista (feito pelo admin): "n:<nome normalizado>"
 export function chavePessoa(quem) {
+  if (quem.alunoId) return 'a:' + quem.alunoId;     // aluno (acesso alunos)
   if (quem.pessoaId) return 'p:' + quem.pessoaId;   // usuário ou acesso da corrente ligado à pessoa
   if (quem.id) return 'u:' + quem.id;                // root (sem cadastro)
   return 'n:' + normalizarNome(quem.nome);

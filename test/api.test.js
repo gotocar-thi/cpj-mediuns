@@ -669,6 +669,17 @@ test('acessos alunos e curimba: nome do cadastro, dados restritos e eventos sem 
   assert.equal((await api('GET', '/api/pessoas?lista=curimba', loginCurimba.json.token)).status, 403);
   assert.equal((await api('GET', '/api/giras', loginCurimba.json.token)).status, 403);
   assert.equal((await api('POST', '/api/auth/entrar', null, { email: 'ervas', senha: 'qualquer nome' })).status, 401);
+  // Aba Compras: alunos e curimba pedem quando ela está visível para todos; desligada, não entram.
+  await api('POST', '/api/oferendas', ADMIN, { acao: 'guias', op: 'publicar', publicada: false });
+  assert.equal((await api('GET', '/api/oferendas?lista=guias', loginAluna.json.token)).status, 403);
+  assert.equal((await api('GET', '/api/oferendas?lista=guias', loginCurimba.json.token)).status, 403);
+  await api('POST', '/api/oferendas', ADMIN, { acao: 'guias', op: 'publicar', publicada: true });
+  const comprasAluna = await api('GET', '/api/oferendas?lista=guias', loginAluna.json.token);
+  assert.equal(comprasAluna.status, 200, JSON.stringify(comprasAluna.json));
+  assert.equal(comprasAluna.json.admin, false);
+  assert.equal((await api('GET', '/api/oferendas?lista=guias', loginCurimba.json.token)).status, 200);
+  assert.equal((await api('POST', '/api/oferendas', loginAluna.json.token, { acao: 'guias', op: 'encerrar' })).status, 403, 'aluno não administra');
+  await api('POST', '/api/oferendas', ADMIN, { acao: 'guias', op: 'publicar', publicada: false });
 });
 
 test('ervas: admin cadastra, todos escolhem, frete dividido, lista fechada', async () => {

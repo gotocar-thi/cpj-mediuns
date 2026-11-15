@@ -4,7 +4,7 @@
 import { api } from './api.js';
 import { token } from './auth.js';
 import { giraVazia, ordenarPessoas, pessoasDe, expandirRetrato } from '/shared/regras.js';
-import { permissoesDe, PERFIS_PADRAO } from '/shared/permissoes.js';
+import { permissoesDe, PERFIS_PADRAO, PERMISSOES_GRUPO } from '/shared/permissoes.js';
 import { definirConfig } from '/shared/config.js';
 import { hoje, toast } from './util.js';
 
@@ -83,8 +83,7 @@ export const pode = (perm) => {
   if (!estado.me) return false;
   if (estado.me.papel === 'root') {
     if (estado.visaoRoot === 'cpj') return (estado.permCorrente || []).includes(perm);
-    if (estado.visaoRoot === 'alunos') return perm === 'alunos:ver';
-    if (estado.visaoRoot === 'curimba') return false;
+    if (estado.visaoRoot === 'alunos' || estado.visaoRoot === 'curimba') return PERMISSOES_GRUPO[estado.visaoRoot].includes(perm);
   }
   return (estado.me.permissoes || []).includes(perm);
 };
@@ -726,8 +725,8 @@ export async function acaoErvas(acao, dados = {}) {
 
 // ---------- Compras (pedidos de guias) ----------
 // Aba: quem administra sempre vê; as pessoas com a aba no perfil, quando o admin liga "Visível para todos".
-export const veGuias = () => !['alunos', 'curimba'].includes(visaoAtiva())
-  && (pode('guias:gerenciar') || (pode('guias:pedir') && !!estado.me?.guiasPublicada));
+// Alunos e curimba também pedem (shared/permissoes.js PERMISSOES_GRUPO), só com a aba visível para todos.
+export const veGuias = () => pode('guias:gerenciar') || (pode('guias:pedir') && !!estado.me?.guiasPublicada);
 export async function carregarGuias() {
   try { estado.guias = await api('GET', '/oferendas?lista=guias'); } catch (e) { toast(e.message); estado.guias = estado.guias || { grupos: [], pedidos: [], meus: [], aberto: null }; }
   avisar();

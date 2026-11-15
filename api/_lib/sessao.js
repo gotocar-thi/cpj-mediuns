@@ -4,7 +4,7 @@
 import { HttpError } from './http.js';
 import { db } from './db.js';
 import { lerToken } from './senhas.js';
-import { permissoesDe } from '../../shared/permissoes.js';
+import { permissoesDe, PERMISSOES_GRUPO } from '../../shared/permissoes.js';
 
 export async function exigir(req, permissao) {
   const h = req.headers.authorization || req.headers.Authorization || '';
@@ -20,7 +20,7 @@ export async function exigir(req, permissao) {
       : await db.rpc('curimba_aluno_acesso', { id: sessao.registroId });
     if (!aluno) throw new HttpError(401, 'Cadastro não encontrado. Entre de novo.');
     if (sessao.grupo === 'alunos' && aluno.pinVersao !== sessao.versao) throw new HttpError(401, 'Sessão expirada. Entre de novo.');
-    const permissoes = sessao.grupo === 'alunos' ? ['alunos:ver'] : [];
+    const permissoes = PERMISSOES_GRUPO[sessao.grupo] || [];
     const quem = {
       id: null, nome: aluno.nome, email: '', papel: sessao.grupo, papelNome: sessao.grupo === 'alunos' ? 'Aluno' : 'Curimba',
       grupo: sessao.grupo, alunoId: sessao.grupo === 'alunos' ? aluno.id : null,
