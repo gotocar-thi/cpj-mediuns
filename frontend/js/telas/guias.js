@@ -16,7 +16,7 @@ const plural = (n, s, p) => `${n} ${n === 1 ? s : p}`;
 const ui = {
   abertos: new Set(),       // grupos expandidos (admin)
   feitos: new Set(),        // pedidos encerrados expandidos
-  minimizados: new Set(),   // blocos de itens (grupos) que a pessoa minimizou
+  minimizados: new Set(),   // blocos que a pessoa minimizou: id do grupo de itens ou 'meus' (Seus pedidos)
   grupoRen: null,           // id do grupo com o ✎ aberto
   item: null,               // formulário de item: { grupoId, id?, descricao, quantidade, valor, visivel, foto?: b64 | null }
   qtd: {},                  // quantidade escolhida por item (antes de Pedir)
@@ -137,7 +137,12 @@ function cardMeus(G) {
         <span class="gi-meu-val">${l.quantidade}x · <b>${R(l.valor * l.quantidade)}</b></span></li>`).join('')}</ul>
        <div class="meu-tot"><span>Valor total</span><b>${R(totalDe(M))}</b></div>`
     : '<p class="muted" style="margin:0">Você ainda não fez nenhum pedido.</p>';
-  return `<div class="card"><div class="grp-h"><h2>Seus pedidos</h2></div>${lista}${blocoPix(G)}
+  // Pode ser minimizado (começa aberto, como os blocos de itens); minimizado, mostra quantos itens e o total.
+  const min = ui.minimizados.has('meus');
+  const cab = `<button class="grp-h dobra" data-act="guiaminimizar" data-id="meus" aria-expanded="${!min}"><h2>Seus pedidos</h2>
+    <span class="count">${min && M.length ? `${plural(itensDe(M), 'item', 'itens')} · ${R(totalDe(M))} ` : ''}<span class="seta" aria-hidden="true">${min ? '▸' : '▾'}</span></span></button>`;
+  if (min) return `<div class="card">${cab}</div>`;
+  return `<div class="card">${cab}${lista}${blocoPix(G)}
     <p class="gi-suporte">* Para cancelar, entre em contato com o suporte.</p></div>`;
 }
 

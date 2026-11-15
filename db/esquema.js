@@ -9,7 +9,7 @@
 // Estrutura: veja db/ESTRUTURA-ESQUEMA.md para o mapa de versões, domínios e
 // quais migrações foram testadas no Postgres.
 
-export const VERSAO = 110;  // v110: Pedir já gera o link de pagamento do ASAAS
+export const VERSAO = 111;  // v111: linha do pedido de Compras guarda "Grupo · Item"
 
 import { PERFIS_PADRAO } from '../shared/permissoes.js';
 
@@ -4456,5 +4456,38 @@ export const MIGRACOES = [
                     'paymentId', e.dados -> 'payment' ->> 'id', 'valor', e.dados -> 'payment' ->> 'value',
                     'status', e.dados -> 'payment' ->> 'status', 'nome', c.nome, 'pedido', c.pedido) as j
              from asaas_eventos e left join asaas_cobrancas c on c.id = e.cobranca_id order by e.recebido_em desc limit 50) x), '[]'::jsonb))
+   $$`,
+  // ================================================== v111: a linha do pedido guarda "Grupo · Item"
+  // Itens com a mesma descrição em grupos diferentes não se confundem no pedido (substitui a da v109).
+  // Só vale para pedidos novos: as linhas já feitas continuam como estavam.
+  `create or replace function guia_pedir(p jsonb)
+   returns jsonb language plpgsql as $$
+   declare
+     v_pedido int;
+     v_item guias_itens%rowtype;
+     v_grupo text;
+     v_qtd int := (p ->> 'quantidade')::int;
+     v_linha uuid;
+   begin
+     select numero into v_pedido from guias_pedidos where encerrado_em is null order by numero desc limit 1;
+     if v_pedido is null then raise exception 'Os pedidos estão fechados no momento.'; end if;
+     select i.* into v_item from guias_itens i join guias_grupos g on g.id = i.grupo_id
+      where i.id = (p ->> 'itemId')::uuid and i.visivel and g.visivel for update of i;
+     if not found then raise exception 'Este item não está disponível.'; end if;
+     if v_item.quantidade < 1 then raise exception 'Este item esgotou.'; end if;
+     if v_qtd < 1 or v_qtd > v_item.quantidade then raise exception 'Só restam % deste item.', v_item.quantidade; end if;
+     select descricao into v_grupo from guias_grupos where id = v_item.grupo_id;
+     update guias_itens set quantidade = quantidade - v_qtd where id = v_item.id;
+     select id into v_linha from guias_linhas
+      where pedido = v_pedido and item_id = v_item.id and chave = p ->> 'chave' and valor = v_item.valor
+        and cobranca_id is null and pago_em is null limit 1;
+     if v_linha is not null then
+       update guias_linhas set quantidade = quantidade + v_qtd, nome = p ->> 'nome', ok = false where id = v_linha;
+     else
+       insert into guias_linhas (pedido, item_id, descricao, valor, quantidade, chave, nome)
+       values (v_pedido, v_item.id, v_grupo || ' · ' || v_item.descricao, v_item.valor, v_qtd, p ->> 'chave', p ->> 'nome');
+     end if;
+     return guias_estado();
+   end;
    $$`,
 ];

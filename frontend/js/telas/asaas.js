@@ -12,19 +12,20 @@ export const URL_WEBHOOK = location.origin + '/api/oferendas?webhook=asaas';
 const STATUS = { pendente: ['Aguardando pagamento', 'new'], paga: ['Paga', 'pleno'], vencida: ['Vencida', 're'], cancelada: ['Cancelada', 're'], estornada: ['Estornada', 're'] };
 const badge = (s) => { const [t, c] = STATUS[s] || [s, '']; return `<span class="badge ${c}">${esc(t)}</span>`; };
 
-const ui = { cobrancas: true, eventos: false };
-export function limpar() { ui.cobrancas = true; ui.eventos = false; }
+const ui = { conexao: false, cobrancas: true, eventos: false };
+export function limpar() { ui.conexao = false; ui.cobrancas = true; ui.eventos = false; }
 
-function cardTopo(A) {
-  const ok = A.config.chave && A.config.token;
-  return `<div class="card adm ervas-pub"><label class="of-sw"><input type="checkbox" role="switch" data-act="asaasativo" ${A.ativo ? 'checked' : ''} ${!ok && !A.ativo ? 'disabled' : ''}><span class="of-sw-t" aria-hidden="true"></span><b>Pix visível nas Compras</b></label>
-    <p class="muted" style="margin:0">${A.ativo ? 'Cada Pedir na aba Compras gera um link de pagamento Pix.' : 'Desligado: os pedidos da aba Compras não geram link de pagamento.'}</p></div>`;
-}
-
-function cardConfig(A) {
+// Primeiro bloco, minimizado: o toggle do Pix e a configuração. Minimizado, mostra se o Pix está ligado e o ambiente.
+function cardConexao(A) {
   const C = A.config;
-  const item = (ok, t) => `<li>${ok ? '✅' : '❌'} ${t}</li>`;
-  return `<div class="card adm"><div class="grp-h"><h2>Conexão</h2><span class="count">${esc(C.ambiente)}</span></div>
+  const ok = C.chave && C.token;
+  const cab = `<button class="grp-h dobra" data-act="asaasdobrar" data-k="conexao" aria-expanded="${ui.conexao}"><h2>Conexão</h2>
+    <span class="count">${A.ativo ? 'Pix ligado' : 'Pix desligado'} · ${esc(C.ambiente)} <span class="seta" aria-hidden="true">${ui.conexao ? '▾' : '▸'}</span></span></button>`;
+  if (!ui.conexao) return `<div class="card adm">${cab}</div>`;
+  const item = (v, t) => `<li>${v ? '✅' : '❌'} ${t}</li>`;
+  return `<div class="card adm">${cab}
+    <label class="of-sw"><input type="checkbox" role="switch" data-act="asaasativo" ${A.ativo ? 'checked' : ''} ${!ok && !A.ativo ? 'disabled' : ''}><span class="of-sw-t" aria-hidden="true"></span><b>Pix visível nas Compras</b></label>
+    <p class="muted" style="margin:0">${A.ativo ? 'Cada Pedir na aba Compras gera um link de pagamento Pix.' : 'Desligado: os pedidos da aba Compras não geram link de pagamento.'}</p>
     <ul class="as-cfg">${item(C.chave, 'ASAAS_API_KEY na Vercel')}${item(C.token, 'ASAAS_WEBHOOK_TOKEN na Vercel')}</ul>
     <label class="field">URL do webhook (cole no ASAAS, com o mesmo token)<input type="text" id="as-url" readonly value="${esc(URL_WEBHOOK)}"></label>
     <div class="cp-bts"><button class="btn" data-act="asaascopiar"><span aria-hidden="true">📋</span> Copiar URL</button></div>
@@ -64,7 +65,7 @@ export function render() {
   if (estado.asaas === null) { carregarAsaas(); return '<div class="loading">Carregando o ASAAS…</div>'; }
   const A = estado.asaas;
   if (A.erro) return `<section class="panel"><div class="card"><p class="erro">${esc(A.erro)}</p><button class="btn" data-act="asaasatualizar">Tentar de novo</button></div></section>`;
-  return `<section class="panel">${cardTopo(A)}${cardCobrancas(A)}${cardEventos(A)}${cardConfig(A)}</section>`;
+  return `<section class="panel">${cardConexao(A)}${cardCobrancas(A)}${cardEventos(A)}</section>`;
 }
 
 export const cliques = {

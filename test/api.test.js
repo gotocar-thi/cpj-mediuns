@@ -1832,7 +1832,7 @@ test('pedidos de guias: aba escondida até publicar; grupos, itens, pedir baixa 
   U = (await gu(USER, { op: 'pedir', itemId: it.id, quantidade: 2 })).json;
   assert.equal(U.grupos.find((x) => x.id === g.id).itens[0].quantidade, 1, 'estoque baixou');
   U = (await gu(USER, { op: 'pedir', itemId: it.id, quantidade: 1 })).json;
-  assert.deepEqual(U.meus.map((l) => [l.pedido, l.descricao, l.quantidade, l.valor]), [[1, 'Guia verde', 3, 25.5]], 'pedir de novo soma na mesma linha');
+  assert.deepEqual(U.meus.map((l) => [l.pedido, l.descricao, l.quantidade, l.valor]), [[1, 'Guias de Oxóssi · Guia verde', 3, 25.5]], 'pedir de novo soma na mesma linha; a linha leva o nome do grupo');
   assert.equal((await gu(USER, { op: 'pedir', itemId: it.id, quantidade: 1 })).status, 400, 'esgotou');
   assert.equal((await gu(USER, { op: 'cancelar', id: U.meus[0].id })).status, 403, 'cancelar só pelo admin');
 
@@ -2039,9 +2039,9 @@ test('ASAAS: Pedir gera o link de pagamento; só o webhook conferido no ASAAS ma
     assert.equal(falso.value, 25, 'cobra 2 x 12,50, somado no servidor');
     assert.equal(G.pixPrecisaCpf, false, 'cliente do ASAAS guardado');
     const c = G.cobrancas.find((x) => x.status === 'pendente');
-    assert.deepEqual([c.pedido, c.valor, c.pixPayload, c.itens], [n, 25, '00020126PIXTESTE', ['2x Guia Pix']]);
+    assert.deepEqual([c.pedido, c.valor, c.pixPayload, c.itens], [n, 25, '00020126PIXTESTE', ['2x Pix teste · Guia Pix']]);
     assert.ok(falso.pedidos.every((x) => x[2] === 'chave-teste'), 'chave no cabeçalho access_token');
-    const minha = () => G.meus.find((l) => l.pedido === n && l.descricao === 'Guia Pix');
+    const minha = () => G.meus.find((l) => l.pedido === n && l.descricao === 'Pix teste · Guia Pix');
     assert.deepEqual([minha().pago, minha().pix], [false, 'pendente']);
     assert.match((await gu(ADMIN, { op: 'pix', pedido: n })).json.erro, /já foi gerado/);
     const linhaId = minha().id;
@@ -2051,7 +2051,7 @@ test('ASAAS: Pedir gera o link de pagamento; só o webhook conferido no ASAAS ma
     G = (await gu(ADMIN, { op: 'pedir', itemId: it.id, quantidade: 1 })).json;
     assert.equal(G.aviso, undefined);
     assert.equal(falso.value, 12.5, 'o link cobre só o que ainda não tinha link');
-    assert.deepEqual(G.meus.filter((l) => l.pedido === n && l.descricao === 'Guia Pix').map((l) => [l.quantidade, l.pix]).sort(), [[1, 'pendente'], [2, 'pendente']]);
+    assert.deepEqual(G.meus.filter((l) => l.pedido === n && l.descricao === 'Pix teste · Guia Pix').map((l) => [l.quantidade, l.pix]).sort(), [[1, 'pendente'], [2, 'pendente']]);
     assert.equal(G.cobrancas.find((x) => x.valor === 12.5).link, 'https://sandbox.asaas.com/i/pay_2');
 
     // Webhook de pagamento: no ASAAS ainda está pendente → não libera.
@@ -2072,11 +2072,11 @@ test('ASAAS: Pedir gera o link de pagamento; só o webhook conferido no ASAAS ma
     falso.status = 'PENDING';
     A = (await api('GET', '/api/oferendas?lista=asaas', ADMIN)).json;
     const c2 = A.cobrancas.find((x) => x.status === 'pendente');
-    assert.deepEqual([c2.valor, c2.itens, c2.link], [12.5, ['1x Guia Pix'], 'https://sandbox.asaas.com/i/pay_2']);
+    assert.deepEqual([c2.valor, c2.itens, c2.link], [12.5, ['1x Pix teste · Guia Pix'], 'https://sandbox.asaas.com/i/pay_2']);
     assert.equal((await as(ADMIN, { op: 'cancelar', id: c2.id })).json.cobrancas.find((x) => x.id === c2.id).status, 'cancelada');
     assert.ok(falso.pedidos.some((x) => x[0] === 'DELETE' && x[1] === '/payments/pay_2'));
     assert.deepEqual(A.eventos.map((e) => [e.id, e.resultado]), [['evt_2', 'paga'], ['evt_1', 'não liberado: no ASAAS está PENDING']]);
-    const umaGuia = () => G.meus.find((l) => l.pedido === n && l.descricao === 'Guia Pix' && l.quantidade === 1);
+    const umaGuia = () => G.meus.find((l) => l.pedido === n && l.descricao === 'Pix teste · Guia Pix' && l.quantidade === 1);
     G = (await api('GET', '/api/oferendas?lista=guias', ADMIN)).json;
     assert.equal(umaGuia().pix, 'cancelada');
     G = (await gu(ADMIN, { op: 'pix', pedido: n })).json;
@@ -2086,7 +2086,7 @@ test('ASAAS: Pedir gera o link de pagamento; só o webhook conferido no ASAAS ma
     falso.falhar = true;
     G = (await gu(ADMIN, { op: 'pedir', itemId: it.id, quantidade: 3 })).json;
     assert.match(G.aviso, /Pedido feito, mas o link de pagamento não foi gerado: ASAAS: Serviço indisponível/);
-    const tres = () => G.meus.find((l) => l.pedido === n && l.descricao === 'Guia Pix' && l.quantidade === 3);
+    const tres = () => G.meus.find((l) => l.pedido === n && l.descricao === 'Pix teste · Guia Pix' && l.quantidade === 3);
     assert.equal(tres().pix, null, 'pedido sem link');
     assert.equal(sql("select count(*) from asaas_cobrancas where status = 'criando'"), '0', 'a reserva foi desfeita');
     falso.falhar = false;
