@@ -149,7 +149,8 @@ async function respostaRoot() {
     config: {
       chave: !!process.env.ASAAS_API_KEY,
       token: !!process.env.ASAAS_WEBHOOK_TOKEN,
-      ambiente: urlApi().includes('sandbox') ? 'Sandbox (testes)' : 'Produção',
+      // Só a URL de produção do ASAAS é produção; qualquer outra (sandbox, teste) não é.
+      ambiente: urlApi().startsWith('https://api.asaas.com/') ? 'Produção' : 'Sandbox (testes)',
     },
   };
 }
