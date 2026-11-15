@@ -155,6 +155,15 @@ Estado atual das regras da casa e do app. Código: `shared/regras.js` (e demais 
 - A linha guarda a descrição e o valor da hora do pedido: mudar ou excluir o item depois não altera pedidos feitos. Quem não administra nunca recebe os pedidos dos outros.
 - **Painel de pedidos** (admin): o pedido aberto, por pessoa (nome e total), com cada item (quantidade e valor), a **caixinha de ok** de cada linha e o total. **Pedidos encerrados**: um por número, minimizados (data, pessoas, total e quantos ok); abertos, a mesma lista com as caixinhas. **Exportar pedido**: escolhe o número e sai em texto (Copiar, WhatsApp) ou imagem (Compartilhar, Salvar).
 
+## Amaci (aba própria)
+
+- O amaci de cada um dos **14 orixás**, com o conteúdo da **Apostila Orixás da CPJ** (sem acréscimos), em blocos: **Pontos riscados** (os desenhos da apostila e o texto da firmeza; Pai Ogum e Mãe Iemanjá não têm desenho na apostila, só o texto), **Velas**, **Banho de ervas**, **Exemplo de oferenda** (elementos, pratos, onde e quando) e **Orientação**.
+- Interruptor **Visível para todos** no bloco ADMIN: desligado (começa assim), só quem administra vê a aba; o servidor também recusa. Administram o **root** e o **Admin** (aba "Amaci" → Editar nos perfis); todos os outros perfis e os **alunos** veem quando está ligado. A **curimba** não vê.
+- **Seletor de orixás**: botões na ordem da apostila (Oxalá, Logunã, Oxum, Oxumaré, Oxóssi, Obá, Ogum, Iansã, Xangô, Oroiná, Obaluayê, Nanã, Iemanjá, Omolu), só com os liberados para quem está logado. Ao abrir a aba, fica selecionado o **último liberado**.
+- **Orixás liberados por turma** (bloco ADMIN): cada turma de alunos do cadastro aparece sozinha (turma nova entra, turma excluída sai), recolhida com "X de 14 · até Orixá"; aberta, uma caixinha por orixá, que grava ao tocar. Turma nova começa sem nenhum orixá.
+- O **aluno** vê só os orixás liberados para a turma dele (aluno sem turma, nenhum); o servidor manda só esses. Quem não é aluno (corrente, admins) vê os 14.
+- **Orientação**: texto livre do admin, um por orixá, igual para todas as turmas. Cabem **até 10 linhas (1000 letras)**: o campo mostra 5 linhas e rola o resto (lendo e escrevendo), mostra o limite e a contagem e não deixa passar da 10ª linha. Vazio apaga.
+
 ## Outros
 
 - **Blocos de admin** (em todas as abas): moldura dourada com **ADMIN** escrito na borda, o mesmo jeito da aba Perfil. Bloco de admin dentro de outro não repete o rótulo.

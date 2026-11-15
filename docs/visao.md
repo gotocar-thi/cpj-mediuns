@@ -10,6 +10,7 @@ PWA da **Casa do Pai João (CPJ)** para organizar a corrente e as giras:
 - eventos da casa, oferendas, compra coletiva de ervas, histórico e estatísticas;
 - venda de guias (aba Compras): o admin cadastra grupos e itens com foto, estoque e valor; a corrente pede e o admin fecha cada pedido numerado, marca ok e exporta;
 - aulas de curimba (aba à parte): alunos da corrente ou de fora, aulas, presença e gráfico de presença;
+- amaci de cada orixá (aba Amaci), com o conteúdo da apostila de orixás; o admin libera os orixás por turma de alunos;
 - vídeos do YouTube das giras (aba Vídeos: o admin publica para toda a corrente ou deixa só para os admins), por mês e classificados por orixá/linha;
 - álbum de fotos por gira/evento (aba Fotos): todos veem, quem entrou com senha envia; os arquivos ficam no Cloudflare R2 gratuito.
 
@@ -54,6 +55,7 @@ PWA da **Casa do Pai João (CPJ)** para organizar a corrente e as giras:
 - **Unidade do item das oferendas não foi testada no banco.** A migração v104 (`unidade` em `oferenda_itens` e `iemanja_itens`, funções de item e de estado refeitas) e o teste novo só rodam no CI.
 - **Quantidade quebrada (v105) e troca de pessoas da Iemanjá não foram testadas no banco.** A migração muda o tipo da quantidade dos itens e doações para numeric; o teste novo só roda no CI.
 - **Orações de 4 dias e transporte (v106) não foram testados no banco.** A migração e os testes novos só rodam no CI.
+- **Aba Amaci não foi testada no banco.** A migração v108 (`amaci_*`, perfis com a aba nova, `inicio_dados` refeita) e o teste novo de `test/api.test.js` só rodam no CI; a tela foi conferida com dados falsos. O Guia da Corrente e o do Administrador (PDF) ainda não falam da aba.
 - **Testes no Windows.** `npm test` depende de Linux (`runuser`) e de Postgres local; na pasta atual não roda.
 - O doc `claude/regras-sort-mediuns.md` do Project é antigo (out/2026); [regras.md](regras.md) é a referência atual.
 

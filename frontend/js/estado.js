@@ -21,6 +21,7 @@ export const estado = {
   ervasNova: null,     // janela Nova compra: { passo: 'aviso' } (tem certeza?) ou { passo: 'escolher' } (encerrar ou descartar)
   ervasHist: null,     // Histórico de compras (admin): lista, undefined = carregando, { erro }
   guias: null,         // aba Compras (GET /api/oferendas?lista=guias)
+  amaci: null,         // aba Amaci (GET /api/pessoas?lista=amaci)
   ervasPara: null,     // admin montando o pedido de outra pessoa: { chave?, nome, itens: { ervaId: qtd } }    // 'fornecedor' | 'cobranca' (exportação aberta na aba Ervas)
   pronto: false,
   confirm: null,       // item aguardando "Confirmar"
@@ -735,6 +736,26 @@ export async function acaoGuias(op, dados = {}) {
   try {
     estado.guias = await api('POST', '/oferendas', { acao: 'guias', op, ...dados });
     if (op === 'publicar') estado.me = { ...estado.me, guiasPublicada: !!estado.guias.publicada };
+    avisar();
+    return true;
+  } catch (e) {
+    toast(e.message);
+    avisar();
+    return false;
+  }
+}
+
+// ---------- Amaci ----------
+// Aba: quem administra sempre vê; as pessoas com a aba no perfil (e os alunos), quando o admin liga "Visível para todos".
+export const veAmaci = () => pode('amaci:editar') || (pode('amaci:ver') && !!estado.me?.amaciPublicada);
+export async function carregarAmaci() {
+  try { estado.amaci = await api('GET', '/pessoas?lista=amaci'); } catch (e) { estado.amaci = { erro: e.message }; }
+  avisar();
+}
+export async function acaoAmaci(op, dados = {}) {
+  try {
+    estado.amaci = await api('POST', '/pessoas', { acao: 'amaci', op, ...dados });
+    if (op === 'publicar') estado.me = { ...estado.me, amaciPublicada: !!estado.amaci.publicada };
     avisar();
     return true;
   } catch (e) {

@@ -13,12 +13,16 @@
 // POST /api/pessoas            { acao: 'curimbaAluno', pessoaId? | nome } · { acao: 'curimbaExcluirAluno', id }
 //                              { acao: 'curimbaAula', id?, data, nome? } · { acao: 'curimbaExcluirAula', id }
 //                              { acao: 'curimbaPresenca', aulaId, alunoId, status: 'p'|'f'|'' }  → { alunos, aulas, presencas }
+// GET  /api/pessoas?lista=amaci  aba Amaci: os orixás liberados para quem está logado (+ turmas, para quem administra)
+// POST /api/pessoas            { acao: 'amaci', op: 'publicar', publicada } · { op: 'turma', turmaId, orixas: [..] }
+//                              · { op: 'orientacao', orixa, texto }  (só quem administra a aba; veja api/_lib/amaci.js)
 import { rota, corpo, HttpError, validarData, validarId, hojeBR } from '../_lib/http.js';
 import { exigir } from '../_lib/sessao.js';
 import { db } from '../_lib/db.js';
 import { FUNCAO_KEYS } from '../../shared/regras.js';
 import { contagemPerfis, pessoasPorOrixaCabeca } from '../../shared/perfil.js';
 import { pode } from '../../shared/permissoes.js';
+import { amaci, acaoAmaci } from '../_lib/amaci.js';
 
 const ACOES_ALUNOS = ['alunos', 'aluno', 'excluirAluno', 'turma', 'excluirTurma', 'promoverAlunoCPJ'];
 const ACOES_CURIMBA = ['curimbaAluno', 'curimbaExcluirAluno', 'curimbaAula', 'curimbaExcluirAula', 'curimbaPresenca'];
@@ -81,6 +85,7 @@ export default rota({
       const estado = await db.rpc('alunos_estado');
       return eu.grupo === 'alunos' ? { ...estado, alunos: estado.alunos.filter((a) => a.id === eu.alunoId) } : estado;
     }
+    if (req.query.lista === 'amaci') return amaci(await exigir(req, 'amaci:ver'));
     if (req.query.lista === 'curimba') {
       await exigir(req, 'curimba:ver');
       return db.rpc('curimba_estado');
@@ -103,6 +108,7 @@ export default rota({
   },
   POST: async (req) => {
     const b = corpo(req);
+    if (b.acao === 'amaci') return acaoAmaci(await exigir(req, 'amaci:editar'), b);
     if (ACOES_ALUNOS.includes(b.acao)) {
       await exigir(req, 'alunos:editar');
       if (b.acao === 'promoverAlunoCPJ') await exigir(req, 'pessoas:editar');

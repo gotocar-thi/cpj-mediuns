@@ -9,7 +9,7 @@
 // Estrutura: veja db/ESTRUTURA-ESQUEMA.md para o mapa de versões, domínios e
 // quais migrações foram testadas no Postgres.
 
-export const VERSAO = 107;  // v107: Gestão de Conduta: cancelar o envio (quem abriu) e excluir relato (root)
+export const VERSAO = 108;  // v108: aba Amaci (orixás liberados por turma, orientação por orixá, Visível para todos)
 
 import { PERFIS_PADRAO } from '../shared/permissoes.js';
 
@@ -3696,32 +3696,6 @@ export const MIGRACOES = [
      return guias_estado();
    end;
    $$`,
-  // Abertura: também se a aba Pedidos de Guias está visível para todos.
-  `create or replace function inicio_dados(p jsonb default '{}'::jsonb)
-   returns jsonb language plpgsql as $$
-   declare
-     v_versao text := versao_dados();
-     r jsonb;
-   begin
-     if coalesce(p ->> 'versao', '') = v_versao then
-       return jsonb_build_object('versao', v_versao, 'semMudanca', true);
-     end if;
-     r := jsonb_build_object('versao', v_versao, 'pessoas', pessoas_listar('{"todas": true}'::jsonb),
-                             'giras', giras_listar('{}'::jsonb), 'config', config_casa('{}'::jsonb));
-     begin r := r || jsonb_build_object('eventos', eventos_listar('{}'::jsonb)); exception when others then null; end;
-     begin r := r || jsonb_build_object('oracoes', oracoes_listar('{}'::jsonb)); exception when others then null; end;
-     begin r := r || jsonb_build_object('entidadesApelidos', entidades_apelidos_listar('{}'::jsonb)); exception when others then null; end;
-     if nullif(p ->> 'pessoaId', '') is not null then
-       begin r := r || jsonb_build_object('minhaCurimba', curimba_minha(jsonb_build_object('pessoaId', p ->> 'pessoaId'))); exception when others then null; end;
-     end if;
-     if coalesce((p ->> 'me')::boolean, false) then
-       r := r || jsonb_build_object('abasOferendas', oferenda_abas_listar('{}'::jsonb), 'videosPublicada', videos_publicada('{}'::jsonb),
-                                    'ervasPublicada', ervas_publicada('{}'::jsonb), 'guiasPublicada', guias_publicada('{}'::jsonb),
-                                    'iemanja', iemanja_resumo('{}'::jsonb));
-     end if;
-     return r;
-   end;
-   $$`,
   // ================================================== v104: unidade do item das oferendas e da Iemanjá (vazio = sem unidade, como antes)
   `alter table oferenda_itens add column if not exists unidade text not null default ''`,
   `alter table iemanja_itens add column if not exists unidade text not null default ''`,
@@ -4067,6 +4041,95 @@ export const MIGRACOES = [
        if not found then raise exception 'Este relato já foi lido pela comissão e o envio não pode mais ser cancelado.'; end if;
      end if;
      return condutas_listar();
+   end;
+   $$`,
+  // ================================================== v108: aba Amaci — orixás liberados por turma e orientação por orixá
+  // A aba começa escondida (só quem administra vê) até o admin ligar "Visível para todos".
+  `insert into sistema (chave, valor) values ('amaci_publicada', 'false') on conflict (chave) do nothing`,
+  `create or replace function amaci_publicada(p jsonb default '{}'::jsonb)
+   returns jsonb language sql stable as $$
+     select to_jsonb(coalesce((select valor = 'true' from sistema where chave = 'amaci_publicada'), false))
+   $$`,
+  // Todos os perfis veem a aba; só o root e o Admin administram. O que o root mudar depois fica.
+  `update perfis set abas = abas || jsonb_build_object('amaci', jsonb_build_object('ver', true, 'editar', chave in ('root', 'admin')))
+   where not abas ? 'amaci'`,
+  // Orixás (chaves de shared/amaci.js) que cada turma de alunos já pode ver. Turma excluída leva junto a linha.
+  `create table if not exists amaci_turmas (
+     turma_id      uuid primary key references turmas_alunos (id) on delete cascade,
+     orixas        jsonb not null default '[]'::jsonb,
+     atualizado_em timestamptz not null default now()
+   )`,
+  // Orientação do admin, uma por orixá (igual para todas as turmas).
+  `create table if not exists amaci_orientacoes (
+     orixa         text primary key,
+     texto         text not null default '',
+     atualizado_em timestamptz not null default now()
+   )`,
+  // Toda turma cadastrada aparece (sem linha em amaci_turmas = nenhum orixá liberado).
+  `create or replace function amaci_estado(p jsonb default '{}'::jsonb)
+   returns jsonb language sql stable as $$
+     select jsonb_build_object(
+       'publicada', amaci_publicada(),
+       'turmas', coalesce((select jsonb_agg(jsonb_build_object('id', t.id, 'nome', t.nome, 'orixas', coalesce(a.orixas, '[]'::jsonb)) order by lower(t.nome))
+                           from turmas_alunos t left join amaci_turmas a on a.turma_id = t.id), '[]'::jsonb),
+       'orientacoes', coalesce((select jsonb_object_agg(o.orixa, o.texto) from amaci_orientacoes o where o.texto <> ''), '{}'::jsonb))
+   $$`,
+  `create or replace function amaci_publicar(p jsonb)
+   returns jsonb language plpgsql as $$
+   begin
+     insert into sistema (chave, valor) values ('amaci_publicada', case when (p ->> 'publicada')::boolean then 'true' else 'false' end)
+     on conflict (chave) do update set valor = excluded.valor;
+     return amaci_estado();
+   end;
+   $$`,
+  // p = { turmaId, orixas: [..] } — a lista inteira da turma (o backend já validou as chaves).
+  `create or replace function amaci_turma(p jsonb)
+   returns jsonb language plpgsql as $$
+   begin
+     if not exists (select 1 from turmas_alunos where id = (p ->> 'turmaId')::uuid) then raise exception 'Turma não encontrada.'; end if;
+     insert into amaci_turmas (turma_id, orixas) values ((p ->> 'turmaId')::uuid, coalesce(p -> 'orixas', '[]'::jsonb))
+     on conflict (turma_id) do update set orixas = excluded.orixas, atualizado_em = now();
+     return amaci_estado();
+   end;
+   $$`,
+  // p = { orixa, texto } — texto vazio apaga.
+  `create or replace function amaci_orientacao(p jsonb)
+   returns jsonb language plpgsql as $$
+   begin
+     if coalesce(p ->> 'texto', '') = '' then
+       delete from amaci_orientacoes where orixa = p ->> 'orixa';
+     else
+       insert into amaci_orientacoes (orixa, texto) values (p ->> 'orixa', p ->> 'texto')
+       on conflict (orixa) do update set texto = excluded.texto, atualizado_em = now();
+     end if;
+     return amaci_estado();
+   end;
+   $$`,
+  // Abertura: também se a aba Amaci está visível para todos (substitui a da v103).
+  `create or replace function inicio_dados(p jsonb default '{}'::jsonb)
+   returns jsonb language plpgsql as $$
+   declare
+     v_versao text := versao_dados();
+     r jsonb;
+   begin
+     if coalesce(p ->> 'versao', '') = v_versao then
+       return jsonb_build_object('versao', v_versao, 'semMudanca', true);
+     end if;
+     r := jsonb_build_object('versao', v_versao, 'pessoas', pessoas_listar('{"todas": true}'::jsonb),
+                             'giras', giras_listar('{}'::jsonb), 'config', config_casa('{}'::jsonb));
+     begin r := r || jsonb_build_object('eventos', eventos_listar('{}'::jsonb)); exception when others then null; end;
+     begin r := r || jsonb_build_object('oracoes', oracoes_listar('{}'::jsonb)); exception when others then null; end;
+     begin r := r || jsonb_build_object('entidadesApelidos', entidades_apelidos_listar('{}'::jsonb)); exception when others then null; end;
+     if nullif(p ->> 'pessoaId', '') is not null then
+       begin r := r || jsonb_build_object('minhaCurimba', curimba_minha(jsonb_build_object('pessoaId', p ->> 'pessoaId'))); exception when others then null; end;
+     end if;
+     if coalesce((p ->> 'me')::boolean, false) then
+       r := r || jsonb_build_object('abasOferendas', oferenda_abas_listar('{}'::jsonb), 'videosPublicada', videos_publicada('{}'::jsonb),
+                                    'ervasPublicada', ervas_publicada('{}'::jsonb), 'guiasPublicada', guias_publicada('{}'::jsonb),
+                                    'amaciPublicada', amaci_publicada('{}'::jsonb),
+                                    'iemanja', iemanja_resumo('{}'::jsonb));
+     end if;
+     return r;
    end;
    $$`,
 ];

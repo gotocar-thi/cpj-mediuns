@@ -95,6 +95,8 @@ A foto de cada pessoa (aba Perfil) fica no próprio banco (`pessoas_fotos`, JPEG
 
 Os pedidos de guias (aba Compras) ficam em `guias_grupos` → `guias_itens` e `guias_pedidos` (número sequencial) → `guias_linhas`. A linha guarda descrição e valor da hora do pedido e só aponta para o item (`item_id`, nulo se o item for excluído), para o pedido não mudar depois. A foto do item é JPEG pequeno em base64 no próprio banco, como a do Perfil. A API fica em `api/oferendas` (`?lista=guias` e `acao: 'guias'`, lógica em `api/_lib/guias.js`), para não criar função nova.
 
+A aba Amaci guarda no banco só o que o admin muda: `amaci_turmas` (orixás liberados por turma de alunos) e `amaci_orientacoes` (texto por orixá). O conteúdo da apostila fica em `api/_lib/amaciDados.js`, **no servidor e não em `shared/`**, para a API mandar ao aluno só os orixás da turma dele; os desenhos dos pontos riscados ficam em `frontend/img/amaci/`. A API fica em `api/pessoas` (`?lista=amaci` e `acao: 'amaci'`, lógica em `api/_lib/amaci.js`).
+
 Os vídeos (aba Vídeos) ficam na tabela `videos`, sem ligação com `giras`/`eventos` (o evento é texto livre). A API fica em `api/giras` (`?lista=videos` e ações `video`/`excluirVideo`).
 
 Outras tabelas: `sistema` (chave/valor: segredo de sessão, marcadores de migração), `login_falhas`, `eventos`.

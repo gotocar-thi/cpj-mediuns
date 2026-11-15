@@ -72,7 +72,7 @@ test('login: senha certa, errada e bloqueio', async () => {
   assert.equal((await api('POST', '/api/auth/entrar', null, { email: 'ninguem@x.org', senha: 'nao' })).status, 401);
   const ok = await api('POST', '/api/auth/entrar', null, { email: ' USER@corrente.org ', senha: 'senha-do-ze' });
   assert.equal(ok.status, 200);
-  assert.deepEqual(ok.json.usuario.permissoes, ['pessoas:ler', 'giras:ler', 'pessoas:ver', 'historico:ver', 'escala:completa', 'ervas:escolher', 'oferendas:doar', 'perfil:ver', 'fotos:ver']);
+  assert.deepEqual(ok.json.usuario.permissoes, ['pessoas:ler', 'giras:ler', 'pessoas:ver', 'historico:ver', 'escala:completa', 'ervas:escolher', 'oferendas:doar', 'guias:pedir', 'perfil:ver', 'amaci:ver', 'fotos:ver']);
   USER = ok.json.token;
   for (let i = 0; i < 8; i++) await api('POST', '/api/auth/entrar', null, { email: 'alvo@x.org', senha: 'x' + i });
   assert.equal((await api('POST', '/api/auth/entrar', null, { email: 'alvo@x.org', senha: 'x' })).status, 429);
@@ -93,7 +93,7 @@ test('/api/auth/me mostra papel e permissões', async () => {
   assert.ok(a.json.permissoes.includes('giras:sortear'));
   const u = await api('GET', '/api/auth/me', USER);
   assert.equal(u.json.papel, 'usuario');
-  assert.deepEqual(u.json.permissoes, ['pessoas:ler', 'giras:ler', 'pessoas:ver', 'historico:ver', 'escala:completa', 'ervas:escolher', 'oferendas:doar', 'perfil:ver', 'fotos:ver']);
+  assert.deepEqual(u.json.permissoes, ['pessoas:ler', 'giras:ler', 'pessoas:ver', 'historico:ver', 'escala:completa', 'ervas:escolher', 'oferendas:doar', 'guias:pedir', 'perfil:ver', 'amaci:ver', 'fotos:ver']);
 });
 
 test('excluir pessoa: sai das listas, o histórico fica e cadastrar de novo traz de volta', async () => {
@@ -1702,6 +1702,44 @@ test('trava da escala: só quem edita liga; com ela não dá para remanejar; can
   assert.equal((await api('POST', `/api/giras/${d}/remanejar`, ADMIN)).status, 409);
   assert.equal((await api('POST', '/api/giras/' + d, ADMIN, { acao: 'cancelarSorteio' })).json.gira.travada, false);
   await api('DELETE', '/api/giras/' + d, ADMIN);
+});
+
+test('amaci: Visível para todos; orixás liberados por turma; o aluno vê só os da turma dele', async () => {
+  const am = (t) => api('GET', '/api/pessoas?lista=amaci', t);
+  const acao = (t, b) => api('POST', '/api/pessoas', t, { acao: 'amaci', ...b });
+  const t09 = (await api('GET', '/api/pessoas?lista=alunos', ADMIN)).json.turmas.find((t) => t.nome === 'Turma 09').id;
+  await api('POST', '/api/pessoas', ADMIN, { acao: 'alunos', nome: 'Aluno do Amaci', turmaId: t09 });
+  const aluno = (await api('POST', '/api/auth/entrar', null, { email: 'alunos', senha: 'aluno do amaci' })).json.token;
+  // Começa desligada: só quem administra vê; os outros recebem 403.
+  const r0 = (await am(ADMIN)).json;
+  assert.equal(r0.publicada, false);
+  assert.equal(r0.orixas.length, 14, 'quem administra vê os 14');
+  assert.ok(r0.turmas.some((t) => t.id === t09));
+  assert.equal((await am(USER)).status, 403);
+  assert.equal((await am(aluno)).status, 403);
+  assert.equal((await acao(USER, { op: 'publicar', publicada: true })).status, 403);
+  assert.equal((await acao(aluno, { op: 'turma', turmaId: t09, orixas: ['oxala'] })).status, 403);
+  assert.equal((await acao(ADMIN, { op: 'publicar', publicada: 'sim' })).status, 400);
+  assert.equal((await acao(ADMIN, { op: 'publicar', publicada: true })).json.publicada, true);
+  assert.equal((await api('GET', '/api/auth/me', USER)).json.amaciPublicada, true);
+  // Turma sem nada liberado: o aluno não vê nenhum orixá.
+  assert.deepEqual((await am(aluno)).json.liberados, []);
+  assert.equal((await acao(ADMIN, { op: 'turma', turmaId: t09, orixas: ['xxx'] })).status, 400);
+  const lib = (await acao(ADMIN, { op: 'turma', turmaId: t09, orixas: ['loguna', 'oxala', 'oxala'] })).json;
+  assert.deepEqual(lib.turmas.find((t) => t.id === t09).orixas, ['oxala', 'loguna'], 'na ordem da apostila, sem repetir');
+  const doAluno = (await am(aluno)).json;
+  assert.deepEqual(doAluno.orixas.map((o) => o.k), ['oxala', 'loguna']);
+  assert.equal(doAluno.turmaNome, 'Turma 09');
+  assert.equal(doAluno.turmas, undefined, 'o aluno não recebe as turmas');
+  assert.equal((await am(USER)).json.orixas.length, 14, 'a corrente vê os 14');
+  // Orientação: até 10 linhas; vazia apaga.
+  assert.equal((await acao(ADMIN, { op: 'orientacao', orixa: 'oxala', texto: Array(11).fill('x').join('\n') })).status, 400);
+  await acao(ADMIN, { op: 'orientacao', orixa: 'oxala', texto: '  Trazer roupa branca  ' });
+  assert.equal((await am(aluno)).json.orixas[0].orientacao, 'Trazer roupa branca');
+  await acao(ADMIN, { op: 'orientacao', orixa: 'oxala', texto: '' });
+  assert.equal((await am(aluno)).json.orixas[0].orientacao, '');
+  await acao(ADMIN, { op: 'turma', turmaId: t09, orixas: [] });
+  await acao(ADMIN, { op: 'publicar', publicada: false });
 });
 
 test('gestão de conduta e risco: interruptor do root; só o root lê; quem abriu edita até ser lido e vê só a resposta publicada', async () => {

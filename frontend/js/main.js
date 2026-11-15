@@ -2,7 +2,7 @@
 
 import { estadoDoApp, logado, entrar, instalar, sair, trocarSenha, criarSenhaCorrente } from './auth.js';
 import { quandoSessaoExpirar } from './api.js';
-import { estado, prefs, salvarPrefs, pode, visaoAtiva, aoMudar, avisar, carregarTudo, atualizarDoServidor, salvarPerfilAgora, mudarVisaoRoot, veErvas, veOferendas, veGuias, temPendencia } from './estado.js';
+import { estado, prefs, salvarPrefs, pode, visaoAtiva, aoMudar, avisar, carregarTudo, atualizarDoServidor, salvarPerfilAgora, mudarVisaoRoot, veErvas, veOferendas, veGuias, veAmaci, temPendencia } from './estado.js';
 import { esc, toast, mascaraTel } from './util.js';
 import { iniciarAtualizacao } from './atualizacao.js';
 import { ehAcessoGrupo, PIN_VALIDO } from '/shared/permissoes.js';
@@ -26,6 +26,7 @@ const SOB_DEMANDA = {
   ervas: () => import('./telas/ervas.js'),
   oferendas: () => import('./telas/oferendas.js'),
   guias: () => import('./telas/guias.js'),
+  amaci: () => import('./telas/amaci.js'),
   perfil: () => import('./telas/perfil.js'),
   videos: () => import('./telas/videos.js'),
   fotos: () => import('./telas/fotos.js'),
@@ -97,10 +98,10 @@ function render() {
   }
   const visao = visaoAtiva();
   // Abas que o perfil pode ver.
-  let VE = { usuarios: pode('usuarios:gerenciar'), ervas: veErvas(), oferendas: veOferendas(), guias: veGuias(),
+  let VE = { usuarios: pode('usuarios:gerenciar'), ervas: veErvas(), oferendas: veOferendas(), guias: veGuias(), amaci: veAmaci(),
     pessoas: pode('pessoas:ver') || pode('alunos:ver'), hist: pode('historico:ver'), perfil: pode('perfil:ver'), curimba: pode('curimba:ver'), videos: pode('videos:ver') || !!estado.me.videosPublicada, fotos: FOTOS_ATIVA && pode('fotos:ver'), gira: true, agenda: true };
-  if (visao === 'alunos') VE = { usuarios: false, ervas: false, oferendas: veOferendas(), guias: veGuias(), pessoas: false, hist: false, perfil: true, curimba: false, videos: false, fotos: false, gira: true, agenda: false };
-  if (visao === 'curimba') VE = { usuarios: false, ervas: false, oferendas: false, guias: veGuias(), pessoas: false, hist: false, perfil: false, curimba: false, videos: !!estado.me.videosPublicada, fotos: false, gira: true, agenda: false };
+  if (visao === 'alunos') VE = { usuarios: false, ervas: false, oferendas: veOferendas(), guias: veGuias(), amaci: veAmaci(), pessoas: false, hist: false, perfil: true, curimba: false, videos: false, fotos: false, gira: true, agenda: false };
+  if (visao === 'curimba') VE = { usuarios: false, ervas: false, oferendas: false, guias: veGuias(), amaci: false, pessoas: false, hist: false, perfil: false, curimba: false, videos: !!estado.me.videosPublicada, fotos: false, gira: true, agenda: false };
   if (!VE[prefs.tab]) prefs.tab = 'gira';
   tabs.hidden = false;
   Object.entries(VE).forEach(([k, v]) => { tabs.querySelector(`[data-tab="${k}"]`).hidden = !v; });
@@ -174,6 +175,7 @@ quandoSessaoExpirar(() => {
   estado.usuarios = null;
   estado.ervas = null;
   estado.guias = null;
+  estado.amaci = null;
   estado.perfil = null;
   estado.curimba = null;
   estado.videos = null;
@@ -195,6 +197,8 @@ tabs.addEventListener('click', (e) => {
   if (b.dataset.tab === 'oferendas') { estado.oferendas = null; estado.iemanja = null; TELAS.oferendas?.aoAbrirAba(); }
   // Compras: busca de novo (estoque e pedidos mudam) e a tela volta ao padrão.
   if (b.dataset.tab === 'guias') { estado.guias = null; TELAS.guias?.limpar(); }
+  // Amaci: busca de novo e volta ao último orixá liberado.
+  if (b.dataset.tab === 'amaci') { estado.amaci = null; TELAS.amaci?.limpar(); }
   if (b.dataset.tab === 'perfil') estado.perfil = null;
   // Curimba: busca de novo e fecha as janelas abertas.
   if (b.dataset.tab === 'curimba') { estado.curimba = null; if (estado.curUi) estado.curUi.confirmar = null; }
@@ -216,7 +220,7 @@ async function cliqueConta(e) {
   if (!b) return;
   if (b.dataset.conta === 'sair') {
     sair();
-    Object.assign(estado, { me: null, pessoas: [], giras: {}, oferendas: null, infoPessoa: null, pfUi: { abertos: {}, infoBuscaVisivel: false, infoBusca: '' }, recadoTxt: null, tituloTxt: null, usuarios: null, ervas: null, guias: null, iemanja: null, ervasPara: null, ervasCompra: null, perfil: null, alunos: null, curimba: null, minhaCurimba: null, curUi: null, videos: null, vidUi: null, fotos: null, fotUi: null, fotosPessoa: {}, visaoRoot: 'root', perfisCfg: null, senhas: null, pronto: false, img: null });
+    Object.assign(estado, { me: null, pessoas: [], giras: {}, oferendas: null, infoPessoa: null, pfUi: { abertos: {}, infoBuscaVisivel: false, infoBusca: '' }, recadoTxt: null, tituloTxt: null, usuarios: null, ervas: null, guias: null, amaci: null, iemanja: null, ervasPara: null, ervasCompra: null, perfil: null, alunos: null, curimba: null, minhaCurimba: null, curUi: null, videos: null, vidUi: null, fotos: null, fotUi: null, fotosPessoa: {}, visaoRoot: 'root', perfisCfg: null, senhas: null, pronto: false, img: null });
     erroLogin = '';
     render();
   } else if (b.dataset.conta === 'senha') {
@@ -385,6 +389,8 @@ main.addEventListener('input', (e) => {
   if (prefs.tab === 'perfil' && (e.target.dataset.act === 'pfinfo' || e.target.dataset.act === 'pfnome' || e.target.dataset.act === 'anaresp')) TELAS.perfil.digitando(e.target);
   if (prefs.tab === 'ervas' && e.target.dataset.compra) TELAS.ervas.digitando(e.target);
   if (prefs.tab === 'guias' && e.target.dataset.guia) TELAS.guias.digitando(e.target);
+  // Orientação da aba Amaci: até 10 linhas, guardada para um redesenho não apagar.
+  if (prefs.tab === 'amaci' && e.target.id === 'am-ori') TELAS.amaci.digitando(e.target);
   if (prefs.tab === 'oferendas' && e.target.form?.querySelector('[data-previa]')) TELAS.oferendas?.atualizarPrevia(e.target.form);
 });
 
@@ -483,6 +489,8 @@ main.addEventListener('submit', async (e) => {
     await (await telaDe('usuarios')).salvarConfig(e.target);
   } else if (id === 'f-entidade-alias') {
     await (await telaDe('usuarios')).salvarApelidoEntidade(e.target);
+  } else if (id === 'f-amaci-ori') {
+    await (await telaDe('amaci')).enviar(e.target);
   } else if (id.startsWith('f-guia-')) {
     await (await telaDe('guias')).enviar(e.target);
   } else if (id === 'f-of' || e.target.dataset.form) {

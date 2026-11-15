@@ -24,6 +24,7 @@ export async function exigir(req, permissao) {
     const quem = {
       id: null, nome: aluno.nome, email: '', papel: sessao.grupo, papelNome: sessao.grupo === 'alunos' ? 'Aluno' : 'Curimba',
       grupo: sessao.grupo, alunoId: sessao.grupo === 'alunos' ? aluno.id : null,
+      turmaId: sessao.grupo === 'alunos' ? aluno.turmaId || null : null,
       curimbaAlunoId: sessao.grupo === 'curimba' ? aluno.id : null,
       pessoaId: sessao.grupo === 'curimba' ? aluno.pessoaId || null : null,
       temSenha: !!aluno.temSenha,
