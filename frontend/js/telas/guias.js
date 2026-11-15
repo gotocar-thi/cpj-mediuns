@@ -18,7 +18,7 @@ const ui = {
   feitos: new Set(),        // pedidos encerrados expandidos
   minimizados: new Set(),   // blocos que a pessoa minimizou: id do grupo de itens ou 'meus' (Seus pedidos)
   grupoRen: null,           // id do grupo com o ✎ aberto
-  item: null,               // formulário de item: { grupoId, id?, descricao, quantidade, valor, visivel, foto?: b64 | null }
+  item: null,               // formulário de item: { grupoId, id?, descricao, quantidade, valor, visivel, cpj, foto?: b64 | null }
   qtd: {},                  // quantidade escolhida por item (antes de Pedir)
   pedir: null,              // janela de confirmação: { itemId, quantidade }
   exportar: null,           // número do pedido escolhido para exportar
@@ -41,6 +41,8 @@ const admin = () => pode('guias:gerenciar') && estado.guias?.admin;
 const rot = (op, normal, carregando) => (ui.ocupado === op ? carregando : normal);
 // O que a corrente vê (o admin recebe tudo, inclusive o oculto): só grupos e itens visíveis.
 const gruposVisiveis = (G) => G.grupos.filter((g) => g.visivel).map((g) => ({ ...g, itens: g.itens.filter((i) => i.visivel) })).filter((g) => g.itens.length);
+// Item exclusivo da corrente: o servidor só manda para quem está cadastrado nela (e para quem administra).
+const seloCpj = (i) => (i.cpj ? ' <span class="badge rep" title="Só para a corrente">Exclusivo CPJ</span>' : '');
 const acharItem = (id) => estado.guias.grupos.flatMap((g) => g.itens).find((i) => i.id === id);
 
 // Linhas de um pedido juntas por pessoa, em ordem alfabética.
@@ -83,7 +85,7 @@ function cardItens(G) {
         : `<select data-act="guiaqtd" data-id="${i.id}" aria-label="Quantidade de ${esc(i.descricao)}" ${fechado ? 'disabled' : ''}>${Array.from({ length: max }, (_, k) => `<option value="${k + 1}" ${k + 1 === q ? 'selected' : ''}>${k + 1}</option>`).join('')}</select>
            <button class="btn primary small" data-act="guiapedir" data-id="${i.id}" ${fechado ? 'disabled' : ''}>Pedir</button>`;
       return `<div class="gi-item">${fotoItem(i, 'gi-foto', true)}
-        <div class="gi-info"><b>${esc(i.descricao)}</b><span class="gi-valor">${R(i.valor)}</span>
+        <div class="gi-info"><b>${esc(i.descricao)}${seloCpj(i)}</b><span class="gi-valor">${R(i.valor)}</span>
           <span class="muted gi-disp">${i.quantidade < 1 ? 'Sem estoque' : plural(i.quantidade, 'disponível', 'disponíveis')}</span></div>
         <div class="gi-acao">${acao}</div></div>`;
     }).join('')}</div></div>`;
@@ -181,6 +183,7 @@ function formItem(I) {
       <label class="field">Valor (R$)<input type="text" id="gi-valor" data-guia="valor" inputmode="decimal" placeholder="0,00" value="${esc(I.valor)}" required></label>
     </div>
     <label class="of-sw"><input type="checkbox" role="switch" data-act="guiaitemvisform" ${I.visivel ? 'checked' : ''}><span class="of-sw-t" aria-hidden="true"></span><b>Visível</b></label>
+    <label class="of-sw"><input type="checkbox" role="switch" data-act="guiaitemcpjform" ${I.cpj ? 'checked' : ''}><span class="of-sw-t" aria-hidden="true"></span><b>CPJ</b> <span class="muted">— produto e preço só para a corrente</span></label>
     <div class="row" style="justify-content:flex-end;gap:8px"><button type="button" class="btn" data-act="guiaitemcancel">Cancelar</button><button class="btn primary" type="submit">${rot('item', 'Salvar item', 'Salvando…')}</button></div>
   </form>`;
 }
@@ -201,7 +204,7 @@ function grupoAdmin(g) {
       <button class="btn primary" type="submit">${rot('grupo', 'Salvar', 'Salvando…')}</button><button type="button" class="btn" data-act="guiarenomear" data-id="">Cancelar</button></form>`;
   }
   h += g.itens.length ? `<div class="gi-lista">${g.itens.map((i) => `<div class="gi-item gi-adm${i.visivel ? '' : ' oculto'}">${fotoItem(i, 'gi-foto', true)}
-      <div class="gi-info"><b>${esc(i.descricao)}</b><span class="gi-valor">${R(i.valor)}</span><span class="muted gi-disp">${plural(i.quantidade, 'disponível', 'disponíveis')}</span>
+      <div class="gi-info"><b>${esc(i.descricao)}${seloCpj(i)}</b><span class="gi-valor">${R(i.valor)}</span><span class="muted gi-disp">${plural(i.quantidade, 'disponível', 'disponíveis')}</span>
         <label class="of-sw"><input type="checkbox" role="switch" data-act="guiaitemvis" data-id="${i.id}" ${i.visivel ? 'checked' : ''}><span class="of-sw-t" aria-hidden="true"></span><span class="muted">Visível</span></label></div>
       <div class="gi-acao gi-acao-adm"><button class="btn small" data-act="guiaeditaritem" data-id="${i.id}" aria-label="Editar ${esc(i.descricao)}">✎</button>
         ${estado.confirm === 'gi:' + i.id ? `<button class="btn small danger" data-act="guiaexcluiritem" data-id="${i.id}">${rot('excluirItem', 'Excluir?', 'Excluindo…')}</button>` : `<button class="btn small danger" data-act="askdel" data-k="gi:${i.id}" aria-label="Excluir ${esc(i.descricao)}">✕</button>`}</div>
@@ -384,7 +387,7 @@ export async function enviar(form) {
   } else if (form.id === 'f-guia-item') {
     const I = ui.item;
     if (!I) return;
-    const dados = { descricao: I.descricao, quantidade: I.quantidade, valor: I.valor, visivel: I.visivel };
+    const dados = { descricao: I.descricao, quantidade: I.quantidade, valor: I.valor, visivel: I.visivel, cpj: !!I.cpj };
     if (I.foto !== undefined) dados.foto = I.foto;
     if (I.id) dados.id = I.id; else dados.grupoId = I.grupoId;
     if (await fazer('item', dados)) { toast(I.id ? 'Item salvo.' : 'Item cadastrado.'); ui.item = null; avisar(); }
@@ -399,11 +402,11 @@ export const cliques = {
   guiafeito(el) { const n = Number(el.dataset.n); if (ui.feitos.has(n)) ui.feitos.delete(n); else ui.feitos.add(n); avisar(); },
   guiarenomear(el) { ui.grupoRen = el.dataset.id || null; avisar(); },
   async guiaexcluirgrupo(el) { if (await confirmado('gg:' + el.dataset.id, 'excluirGrupo', { id: el.dataset.id })) { ui.abertos.delete(el.dataset.id); toast('Grupo excluído.'); } },
-  guianovoitem(el) { ui.item = { grupoId: el.dataset.id, descricao: '', quantidade: '', valor: '', visivel: true }; avisar(); },
+  guianovoitem(el) { ui.item = { grupoId: el.dataset.id, descricao: '', quantidade: '', valor: '', visivel: true, cpj: false }; avisar(); },
   guiaeditaritem(el) {
     const i = acharItem(el.dataset.id);
     const g = estado.guias.grupos.find((x) => x.itens.includes(i));
-    if (i && g) { ui.item = { grupoId: g.id, id: i.id, descricao: i.descricao, quantidade: String(i.quantidade), valor: valorCampo(i.valor), visivel: i.visivel }; avisar(); }
+    if (i && g) { ui.item = { grupoId: g.id, id: i.id, descricao: i.descricao, quantidade: String(i.quantidade), valor: valorCampo(i.valor), visivel: i.visivel, cpj: !!i.cpj }; avisar(); }
   },
   guiaitemcancel() { ui.item = null; avisar(); },
   guiatirafoto() { if (ui.item) { ui.item.foto = null; avisar(); } },
@@ -472,6 +475,7 @@ export const mudancas = {
   async guiagrupovis(t) { if (!(await fazer('grupo', { id: t.dataset.id, visivel: t.checked }))) t.checked = !t.checked; },
   async guiaitemvis(t) { if (!(await fazer('item', { id: t.dataset.id, visivel: t.checked }))) t.checked = !t.checked; },
   guiaitemvisform(t) { if (ui.item) ui.item.visivel = t.checked; },
+  guiaitemcpjform(t) { if (ui.item) ui.item.cpj = t.checked; },
   async guiaok(t) { if (!(await fazer('ok', { id: t.dataset.id, ok: t.checked }))) t.checked = !t.checked; },
   guiaqtd(t) { ui.qtd[t.dataset.id] = Number(t.value); },
   guiaexportar(t) { ui.exportar = Number(t.value); avisar(); },

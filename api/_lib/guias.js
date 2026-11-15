@@ -2,9 +2,10 @@
 //   todos:  pedir { itemId, quantidade }  — no pedido aberto, sem passar do disponível
 //           (com o Pix ligado, pedir { ..., cpf? } já gera o link de pagamento; pix { pedido, cpf? } tenta de novo — veja api/_lib/asaas.js)
 //   admin:  publicar { publicada } · grupo { id?, descricao?, visivel? } · excluirGrupo { id }
-//           item { id?, grupoId, descricao?, foto? (base64 JPEG | null tira), quantidade?, valor?, visivel? } · excluirItem { id }
+//           item { id?, grupoId, descricao?, foto? (base64 JPEG | null tira), quantidade?, valor?, visivel?, cpj? } · excluirItem { id }
 //           cancelar { id } (a quantidade volta para o item) · ok { id, ok } · encerrar · novo (próximo número)
 // Quem não administra vê só os grupos e itens visíveis e as próprias linhas (meus), nunca os pedidos dos outros.
+// Item CPJ (cpj): só quem está cadastrado na corrente vê e pede; os outros nem recebem o item.
 
 import { db } from './db.js';
 import { HttpError, validarId } from './http.js';
@@ -13,6 +14,10 @@ import { chavePessoa } from '../../shared/ervas.js';
 import { pixDaPessoa, gerarPix, pixAntesDePedir } from './asaas.js';
 
 const ehAdmin = (eu) => pode(eu, 'guias:gerenciar');
+// Cadastrada na corrente: a sessão está ligada a uma pessoa (acesso cpj, e-mail ou curimba ligados à pessoa).
+// Alunos e usuários sem pessoa ficam de fora.
+const daCorrente = (eu) => !!eu.pessoaId;
+const podeVerItem = (eu, i) => i.visivel && (!i.cpj || daCorrente(eu));
 
 // Sem a aba no perfil, ou com a aba desligada e sem administrar: não entra.
 async function exigirAba(eu) {
@@ -31,7 +36,7 @@ function paraTela(estado, eu) {
   if (ehAdmin(eu)) return { admin: true, publicada: estado.publicada, aberto, grupos, pedidos, meus };
   return {
     admin: false, aberto, meus,
-    grupos: grupos.filter((g) => g.visivel).map((g) => ({ ...g, itens: g.itens.filter((i) => i.visivel) })).filter((g) => g.itens.length),
+    grupos: grupos.filter((g) => g.visivel).map((g) => ({ ...g, itens: g.itens.filter((i) => podeVerItem(eu, i)) })).filter((g) => g.itens.length),
   };
 }
 
@@ -74,6 +79,10 @@ export async function acaoGuias(eu, b) {
   await exigirAba(eu);
   if (b.op === 'pedir') {
     const p = { itemId: validarId(b.itemId, 'Item'), quantidade: inteiro(b.quantidade, 'Quantidade', 1, 999), chave: chavePessoa(eu), nome: eu.nome };
+    if (!daCorrente(eu)) {
+      const item = (await db.rpc('guias_estado')).grupos.flatMap((g) => g.itens).find((i) => i.id === p.itemId);
+      if (item?.cpj) throw new HttpError(400, 'Este item não está disponível.');
+    }
     const pix = await pixAntesDePedir(eu, b.cpf);
     let estado = await db.rpc('guia_pedir', p);
     // Com o Pix ligado, o pedido já gera o link de pagamento. Se o ASAAS falhar, o pedido fica
@@ -120,6 +129,7 @@ export async function acaoGuias(eu, b) {
       if (novo || 'valor' in b) p.valor = valor(b.valor);
       if ('foto' in b) p.foto = foto(b.foto);
       if ('visivel' in b) p.visivel = booleano(b.visivel, 'o item fica visível');
+      if ('cpj' in b) p.cpj = booleano(b.cpj, 'o item é só da corrente');
       estado = await db.rpc('guia_item_salvar', p);
       break;
     }

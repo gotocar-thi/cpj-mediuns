@@ -2161,3 +2161,35 @@ test('CPF do Perfil: cifrado, só a própria pessoa e o root', async () => {
     if (chaveAntes === undefined) delete process.env.CPF_CHAVE; else process.env.CPF_CHAVE = chaveAntes;
   }
 });
+
+test('Compras: item CPJ só para quem está cadastrado na corrente', async () => {
+  const gu = (tok, b) => api('POST', '/api/oferendas', tok, { acao: 'guias', ...b });
+  const ler = (tok) => api('GET', '/api/oferendas?lista=guias', tok);
+  await api('POST', '/api/pessoas', ADMIN, { acao: 'alunos', nome: 'Aluna Das Compras' });
+  const tAluna = (await api('POST', '/api/auth/entrar', null, { email: 'alunos', senha: 'aluna das compras' })).json.token;
+  let G = (await gu(ADMIN, { op: 'grupo', descricao: 'Grupo CPJ' })).json;
+  const g = G.grupos.find((x) => x.descricao === 'Grupo CPJ');
+  G = (await gu(ADMIN, { op: 'item', grupoId: g.id, descricao: 'Item de todos', quantidade: 5, valor: 10 })).json;
+  G = (await gu(ADMIN, { op: 'item', grupoId: g.id, descricao: 'Item da corrente', quantidade: 5, valor: 7 })).json;
+  let itens = G.grupos.find((x) => x.id === g.id).itens;
+  const cpj = itens.find((i) => i.descricao === 'Item da corrente');
+  assert.equal(cpj.cpj, false, 'nasce desligado');
+  assert.equal((await gu(ADMIN, { op: 'item', id: cpj.id, cpj: 'sim' })).status, 400);
+  itens = (await gu(ADMIN, { op: 'item', id: cpj.id, cpj: true })).json.grupos.find((x) => x.id === g.id).itens;
+  assert.equal(itens.find((i) => i.id === cpj.id).cpj, true);
+  assert.equal((await gu(USER, { op: 'item', id: cpj.id, cpj: false })).status, 403, 'só quem administra liga e desliga');
+  await gu(ADMIN, { op: 'publicar', publicada: true });
+  if ((await ler(ADMIN)).json.aberto === null) await gu(ADMIN, { op: 'novo' });
+  try {
+    const nomes = async (tok) => ((await ler(tok)).json.grupos.find((x) => x.id === g.id)?.itens || []).map((i) => i.descricao);
+    assert.deepEqual(await nomes(USER), ['Item de todos', 'Item da corrente'], 'corrente vê o item CPJ');
+    assert.deepEqual(await nomes(tAluna), ['Item de todos'], 'aluno não recebe o item CPJ');
+    assert.equal((await gu(tAluna, { op: 'pedir', itemId: cpj.id, quantidade: 1 })).status, 400, 'nem consegue pedir');
+    assert.equal((await gu(USER, { op: 'pedir', itemId: cpj.id, quantidade: 1 })).status, 200);
+    await gu(ADMIN, { op: 'item', id: cpj.id, cpj: false });
+    assert.deepEqual(await nomes(tAluna), ['Item de todos', 'Item da corrente'], 'desligado, todos veem');
+  } finally {
+    await gu(ADMIN, { op: 'excluirGrupo', id: g.id });
+    await gu(ADMIN, { op: 'publicar', publicada: false });
+  }
+});

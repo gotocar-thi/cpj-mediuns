@@ -9,7 +9,7 @@
 // Estrutura: veja db/ESTRUTURA-ESQUEMA.md para o mapa de versões, domínios e
 // quais migrações foram testadas no Postgres.
 
-export const VERSAO = 112;  // v112: CPF no Perfil (cifrado, tabela própria)
+export const VERSAO = 113;  // v113: item de Compras exclusivo da corrente (CPJ)
 
 import { PERFIS_PADRAO } from '../shared/permissoes.js';
 
@@ -4533,4 +4533,47 @@ export const MIGRACOES = [
   `drop trigger if exists pessoas_cpf_saida on pessoas`,
   `create trigger pessoas_cpf_saida after update of saida on pessoas
    for each row execute function pessoas_cpf_saida()`,
+  // ================================================== v113: item de Compras exclusivo da corrente (CPJ)
+  // cpj = só quem está cadastrado na corrente vê e pede o item (quem filtra é api/_lib/guias.js). Nasce desligado.
+  `alter table guias_itens add column if not exists cpj boolean not null default false`,
+  `create or replace function guia_item_salvar(p jsonb)
+   returns jsonb language plpgsql as $$
+   declare v_id uuid := nullif(p ->> 'id', '')::uuid;
+   begin
+     if v_id is null then
+       if not exists (select 1 from guias_grupos where id = (p ->> 'grupoId')::uuid) then raise exception 'Grupo não encontrado.'; end if;
+       insert into guias_itens (grupo_id, descricao, foto, quantidade, valor, visivel, cpj)
+       values ((p ->> 'grupoId')::uuid, p ->> 'descricao', nullif(p ->> 'foto', ''), (p ->> 'quantidade')::int, (p ->> 'valor')::numeric,
+               coalesce((p ->> 'visivel')::boolean, true), coalesce((p ->> 'cpj')::boolean, false));
+     else
+       update guias_itens set
+         descricao = case when p ? 'descricao' then p ->> 'descricao' else descricao end,
+         foto = case when p ? 'foto' then nullif(p ->> 'foto', '') else foto end,
+         quantidade = case when p ? 'quantidade' then (p ->> 'quantidade')::int else quantidade end,
+         valor = case when p ? 'valor' then (p ->> 'valor')::numeric else valor end,
+         visivel = case when p ? 'visivel' then (p ->> 'visivel')::boolean else visivel end,
+         cpj = case when p ? 'cpj' then (p ->> 'cpj')::boolean else cpj end
+       where id = v_id;
+       if not found then raise exception 'Item não encontrado.'; end if;
+     end if;
+     return guias_estado();
+   end;
+   $$`,
+  `create or replace function guias_estado(p jsonb default '{}'::jsonb)
+   returns jsonb language sql stable as $$
+     select jsonb_build_object(
+       'publicada', guias_publicada(),
+       'grupos', (select coalesce(jsonb_agg(jsonb_build_object('id', g.id, 'descricao', g.descricao, 'visivel', g.visivel,
+           'itens', (select coalesce(jsonb_agg(jsonb_build_object('id', i.id, 'descricao', i.descricao, 'foto', i.foto, 'quantidade', i.quantidade,
+                       'valor', i.valor, 'visivel', i.visivel, 'cpj', i.cpj) order by i.criado_em), '[]'::jsonb)
+                     from guias_itens i where i.grupo_id = g.id)) order by g.criado_em), '[]'::jsonb)
+                  from guias_grupos g),
+       'pedidos', (select coalesce(jsonb_agg(jsonb_build_object('numero', pe.numero, 'criadoEm', pe.criado_em, 'encerradoEm', pe.encerrado_em,
+           'linhas', (select coalesce(jsonb_agg(jsonb_build_object('id', l.id, 'itemId', l.item_id, 'descricao', l.descricao, 'valor', l.valor,
+                       'quantidade', l.quantidade, 'chave', l.chave, 'nome', l.nome, 'ok', l.ok, 'criadoEm', l.criado_em,
+                       'pago', l.pago_em is not null,
+                       'pix', case when l.pago_em is not null then null when c.status = 'criando' then 'pendente' else c.status end) order by lower(l.nome), l.criado_em), '[]'::jsonb)
+                      from guias_linhas l left join asaas_cobrancas c on c.id = l.cobranca_id where l.pedido = pe.numero)) order by pe.numero desc), '[]'::jsonb)
+                   from guias_pedidos pe))
+   $$`,
 ];
