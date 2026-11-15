@@ -4,12 +4,13 @@
 // Relato sem identificação (anonimo: true): grava sem autor e sem nome — ninguém, nem o root, sabe quem mandou;
 // por isso ele não aparece na lista de quem enviou, não é editado e não tem resposta para alguém ler.
 // Interruptor "Visível para todos" (começa desligado): desligado, só o root vê o bloco; os outros não leem nem abrem relato.
+// Quem abriu cancela o envio (apaga) enquanto não foi lido; o root exclui qualquer relato.
 import { validarId, HttpError } from './http.js';
 import { db } from './db.js';
 import { autorDe } from './sessao.js';
 import { pode } from '../../shared/permissoes.js';
 
-export const ACOES_CONDUTA = ['conduta', 'condutaLer', 'condutaResponder', 'condutaAtivar'];
+export const ACOES_CONDUTA = ['conduta', 'condutaLer', 'condutaResponder', 'condutaAtivar', 'condutaCancelar', 'condutaExcluir'];
 const ehRoot = (eu) => pode(eu, 'usuarios:gerenciar');
 
 // Até 10 linhas e 1500 letras; tira os espaços das pontas de cada linha.
@@ -45,12 +46,17 @@ export async function acaoConduta(eu, b) {
     const id = b.id ? validarId(b.id, 'Relato') : '';
     return condutas(eu, await db.rpc('conduta_salvar', { id, texto, autor: autorDe(eu), autorNome: eu.nome || '' }));
   }
+  if (b.acao === 'condutaCancelar') {
+    if (!ehRoot(eu) && !(await db.rpc('conduta_ativa'))) throw new HttpError(403, 'O bloco Gestão de Conduta e Risco ainda não foi ativado.');
+    return condutas(eu, await db.rpc('conduta_excluir', { id: validarId(b.id, 'Relato'), autor: autorDe(eu) }));
+  }
   if (!ehRoot(eu)) throw new HttpError(403, 'Só o admin root lê e responde os relatos.');
   if (b.acao === 'condutaAtivar') {
     if (typeof b.ativa !== 'boolean') throw new HttpError(400, 'Informe se o bloco fica visível para todos.');
     return condutas(eu, null, await db.rpc('conduta_ativar', { ativa: b.ativa }));
   }
   const id = validarId(b.id, 'Relato');
+  if (b.acao === 'condutaExcluir') return condutas(eu, await db.rpc('conduta_excluir', { id, autor: '' }));
   if (b.acao === 'condutaLer') return condutas(eu, await db.rpc('conduta_ler', { id }));
   const resposta = validarTexto(b.resposta, 'A resposta');
   const publicar = b.publicar === true;

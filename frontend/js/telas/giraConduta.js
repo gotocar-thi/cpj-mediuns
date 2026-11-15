@@ -2,6 +2,8 @@
 // Corrente: abre relatos e vê os próprios (edita enquanto não foi lido) e a resposta publicada.
 // Relato novo pode ir sem identificação: o servidor grava sem autor, e ele não volta para a lista de quem mandou.
 // Admin root: vê todos com o nome, marca como lido e responde (rascunho até publicar). O servidor confere tudo.
+// Quem abriu cancela o envio enquanto não foi lido; o root exclui e compartilha qualquer relato.
+// Borda amarela = não lido, verde = lido. Na lista do root, "Não lidos" vem aberto e "Lidos" minimizado.
 
 import { estado, pode, carregarConduta, acaoConduta, avisar } from '../estado.js';
 import { esc, toast } from '../util.js';
@@ -11,6 +13,11 @@ const ehRoot = () => pode('usuarios:gerenciar');
 const relatos = () => estado.conduta?.relatos || [];
 const quando = (iso) => new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }).replace(', ', ' às ');
 const limitar = (txt) => txt.split('\n').slice(0, 10).join('\n');
+// Pedido de confirmação dentro do item (padrão askdel do app).
+const confirmar = (k, pergunta, act, id, rotulo) => estado.confirm === k
+  ? `<div class="infobox"><span>${pergunta}</span>
+      <span class="row"><button class="btn small danger" data-act="${act}" data-id="${esc(id)}">${rotulo}</button><button class="btn small" data-act="cdcancel">Voltar</button></span></div>`
+  : '';
 const TITULO = '<div class="grp-h"><h2><span aria-hidden="true">🔍</span> Gestão de Conduta e Risco</h2>';
 
 function formulario(c) {
@@ -34,9 +41,12 @@ function statusDe(c) {
 function itemMeu(c) {
   if (estado.cdForm === c.id) return `<div class="cd-item">${formulario(c)}</div>`;
   const [k, rot] = statusDe(c);
-  return `<div class="cd-item"><div class="cd-topo"><span class="muted cd-quando">${quando(c.criadoEm)}${c.editadoEm ? ' · editado' : ''}</span>
-      <span class="cd-st ${k}">${rot}</span>${c.lidoEm ? '' : `<button class="btn small cd-editar" data-act="cdeditar" data-id="${esc(c.id)}">✎ Editar</button>`}</div>
-    <p class="cd-txt">${esc(c.texto)}</p>
+  const conf = confirmar('cdcanc:' + c.id, '<b>Cancelar o envio?</b> O relato é apagado e a comissão não vai ver.', 'cdcancelar', c.id, 'Cancelar envio');
+  const botoes = c.lidoEm || conf ? '' : `<span class="row cd-acoes"><button class="btn small cd-editar" data-act="cdeditar" data-id="${esc(c.id)}">✎ Editar</button>
+      <button class="btn small" data-act="askdel" data-k="cdcanc:${esc(c.id)}">✕ Cancelar envio</button></span>`;
+  return `<div class="cd-item ${c.lidoEm ? 'lido' : 'novo'}"><div class="cd-topo"><span class="muted cd-quando">${quando(c.criadoEm)}${c.editadoEm ? ' · editado' : ''}</span>
+      <span class="cd-st ${k}">${rot}</span></div>
+    <p class="cd-txt">${esc(c.texto)}</p>${botoes}${conf}
     ${c.resposta ? `<div class="cd-resp"><span class="cd-resp-t">Resposta da comissão · ${quando(c.publicadaEm)}</span><p class="cd-txt">${esc(c.resposta)}</p></div>` : ''}</div>`;
 }
 
@@ -64,9 +74,20 @@ function itemRoot(c) {
   // WhatsApp (padrão do app): compartilha o relato recebido, com quem abriu e quando.
   const txt = `*Gestão de Conduta e Risco*\nDe: ${c.anonimo ? 'Sem identificação' : c.autorNome || '(sem nome)'}\nEm: ${quando(c.criadoEm)}\n\n${c.texto}`;
   const wa = `<a class="btn wa-bt cd-wa" href="https://wa.me/?text=${encodeURIComponent(txt)}" target="_blank" rel="noopener"><span class="wa-ico" aria-hidden="true">${ICONE_WHATS}</span> Compartilhar</a>`;
-  return `<div class="cd-item${lido ? '' : ' novo'}"><div class="cd-topo">${c.anonimo ? '<b class="cd-nome cd-anon">Sem identificação</b>' : `<b class="cd-nome">${esc(c.autorNome || '(sem nome)')}</b>`}
+  const exc = confirmar('cdexc:' + c.id, '<b>Excluir este relato?</b> Ele some para todos (inclusive para quem abriu) e não volta.', 'cdexcluir', c.id, 'Excluir');
+  const acoes = exc || `<span class="row cd-acoes">${wa}<button class="btn small" data-act="askdel" data-k="cdexc:${esc(c.id)}"><span aria-hidden="true">🗑️</span> Excluir</button></span>`;
+  return `<div class="cd-item ${lido ? 'lido' : 'novo'}"><div class="cd-topo">${c.anonimo ? '<b class="cd-nome cd-anon">Sem identificação</b>' : `<b class="cd-nome">${esc(c.autorNome || '(sem nome)')}</b>`}
       <span class="muted cd-quando">${quando(c.criadoEm)}${c.editadoEm ? ' · editado' : ''}</span>${marca}</div>
-    <p class="cd-txt">${esc(c.texto)}</p>${wa}${resp}</div>`;
+    <p class="cd-txt">${esc(c.texto)}</p>${acoes}${resp}</div>`;
+}
+
+// Root: dois blocos que minimizam; "Não lidos" começa aberto e "Lidos" minimizado.
+function grupo(g, titulo, itens) {
+  if (!itens.length) return '';
+  const aberto = estado.cdGrupos?.[g] ?? g === 'nao';
+  return `<div class="cd-grupo ${g}"><button class="cd-grupo-h" data-act="cdgrupo" data-g="${g}" aria-expanded="${aberto}">
+      <span aria-hidden="true">${aberto ? '▾' : '▸'}</span> ${titulo} <span class="cd-st ${g === 'nao' ? 'aguarda' : 'resp'}">${itens.length}</span></button>
+    ${aberto ? `<div class="cd-lista">${itens.map(itemRoot).join('')}</div>` : ''}</div>`;
 }
 
 export function cardConduta() {
@@ -83,7 +104,7 @@ export function cardConduta() {
       ${sw}
       <p class="muted cd-intro">Relatos da corrente, com o nome de quem abriu (ou “Sem identificação”, quando a pessoa preferiu; esses não têm resposta). Só o admin root vê. Ao marcar como lido, a pessoa não edita mais; a resposta publicada aparece só para ela.</p>
       ${estado.cdForm === 'novo' ? formulario(null) : '<button class="btn cd-novo" data-act="cdnovo">＋ Abrir relato</button>'}
-      ${estado.conduta === null ? '<div class="loading">Carregando…</div>' : L.length ? `<div class="cd-lista">${L.map(itemRoot).join('')}</div>` : '<p class="muted" style="margin:0;font-size:.88rem">Nenhum relato.</p>'}</div>`;
+      ${estado.conduta === null ? '<div class="loading">Carregando…</div>' : L.length ? grupo('nao', 'Não lidos', L.filter((c) => !c.lidoEm)) + grupo('lido', 'Lidos', L.filter((c) => c.lidoEm)) : '<p class="muted" style="margin:0;font-size:.88rem">Nenhum relato.</p>'}</div>`;
   }
   // Bloco desligado pelo root (ou ainda carregando): a corrente não vê nada.
   if (!estado.conduta?.ativa) return '';
@@ -126,6 +147,9 @@ export const cliquesConduta = {
   cdeditar(el) { estado.cdForm = el.dataset.id; estado.cdTexto = null; avisar(); document.getElementById('cd-texto')?.focus(); },
   cdfechar() { estado.cdForm = null; estado.cdTexto = null; estado.cdAnonimo = false; avisar(); },
   cdcancel() { avisar(); },
+  cdgrupo(el) { const g = el.dataset.g; estado.cdGrupos = { ...(estado.cdGrupos || {}), [g]: !(estado.cdGrupos?.[g] ?? g === 'nao') }; avisar(); },
+  async cdcancelar(el) { if (await acaoConduta('condutaCancelar', { id: el.dataset.id })) toast('Envio cancelado: o relato foi apagado.'); },
+  async cdexcluir(el) { const id = el.dataset.id; if (await acaoConduta('condutaExcluir', { id })) { semRascunho(id); toast('Relato excluído.'); } },
   async cdler(el) { await acaoConduta('condutaLer', { id: el.dataset.id }); },
   async cdpublicar(el) {
     const id = el.dataset.id;

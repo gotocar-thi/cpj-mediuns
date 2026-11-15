@@ -1753,6 +1753,15 @@ test('gestão de conduta e risco: interruptor do root; só o root lê; quem abri
   const anonRoot = (await lista(ADMIN)).find((c) => c.texto === 'Prefiro não me identificar');
   assert.equal(anonRoot.anonimo, true);
   assert.equal(anonRoot.autorNome, '');
+  // Cancelar o envio: só quem abriu e só antes de lido; o root exclui qualquer um.
+  const cancelar = (t, cid) => api('POST', '/api/giras', t, { acao: 'condutaCancelar', id: cid });
+  const outro = (await relato(USER, { texto: 'Mandei sem querer' })).json.relatos.find((c) => c.texto === 'Mandei sem querer').id;
+  assert.equal((await cancelar(ana, outro)).status, 400, 'só quem abriu cancela');
+  assert.equal((await cancelar(USER, id)).status, 400, 'lido: não cancela mais');
+  assert.ok(!(await cancelar(USER, outro)).json.relatos.some((c) => c.id === outro));
+  assert.equal((await api('POST', '/api/giras', USER, { acao: 'condutaExcluir', id })).status, 403);
+  const tmp = (await relato(ana, { texto: 'Para excluir' })).json.relatos.find((c) => c.texto === 'Para excluir').id;
+  assert.ok(!(await api('POST', '/api/giras', ADMIN, { acao: 'condutaExcluir', id: tmp })).json.relatos.some((c) => c.id === tmp));
   // Desligar esconde de novo da corrente; o root continua vendo tudo.
   assert.equal((await ativar(ADMIN, false)).json.relatos.length, 3);
   assert.deepEqual((await api('GET', '/api/giras?lista=conduta', USER)).json, { ativa: false, relatos: [] });

@@ -9,7 +9,7 @@
 // Estrutura: veja db/ESTRUTURA-ESQUEMA.md para o mapa de versões, domínios e
 // quais migrações foram testadas no Postgres.
 
-export const VERSAO = 106;  // v106: orações até 4 dias (toda sexta recomeça) e transporte da Iemanjá
+export const VERSAO = 107;  // v107: Gestão de Conduta: cancelar o envio (quem abriu) e excluir relato (root)
 
 import { PERFIS_PADRAO } from '../shared/permissoes.js';
 
@@ -4052,6 +4052,21 @@ export const MIGRACOES = [
      end if;
      if not found then raise exception 'Pessoa não encontrada neste transporte.'; end if;
      return iemanja_transportes_listar();
+   end;
+   $$`,
+  // ================================================== v107: Gestão de Conduta: cancelar o envio e excluir relato
+  // p = { id, autor } — com autor: quem abriu cancela o envio, só antes de ser lido; autor vazio: o root exclui qualquer um.
+  `create or replace function conduta_excluir(p jsonb)
+   returns jsonb language plpgsql as $$
+   begin
+     if coalesce(p ->> 'autor', '') = '' then
+       delete from condutas where id = (p ->> 'id')::uuid;
+       if not found then raise exception 'Relato não encontrado.'; end if;
+     else
+       delete from condutas where id = (p ->> 'id')::uuid and autor = p ->> 'autor' and lido_em is null;
+       if not found then raise exception 'Este relato já foi lido pela comissão e o envio não pode mais ser cancelado.'; end if;
+     end if;
+     return condutas_listar();
    end;
    $$`,
 ];
