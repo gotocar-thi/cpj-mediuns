@@ -1963,3 +1963,118 @@ test('iemanjá: transporte — admin cria, puxa a corrente, adiciona alguém, ma
   assert.equal(r.status, 200);
   assert.equal(r.json.eventos.find((e) => e.id === ev.id).transportes.length, 0);
 });
+
+test('ASAAS: Pix dos pedidos da aba Compras só fica pago pelo webhook conferido no ASAAS', async () => {
+  // API do ASAAS falsa: o servidor roda neste processo, então o fetch para o ASAAS é trocado aqui.
+  const fetchReal = globalThis.fetch;
+  const falso = { status: 'PENDING', value: 0, n: 0, pedidos: [] };
+  globalThis.fetch = async (url, op = {}) => {
+    const u = String(url);
+    if (!u.startsWith('http://asaas.teste/v3')) return fetchReal(url, op);
+    const caminho = u.slice('http://asaas.teste/v3'.length);
+    falso.pedidos.push([op.method, caminho, op.headers?.access_token]);
+    const json = (st, j) => new Response(JSON.stringify(j), { status: st, headers: { 'Content-Type': 'application/json' } });
+    if (op.method === 'POST' && caminho === '/customers') return json(200, { id: 'cus_teste' });
+    if (op.method === 'POST' && caminho === '/payments') {
+      const b = JSON.parse(op.body);
+      falso.value = b.value;
+      return json(200, { id: 'pay_' + (++falso.n), dueDate: b.dueDate, invoiceUrl: 'https://sandbox.asaas.com/i/x' });
+    }
+    if (op.method === 'GET' && caminho.endsWith('/pixQrCode')) return json(200, { payload: '00020126PIXTESTE', encodedImage: 'iVBORw0KGgo=' });
+    if (op.method === 'GET' && caminho.startsWith('/payments/')) return json(200, { id: caminho.split('/')[2], status: falso.status, value: falso.value });
+    if (op.method === 'DELETE') return json(200, { deleted: true });
+    return json(404, { errors: [{ description: 'não encontrado' }] });
+  };
+  const env = { ASAAS_API_KEY: process.env.ASAAS_API_KEY, ASAAS_WEBHOOK_TOKEN: process.env.ASAAS_WEBHOOK_TOKEN, ASAAS_API_URL: process.env.ASAAS_API_URL };
+  try {
+    const gu = (tok, b) => api('POST', '/api/oferendas', tok, { acao: 'guias', ...b });
+    const as = (tok, b) => api('POST', '/api/oferendas', tok, { acao: 'asaas', ...b });
+    const hook = (token, corpo) => fetchReal(base + '/api/oferendas?webhook=asaas', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', ...(token ? { 'asaas-access-token': token } : {}) }, body: JSON.stringify(corpo),
+    }).then((r) => r.status);
+
+    // Webhook: sem token configurado recusa; token errado, 401.
+    delete process.env.ASAAS_WEBHOOK_TOKEN; delete process.env.ASAAS_API_KEY;
+    assert.equal(await hook('x', { id: 'evt_0', event: 'PAYMENT_CREATED' }), 503);
+    assert.equal((await as(ADMIN, { op: 'ativar', ativo: true })).status, 400, 'sem as variáveis não liga');
+    Object.assign(process.env, { ASAAS_API_KEY: 'chave-teste', ASAAS_WEBHOOK_TOKEN: 'token-teste', ASAAS_API_URL: 'http://asaas.teste/v3' });
+    assert.equal(await hook(null, { id: 'evt_0', event: 'PAYMENT_CREATED' }), 401);
+    assert.equal(await hook('errado', { id: 'evt_0', event: 'PAYMENT_CREATED' }), 401);
+    assert.equal(await hook('token-teste', { event: 'PAYMENT_CREATED' }), 400);
+
+    // Aba ASAAS só do root; começa desligada.
+    assert.equal((await api('GET', '/api/oferendas?lista=asaas', USER)).status, 403);
+    assert.equal((await as(USER, { op: 'ativar', ativo: true })).status, 403);
+    let A = (await api('GET', '/api/oferendas?lista=asaas', ADMIN)).json;
+    assert.equal(A.ativo, false);
+    assert.deepEqual(A.config, { chave: true, token: true, ambiente: 'Sandbox (testes)' });
+    assert.ok(!JSON.stringify(A).includes('chave-teste'), 'a chave nunca vai para a tela');
+
+    // Compras com um item de R$ 12,50 e um pedido aberto.
+    let G = (await gu(ADMIN, { op: 'grupo', descricao: 'Pix teste' })).json;
+    const g = G.grupos.find((x) => x.descricao === 'Pix teste');
+    G = (await gu(ADMIN, { op: 'item', grupoId: g.id, descricao: 'Guia Pix', quantidade: 10, valor: '12,50' })).json;
+    const it = G.grupos.find((x) => x.id === g.id).itens[0];
+    if (!G.aberto) G = (await gu(ADMIN, { op: 'novo' })).json;
+    const n = G.aberto;
+    G = (await gu(ADMIN, { op: 'pedir', itemId: it.id, quantidade: 2 })).json;
+    assert.equal(G.pix, false, 'Pix desligado não aparece');
+    assert.equal((await gu(ADMIN, { op: 'pix', pedido: n, cpf: '52998224725' })).status, 403);
+
+    A = (await as(ADMIN, { op: 'ativar', ativo: true })).json;
+    assert.equal(A.ativo, true);
+    G = (await api('GET', '/api/oferendas?lista=guias', ADMIN)).json;
+    assert.equal(G.pix, true);
+    assert.equal(G.pixPrecisaCpf, true);
+    assert.equal((await gu(ADMIN, { op: 'pix', pedido: n })).status, 400, 'sem CPF');
+    assert.equal((await gu(ADMIN, { op: 'pix', pedido: n, cpf: '111.111.111-11' })).status, 400, 'CPF inválido');
+    // O valor vem do banco: mandar "valor" no corpo não muda nada.
+    G = (await gu(ADMIN, { op: 'pix', pedido: n, cpf: '529.982.247-25', valor: 1 })).json;
+    assert.equal(falso.value, 25, 'cobra 2 x 12,50, somado no servidor');
+    assert.equal(G.pixPrecisaCpf, false, 'cliente do ASAAS guardado');
+    const c = G.cobrancas.find((x) => x.status === 'pendente');
+    assert.deepEqual([c.pedido, c.valor, c.pixPayload, c.itens], [n, 25, '00020126PIXTESTE', ['2x Guia Pix']]);
+    assert.ok(falso.pedidos.every((x) => x[2] === 'chave-teste'), 'chave no cabeçalho access_token');
+    const minha = () => G.meus.find((l) => l.pedido === n && l.descricao === 'Guia Pix');
+    assert.deepEqual([minha().pago, minha().pix], [false, 'pendente']);
+    assert.match((await gu(ADMIN, { op: 'pix', pedido: n })).json.erro, /já foi gerado/);
+    const linhaId = minha().id;
+    assert.match((await gu(ADMIN, { op: 'cancelar', id: linhaId })).json.erro, /Pix pendente/);
+
+    // Pedir mais do mesmo item vira linha nova (a do Pix não muda de valor).
+    G = (await gu(ADMIN, { op: 'pedir', itemId: it.id, quantidade: 1 })).json;
+    assert.deepEqual(G.meus.filter((l) => l.pedido === n && l.descricao === 'Guia Pix').map((l) => l.quantidade).sort(), [1, 2]);
+
+    // Webhook de pagamento: no ASAAS ainda está pendente → não libera.
+    assert.equal(await hook('token-teste', { id: 'evt_1', event: 'PAYMENT_RECEIVED', payment: { id: 'pay_1', value: 25, status: 'RECEIVED' } }), 200);
+    G = (await api('GET', '/api/oferendas?lista=guias', ADMIN)).json;
+    assert.equal(G.meus.find((l) => l.id === linhaId).pago, false, 'o corpo do webhook sozinho não libera');
+    // Agora o ASAAS confirma: paga.
+    falso.status = 'RECEIVED';
+    assert.equal(await hook('token-teste', { id: 'evt_2', event: 'PAYMENT_RECEIVED', payment: { id: 'pay_1', value: 25 } }), 200);
+    assert.equal(await hook('token-teste', { id: 'evt_2', event: 'PAYMENT_RECEIVED', payment: { id: 'pay_1', value: 25 } }), 200, 'reenvio responde 200');
+    G = (await api('GET', '/api/oferendas?lista=guias', ADMIN)).json;
+    assert.deepEqual([G.meus.find((l) => l.id === linhaId).pago, G.meus.find((l) => l.id === linhaId).pix], [true, null]);
+    assert.equal(G.cobrancas.find((x) => x.id === c.id).status, 'paga');
+    assert.match((await gu(ADMIN, { op: 'cancelar', id: linhaId })).json.erro, /já foi pago/);
+    assert.equal(sql("select count(*) from asaas_eventos where id = 'evt_2'"), '1');
+
+    // O que sobrou (1 x 12,50) gera outro Pix; o root cancela e a linha fica livre de novo.
+    falso.status = 'PENDING';
+    G = (await gu(ADMIN, { op: 'pix', pedido: n })).json;
+    assert.equal(falso.value, 12.5);
+    A = (await api('GET', '/api/oferendas?lista=asaas', ADMIN)).json;
+    const c2 = A.cobrancas.find((x) => x.status === 'pendente');
+    assert.equal((await as(ADMIN, { op: 'cancelar', id: c2.id })).json.cobrancas.find((x) => x.id === c2.id).status, 'cancelada');
+    assert.ok(falso.pedidos.some((x) => x[0] === 'DELETE' && x[1] === '/payments/pay_2'));
+    assert.deepEqual(A.eventos.map((e) => [e.id, e.resultado]), [['evt_2', 'paga'], ['evt_1', 'não liberado: no ASAAS está PENDING']]);
+    G = (await api('GET', '/api/oferendas?lista=guias', ADMIN)).json;
+    assert.equal(G.meus.find((l) => l.pedido === n && l.descricao === 'Guia Pix' && l.quantidade === 1).pix, null, 'Pix cancelado libera a linha');
+
+    await as(ADMIN, { op: 'ativar', ativo: false });
+    await gu(ADMIN, { op: 'excluirGrupo', id: g.id });
+  } finally {
+    globalThis.fetch = fetchReal;
+    for (const [k, v] of Object.entries(env)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
+  }
+});

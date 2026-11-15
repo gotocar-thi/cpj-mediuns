@@ -9,7 +9,7 @@
 // Estrutura: veja db/ESTRUTURA-ESQUEMA.md para o mapa de versões, domínios e
 // quais migrações foram testadas no Postgres.
 
-export const VERSAO = 108;  // v108: aba Amaci (orixás liberados por turma, orientação por orixá, Visível para todos)
+export const VERSAO = 109;  // v109: ASAAS (Pix dos pedidos da aba Compras, webhook e aba ASAAS do root)
 
 import { PERFIS_PADRAO } from '../shared/permissoes.js';
 
@@ -4131,5 +4131,265 @@ export const MIGRACOES = [
      end if;
      return r;
    end;
+   $$`,
+
+  // ================================================== v109: ASAAS — Pix dos pedidos da aba Compras e aba ASAAS (root)
+  // O root liga o Pix na aba ASAAS (começa desligado). Detalhes do fluxo: api/_lib/asaas.js.
+  `insert into sistema (chave, valor) values ('asaas_ativo', 'false') on conflict (chave) do nothing`,
+  `create or replace function asaas_ativo(p jsonb default '{}'::jsonb)
+   returns jsonb language sql stable as $$
+     select to_jsonb(coalesce((select valor = 'true' from sistema where chave = 'asaas_ativo'), false))
+   $$`,
+  `create or replace function asaas_ativar(p jsonb)
+   returns jsonb language plpgsql as $$
+   begin
+     insert into sistema (chave, valor) values ('asaas_ativo', case when (p ->> 'ativo')::boolean then 'true' else 'false' end)
+     on conflict (chave) do update set valor = excluded.valor;
+     return asaas_ativo();
+   end;
+   $$`,
+  // Cliente do ASAAS de cada pessoa (chave como em guias_linhas). O CPF fica só no ASAAS.
+  `create table if not exists asaas_clientes (
+     chave       text primary key,
+     cliente_id  text not null,
+     criado_em   timestamptz not null default now()
+   )`,
+  // Uma cobrança Pix cobre linhas de um pedido de uma pessoa. 'criando' = linhas reservadas enquanto o ASAAS responde.
+  `create table if not exists asaas_cobrancas (
+     id          uuid primary key default gen_random_uuid(),
+     chave       text not null,
+     nome        text not null,
+     pedido      int not null,
+     valor       numeric(10, 2) not null check (valor > 0),
+     status      text not null default 'criando' check (status in ('criando', 'pendente', 'paga', 'vencida', 'cancelada', 'estornada')),
+     asaas_id    text unique,
+     link        text,
+     pix_payload text,
+     pix_imagem  text,
+     vencimento  date,
+     criado_em   timestamptz not null default now(),
+     pago_em     timestamptz
+   )`,
+  `create index if not exists asaas_cobrancas_chave on asaas_cobrancas (chave, criado_em desc)`,
+  `alter table guias_linhas add column if not exists cobranca_id uuid references asaas_cobrancas(id) on delete set null`,
+  `alter table guias_linhas add column if not exists pago_em timestamptz`,
+  // Eventos recebidos do ASAAS, como vieram; o id do evento é a chave (o ASAAS reenvia até receber 200).
+  `create table if not exists asaas_eventos (
+     id           text primary key,
+     evento       text not null,
+     dados        jsonb not null,
+     recebido_em  timestamptz not null default now()
+   )`,
+  `alter table asaas_eventos add column if not exists cobranca_id uuid`,
+  `alter table asaas_eventos add column if not exists resultado text`,
+  `create index if not exists asaas_eventos_recebido on asaas_eventos (recebido_em desc)`,
+  // Linhas com Pago e com a situação da cobrança Pix (substitui a da v103).
+  `create or replace function guias_estado(p jsonb default '{}'::jsonb)
+   returns jsonb language sql stable as $$
+     select jsonb_build_object(
+       'publicada', guias_publicada(),
+       'grupos', (select coalesce(jsonb_agg(jsonb_build_object('id', g.id, 'descricao', g.descricao, 'visivel', g.visivel,
+           'itens', (select coalesce(jsonb_agg(jsonb_build_object('id', i.id, 'descricao', i.descricao, 'foto', i.foto, 'quantidade', i.quantidade,
+                       'valor', i.valor, 'visivel', i.visivel) order by i.criado_em), '[]'::jsonb)
+                     from guias_itens i where i.grupo_id = g.id)) order by g.criado_em), '[]'::jsonb)
+                  from guias_grupos g),
+       'pedidos', (select coalesce(jsonb_agg(jsonb_build_object('numero', pe.numero, 'criadoEm', pe.criado_em, 'encerradoEm', pe.encerrado_em,
+           'linhas', (select coalesce(jsonb_agg(jsonb_build_object('id', l.id, 'itemId', l.item_id, 'descricao', l.descricao, 'valor', l.valor,
+                       'quantidade', l.quantidade, 'chave', l.chave, 'nome', l.nome, 'ok', l.ok, 'criadoEm', l.criado_em,
+                       'pago', l.pago_em is not null,
+                       'pix', case when l.pago_em is null and c.status in ('criando', 'pendente') then 'pendente' end) order by lower(l.nome), l.criado_em), '[]'::jsonb)
+                      from guias_linhas l left join asaas_cobrancas c on c.id = l.cobranca_id where l.pedido = pe.numero)) order by pe.numero desc), '[]'::jsonb)
+                   from guias_pedidos pe))
+   $$`,
+  // Pedir de novo o mesmo item só soma numa linha sem cobrança Pix (substitui a da v103).
+  `create or replace function guia_pedir(p jsonb)
+   returns jsonb language plpgsql as $$
+   declare
+     v_pedido int;
+     v_item guias_itens%rowtype;
+     v_qtd int := (p ->> 'quantidade')::int;
+     v_linha uuid;
+   begin
+     select numero into v_pedido from guias_pedidos where encerrado_em is null order by numero desc limit 1;
+     if v_pedido is null then raise exception 'Os pedidos estão fechados no momento.'; end if;
+     select i.* into v_item from guias_itens i join guias_grupos g on g.id = i.grupo_id
+      where i.id = (p ->> 'itemId')::uuid and i.visivel and g.visivel for update of i;
+     if not found then raise exception 'Este item não está disponível.'; end if;
+     if v_item.quantidade < 1 then raise exception 'Este item esgotou.'; end if;
+     if v_qtd < 1 or v_qtd > v_item.quantidade then raise exception 'Só restam % deste item.', v_item.quantidade; end if;
+     update guias_itens set quantidade = quantidade - v_qtd where id = v_item.id;
+     select id into v_linha from guias_linhas
+      where pedido = v_pedido and item_id = v_item.id and chave = p ->> 'chave' and valor = v_item.valor
+        and cobranca_id is null and pago_em is null limit 1;
+     if v_linha is not null then
+       update guias_linhas set quantidade = quantidade + v_qtd, nome = p ->> 'nome', ok = false where id = v_linha;
+     else
+       insert into guias_linhas (pedido, item_id, descricao, valor, quantidade, chave, nome)
+       values (v_pedido, v_item.id, v_item.descricao, v_item.valor, v_qtd, p ->> 'chave', p ->> 'nome');
+     end if;
+     return guias_estado();
+   end;
+   $$`,
+  // Cancelar: não cancela linha paga nem com Pix pendente (substitui a da v103).
+  `create or replace function guia_linha_cancelar(p jsonb)
+   returns jsonb language plpgsql as $$
+   declare v guias_linhas%rowtype;
+   begin
+     select * into v from guias_linhas where id = (p ->> 'id')::uuid for update;
+     if not found then raise exception 'Pedido não encontrado.'; end if;
+     if v.pago_em is not null then raise exception 'Este pedido já foi pago pelo Pix. Faça o estorno no ASAAS antes de cancelar.'; end if;
+     if exists (select 1 from asaas_cobrancas where id = v.cobranca_id and status in ('criando', 'pendente')) then
+       raise exception 'Este pedido tem um Pix pendente. Cancele a cobrança na aba ASAAS antes.';
+     end if;
+     delete from guias_linhas where id = v.id;
+     if v.item_id is not null then update guias_itens set quantidade = quantidade + v.quantidade where id = v.item_id; end if;
+     return guias_estado();
+   end;
+   $$`,
+  // p = { chave } — o cliente do ASAAS e as cobranças da pessoa (pendentes primeiro, até 10).
+  `create or replace function asaas_minhas(p jsonb)
+   returns jsonb language sql stable as $$
+     select jsonb_build_object(
+       'cliente', (select cliente_id from asaas_clientes where chave = p ->> 'chave'),
+       'cobrancas', coalesce((select jsonb_agg(x.j order by x.ordem) from (
+           select row_number() over (order by (c.status = 'pendente') desc, c.criado_em desc) as ordem,
+                  jsonb_build_object('id', c.id, 'pedido', c.pedido, 'valor', c.valor, 'status', c.status, 'link', c.link,
+                    'pixPayload', case when c.status = 'pendente' then c.pix_payload end,
+                    'pixImagem', case when c.status = 'pendente' then c.pix_imagem end,
+                    'vencimento', c.vencimento, 'criadoEm', c.criado_em, 'pagoEm', c.pago_em,
+                    'itens', (select coalesce(jsonb_agg(l.quantidade || 'x ' || l.descricao order by l.criado_em), '[]'::jsonb) from guias_linhas l where l.cobranca_id = c.id)) as j
+             from asaas_cobrancas c where c.chave = p ->> 'chave' and c.status <> 'criando'
+            order by (c.status = 'pendente') desc, c.criado_em desc limit 10) x), '[]'::jsonb))
+   $$`,
+  `create or replace function asaas_cliente_salvar(p jsonb)
+   returns jsonb language plpgsql as $$
+   begin
+     insert into asaas_clientes (chave, cliente_id) values (p ->> 'chave', p ->> 'clienteId')
+     on conflict (chave) do update set cliente_id = excluded.cliente_id;
+     return jsonb_build_object('ok', true);
+   end;
+   $$`,
+  // p = { chave, nome, pedido } — reserva as linhas não pagas da pessoa no pedido (inclusive de cobrança vencida
+  // ou cancelada) numa cobrança nova e devolve o valor somado no banco. No máximo 5 por pessoa por hora.
+  `create or replace function asaas_cobranca_reservar(p jsonb)
+   returns jsonb language plpgsql as $$
+   declare
+     v_id uuid;
+     v_valor numeric(10, 2);
+   begin
+     delete from asaas_cobrancas where status = 'criando' and criado_em < now() - interval '10 minutes';
+     if (select count(*) from asaas_cobrancas where chave = p ->> 'chave' and criado_em > now() - interval '1 hour') >= 5 then
+       raise exception 'Muitos Pix gerados em pouco tempo. Tente de novo mais tarde.';
+     end if;
+     perform 1 from guias_linhas where pedido = (p ->> 'pedido')::int and chave = p ->> 'chave' for update;
+     select coalesce(sum(l.valor * l.quantidade), 0) into v_valor
+       from guias_linhas l left join asaas_cobrancas c on c.id = l.cobranca_id
+      where l.pedido = (p ->> 'pedido')::int and l.chave = p ->> 'chave' and l.pago_em is null
+        and (c.id is null or c.status in ('vencida', 'cancelada', 'estornada'));
+     if v_valor <= 0 then
+       if exists (select 1 from guias_linhas l join asaas_cobrancas c on c.id = l.cobranca_id
+                   where l.pedido = (p ->> 'pedido')::int and l.chave = p ->> 'chave' and l.pago_em is null and c.status in ('criando', 'pendente')) then
+         raise exception 'O Pix deste pedido já foi gerado. Use o que está na tela.';
+       end if;
+       raise exception 'Não há nada a pagar neste pedido.';
+     end if;
+     insert into asaas_cobrancas (chave, nome, pedido, valor) values (p ->> 'chave', p ->> 'nome', (p ->> 'pedido')::int, v_valor) returning id into v_id;
+     update guias_linhas l set cobranca_id = v_id
+      where l.pedido = (p ->> 'pedido')::int and l.chave = p ->> 'chave' and l.pago_em is null
+        and (l.cobranca_id is null or exists (select 1 from asaas_cobrancas c where c.id = l.cobranca_id and c.status in ('vencida', 'cancelada', 'estornada')));
+     return jsonb_build_object('id', v_id, 'valor', v_valor);
+   end;
+   $$`,
+  `create or replace function asaas_cobranca_criada(p jsonb)
+   returns jsonb language plpgsql as $$
+   begin
+     update asaas_cobrancas set status = 'pendente', asaas_id = p ->> 'asaasId', link = p ->> 'link',
+       pix_payload = p ->> 'payload', pix_imagem = p ->> 'imagem', vencimento = nullif(p ->> 'vencimento', '')::date
+      where id = (p ->> 'id')::uuid and status = 'criando';
+     return jsonb_build_object('ok', true);
+   end;
+   $$`,
+  // O ASAAS recusou: apaga a reserva (as linhas voltam a ficar livres pelo on delete set null).
+  `create or replace function asaas_cobranca_desfazer(p jsonb)
+   returns jsonb language plpgsql as $$
+   begin
+     delete from asaas_cobrancas where id = (p ->> 'id')::uuid and status = 'criando';
+     return jsonb_build_object('ok', true);
+   end;
+   $$`,
+  // p = { id } — devolve a cobrança (para o root cancelar) ou null.
+  `create or replace function asaas_cobranca(p jsonb)
+   returns jsonb language sql stable as $$
+     select jsonb_build_object('id', c.id, 'status', c.status, 'asaasId', c.asaas_id) from asaas_cobrancas c where c.id = (p ->> 'id')::uuid
+   $$`,
+  `create or replace function asaas_cobranca_cancelar(p jsonb)
+   returns jsonb language plpgsql as $$
+   begin
+     update asaas_cobrancas set status = 'cancelada', pix_payload = null, pix_imagem = null where id = (p ->> 'id')::uuid and status = 'pendente';
+     return jsonb_build_object('ok', true);
+   end;
+   $$`,
+  // p = { id, evento, dados, paymentId, conferido?: { status, valor } } — grava o evento (repetido: não faz nada)
+  // e atualiza a cobrança. Só marca como paga com a conferência no ASAAS batendo status e valor.
+  `create or replace function asaas_evento_processar(p jsonb)
+   returns jsonb language plpgsql as $$
+   declare
+     v_c asaas_cobrancas%rowtype;
+     v_res text;
+     v_n int;
+   begin
+     insert into asaas_eventos (id, evento, dados) values (p ->> 'id', p ->> 'evento', coalesce(p -> 'dados', '{}'::jsonb))
+     on conflict (id) do nothing;
+     if not found then return jsonb_build_object('repetido', true); end if;
+     delete from asaas_eventos where recebido_em < now() - interval '180 days';
+     select * into v_c from asaas_cobrancas where asaas_id = p ->> 'paymentId' for update;
+     if not found then
+       v_res := 'ignorado (cobrança que não é do app)';
+     elsif p ->> 'evento' in ('PAYMENT_RECEIVED', 'PAYMENT_CONFIRMED') then
+       if p -> 'conferido' is null then
+         v_res := 'não conferido (sem ASAAS_API_KEY)';
+       elsif coalesce(p -> 'conferido' ->> 'status', '') not in ('RECEIVED', 'CONFIRMED', 'RECEIVED_IN_CASH') then
+         v_res := 'não liberado: no ASAAS está ' || coalesce(p -> 'conferido' ->> 'status', '?');
+       elsif (p -> 'conferido' ->> 'valor')::numeric is distinct from v_c.valor then
+         v_res := 'não liberado: valor diferente (' || coalesce(p -> 'conferido' ->> 'valor', '?') || ')';
+       elsif v_c.status = 'paga' then
+         v_res := 'já estava paga';
+       else
+         update asaas_cobrancas set status = 'paga', pago_em = now(), pix_payload = null, pix_imagem = null where id = v_c.id;
+         update guias_linhas set pago_em = now() where cobranca_id = v_c.id and pago_em is null;
+         get diagnostics v_n = row_count;
+         v_res := case when v_n > 0 then 'paga' else 'paga, mas os itens não estão mais nesta cobrança: conferir' end;
+       end if;
+     elsif p ->> 'evento' = 'PAYMENT_OVERDUE' then
+       update asaas_cobrancas set status = 'vencida', pix_payload = null, pix_imagem = null where id = v_c.id and status = 'pendente';
+       v_res := 'vencida';
+     elsif p ->> 'evento' = 'PAYMENT_DELETED' then
+       update asaas_cobrancas set status = 'cancelada', pix_payload = null, pix_imagem = null where id = v_c.id and status in ('pendente', 'vencida');
+       v_res := 'cancelada';
+     elsif p ->> 'evento' in ('PAYMENT_REFUNDED', 'PAYMENT_CHARGEBACK_REQUESTED') then
+       update asaas_cobrancas set status = 'estornada' where id = v_c.id;
+       update guias_linhas set pago_em = null where cobranca_id = v_c.id;
+       v_res := 'estornada';
+     else
+       v_res := 'só registrado';
+     end if;
+     update asaas_eventos set cobranca_id = v_c.id, resultado = v_res where id = p ->> 'id';
+     return jsonb_build_object('ok', true, 'resultado', v_res);
+   end;
+   $$`,
+  // Aba ASAAS (root): se o Pix está ligado, as últimas cobranças e os últimos eventos recebidos.
+  `create or replace function asaas_estado(p jsonb default '{}'::jsonb)
+   returns jsonb language sql stable as $$
+     select jsonb_build_object(
+       'ativo', asaas_ativo(),
+       'cobrancas', coalesce((select jsonb_agg(x.j order by x.criado_em desc) from (
+           select c.criado_em, jsonb_build_object('id', c.id, 'nome', c.nome, 'pedido', c.pedido, 'valor', c.valor, 'status', c.status,
+                    'asaasId', c.asaas_id, 'criadoEm', c.criado_em, 'pagoEm', c.pago_em) as j
+             from asaas_cobrancas c where c.status <> 'criando' order by c.criado_em desc limit 100) x), '[]'::jsonb),
+       'eventos', coalesce((select jsonb_agg(x.j order by x.recebido_em desc) from (
+           select e.recebido_em, jsonb_build_object('id', e.id, 'evento', e.evento, 'recebidoEm', e.recebido_em, 'resultado', e.resultado,
+                    'paymentId', e.dados -> 'payment' ->> 'id', 'valor', e.dados -> 'payment' ->> 'value',
+                    'status', e.dados -> 'payment' ->> 'status', 'nome', c.nome, 'pedido', c.pedido) as j
+             from asaas_eventos e left join asaas_cobrancas c on c.id = e.cobranca_id order by e.recebido_em desc limit 50) x), '[]'::jsonb))
    $$`,
 ];

@@ -1,5 +1,6 @@
 // Aba Compras (rota: GET /api/oferendas?lista=guias · POST /api/oferendas { acao: 'guias', op, ... }).
 //   todos:  pedir { itemId, quantidade }  — no pedido aberto, sem passar do disponível
+//           pix { pedido, cpf? }  — gera a cobrança Pix do que a pessoa pediu nesse pedido (veja api/_lib/asaas.js)
 //   admin:  publicar { publicada } · grupo { id?, descricao?, visivel? } · excluirGrupo { id }
 //           item { id?, grupoId, descricao?, foto? (base64 JPEG | null tira), quantidade?, valor?, visivel? } · excluirItem { id }
 //           cancelar { id } (a quantidade volta para o item) · ok { id, ok } · encerrar · novo (próximo número)
@@ -9,6 +10,7 @@ import { db } from './db.js';
 import { HttpError, validarId } from './http.js';
 import { pode } from '../../shared/permissoes.js';
 import { chavePessoa } from '../../shared/ervas.js';
+import { pixDaPessoa, gerarPix } from './asaas.js';
 
 const ehAdmin = (eu) => pode(eu, 'guias:gerenciar');
 
@@ -24,7 +26,7 @@ function paraTela(estado, eu) {
   const pedidos = estado.pedidos.map((p) => ({ ...p, linhas: p.linhas.map((l) => ({ ...l, valor: num(l.valor) })) }));
   const aberto = pedidos.find((p) => !p.encerradoEm)?.numero ?? null;
   const meus = pedidos.flatMap((p) => p.linhas.filter((l) => l.chave === chave)
-    .map(({ id, descricao, valor, quantidade }) => ({ id, pedido: p.numero, descricao, valor, quantidade })));
+    .map(({ id, descricao, valor, quantidade, pago, pix }) => ({ id, pedido: p.numero, descricao, valor, quantidade, pago, pix })));
   const grupos = estado.grupos.map((g) => ({ ...g, itens: g.itens.map((i) => ({ ...i, valor: num(i.valor) })) }));
   if (ehAdmin(eu)) return { admin: true, publicada: estado.publicada, aberto, grupos, pedidos, meus };
   return {
@@ -33,9 +35,12 @@ function paraTela(estado, eu) {
   };
 }
 
+// Junto com a tela, o Pix da pessoa (se o root ligou na aba ASAAS).
+const comPix = async (tela, eu) => ({ ...tela, ...(await pixDaPessoa(eu)) });
+
 export async function respostaGuias(eu) {
   await exigirAba(eu);
-  return paraTela(await db.rpc('guias_estado'), eu);
+  return comPix(paraTela(await db.rpc('guias_estado'), eu), eu);
 }
 
 function texto(v, oque, max) {
@@ -71,7 +76,11 @@ export async function acaoGuias(eu, b) {
     const estado = await db.rpc('guia_pedir', {
       itemId: validarId(b.itemId, 'Item'), quantidade: inteiro(b.quantidade, 'Quantidade', 1, 999), chave: chavePessoa(eu), nome: eu.nome,
     });
-    return paraTela(estado, eu);
+    return comPix(paraTela(estado, eu), eu);
+  }
+  if (b.op === 'pix') {
+    await gerarPix(eu, b);
+    return comPix(paraTela(await db.rpc('guias_estado'), eu), eu);
   }
   if (!ehAdmin(eu)) throw new HttpError(403, 'Só quem administra a aba Compras pode fazer isso.');
   let estado;
@@ -120,5 +129,5 @@ export async function acaoGuias(eu, b) {
     default:
       throw new HttpError(400, 'Ação inválida.');
   }
-  return paraTela(estado, eu);
+  return comPix(paraTela(estado, eu), eu);
 }

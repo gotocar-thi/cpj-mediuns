@@ -22,6 +22,7 @@ export const estado = {
   ervasHist: null,     // Histórico de compras (admin): lista, undefined = carregando, { erro }
   guias: null,         // aba Compras (GET /api/oferendas?lista=guias)
   amaci: null,         // aba Amaci (GET /api/pessoas?lista=amaci)
+  asaas: null,         // aba ASAAS, só root (GET /api/oferendas?lista=asaas)
   ervasPara: null,     // admin montando o pedido de outra pessoa: { chave?, nome, itens: { ervaId: qtd } }    // 'fornecedor' | 'cobranca' (exportação aberta na aba Ervas)
   pronto: false,
   confirm: null,       // item aguardando "Confirmar"
@@ -756,6 +757,23 @@ export async function acaoAmaci(op, dados = {}) {
   try {
     estado.amaci = await api('POST', '/pessoas', { acao: 'amaci', op, ...dados });
     if (op === 'publicar') estado.me = { ...estado.me, amaciPublicada: !!estado.amaci.publicada };
+    avisar();
+    return true;
+  } catch (e) {
+    toast(e.message);
+    avisar();
+    return false;
+  }
+}
+
+// ---------- ASAAS (só o root) ----------
+export async function carregarAsaas() {
+  try { estado.asaas = await api('GET', '/oferendas?lista=asaas'); } catch (e) { estado.asaas = { erro: e.message }; }
+  avisar();
+}
+export async function acaoAsaas(op, dados = {}) {
+  try {
+    estado.asaas = await api('POST', '/oferendas', { acao: 'asaas', op, ...dados });
     avisar();
     return true;
   } catch (e) {

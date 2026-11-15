@@ -10,6 +10,7 @@
 //                excluirItem { id } · entregue { id, entregue }
 //                status { id, status: 'rascunho' | 'aguardando' | 'publicado' | 'encerrado' }
 // Aba Compras: GET ?lista=guias e POST { acao: 'guias', op, ... } (veja api/_lib/guias.js).
+// ASAAS (veja api/_lib/asaas.js): webhook sem sessão, com token, em POST ?webhook=asaas; aba ASAAS (root) em GET ?lista=asaas e POST { acao: 'asaas', op, ... }.
 // Quem não administra as oferendas vê as publicadas (e doa nelas) e as bloqueadas (sem os itens).
 //                doarPor { itemId, pessoaId | chave, quantidade }  — doação de outra pessoa (0 = exclui)
 import { rota, corpo, validarId, validarData, HttpError } from '../_lib/http.js';
@@ -20,6 +21,7 @@ import { chavePessoa } from '../../shared/ervas.js';
 import { PAGAMENTO_KEYS, ENTREGA_KEYS, grupoOferendaValido, abasOcultas, temAbaPublica, limparDetalhes, detalhesOk, DETALHES_LINHAS, unidadeValida, quantidadeValida, aceitaFracao } from '../../shared/oferendas.js';
 import { respostaIemanja, acaoIemanja } from '../_lib/iemanja.js';
 import { respostaGuias, acaoGuias } from '../_lib/guias.js';
+import { webhookAsaas, respostaAsaas, acaoAsaas } from '../_lib/asaas.js';
 
 const STATUS = ['rascunho', 'aguardando', 'publicado', 'encerrado'];
 async function resposta(oferendas, eu) {
@@ -70,14 +72,17 @@ export default rota({
   GET: async (req) => {
     if (req.query.lista === 'iemanja') return respostaIemanja(await exigir(req));
     if (req.query.lista === 'guias') return respostaGuias(await exigir(req));
+    if (req.query.lista === 'asaas') return respostaAsaas(await exigir(req));
     const eu = await exigir(req, 'oferendas:doar');
     // Já inclui os novos cadastrados nas listas por pessoa.
     return resposta(await db.rpc('oferendas_sincronizar'), eu);
   },
   POST: async (req) => {
+    if (req.query.webhook === 'asaas') return webhookAsaas(req);
     const b = corpo(req);
     if (b.acao === 'iemanja') return acaoIemanja(await exigir(req), b);
     if (b.acao === 'guias') return acaoGuias(await exigir(req), b);
+    if (b.acao === 'asaas') return acaoAsaas(await exigir(req), b);
     const eu = await exigir(req, 'oferendas:doar');
     if (b.acao === 'doar') {
       if (!pode(eu, 'oferendas:gerenciar')) {

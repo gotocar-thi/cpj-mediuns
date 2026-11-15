@@ -56,6 +56,7 @@ PWA da **Casa do Pai João (CPJ)** para organizar a corrente e as giras:
 - **Quantidade quebrada (v105) e troca de pessoas da Iemanjá não foram testadas no banco.** A migração muda o tipo da quantidade dos itens e doações para numeric; o teste novo só roda no CI.
 - **Orações de 4 dias e transporte (v106) não foram testados no banco.** A migração e os testes novos só rodam no CI.
 - **Aba Amaci não foi testada no banco.** A migração v108 (`amaci_*`, perfis com a aba nova, `inicio_dados` refeita) e o teste novo de `test/api.test.js` só rodam no CI; a tela foi conferida com dados falsos. O Guia da Corrente e o do Administrador (PDF) ainda não falam da aba.
+- **Pix do ASAAS nunca rodou contra o ASAAS de verdade.** Os testes usam uma API falsa; falta testar no sandbox (gerar o Pix, pagar pelo painel do sandbox, ver o webhook chegar). Para ligar: `ASAAS_API_KEY`, `ASAAS_WEBHOOK_TOKEN` e `ASAAS_API_URL` na Vercel (sandbox em Preview/Development, produção só em Production); no ASAAS, o webhook com a URL `https://cpj-mediuns.vercel.app/api/oferendas?webhook=asaas`, o mesmo token e os eventos de cobrança; reativar a fila; ligar **Pix visível nas Compras** na aba ASAAS. Os Guias em PDF ainda não falam do Pix nem da aba ASAAS.
 - **Testes no Windows.** `npm test` depende de Linux (`runuser`) e de Postgres local; na pasta atual não roda.
 - O doc `claude/regras-sort-mediuns.md` do Project é antigo (out/2026); [regras.md](regras.md) é a referência atual.
 
