@@ -40,6 +40,21 @@ export function lerNascimento(s) {
 export const nascimentoBR = (iso) => (iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}` : '');
 // Telefone: só os números (DDD + número, 10 ou 11 dígitos).
 export const soNumeros = (v) => String(v || '').replace(/\D/g, '').slice(0, 11);
+// CPF: devolve só os 11 números se os dígitos verificadores batem (ou null).
+export function cpfValido(v) {
+  const d = String(v ?? '').replace(/\D/g, '');
+  if (d.length !== 11 || /^(\d)\1{10}$/.test(d)) return null;
+  const dv = (n) => {
+    let s = 0;
+    for (let i = 0; i < n; i++) s += Number(d[i]) * (n + 1 - i);
+    const r = (s * 10) % 11;
+    return r === 10 ? 0 : r;
+  };
+  return dv(9) === Number(d[9]) && dv(10) === Number(d[10]) ? d : null;
+}
+// '52998224725' → '529.982.247-25'; mascarado: só os 2 últimos números aparecem.
+export const cpfBR = (d) => String(d || '').replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, '$1.$2.$3-$4');
+export const cpfMascarado = (d) => (d ? '•••.•••.•••-' + String(d).slice(-2) : '');
 export function telefoneBR(n) {
   const d = soNumeros(n);
   if (d.length <= 2) return d ? `(${d}` : '';

@@ -833,6 +833,14 @@ export async function salvarFoto(pessoaId, foto) {
 }
 
 // Bloco Informações da aba Perfil: as da própria pessoa ou, para o admin, as de qualquer outra.
+// CPF (aba Perfil): não fica em estado; quem chama guarda só enquanto mostra. Devolve null se deu erro.
+export async function lerCpf(pessoaId, ver = false) {
+  try { return await api('GET', `/auth/cpf?pessoaId=${encodeURIComponent(pessoaId)}${ver ? '&ver=1' : ''}`); } catch (e) { toast(e.message); return null; }
+}
+export async function salvarCpf(pessoaId, cpf) {
+  try { return await api('POST', '/auth/cpf', { pessoaId, cpf }); } catch (e) { toast(e.message); return null; }
+}
+
 export async function salvarInfoDe(pessoaId, info) {
   try {
     const r = await api('POST', '/auth/perfil', { pessoaId, info });

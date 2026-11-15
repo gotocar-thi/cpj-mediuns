@@ -2103,3 +2103,61 @@ test('ASAAS: Pedir gera o link de pagamento; só o webhook conferido no ASAAS ma
     for (const [k, v] of Object.entries(env)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
   }
 });
+
+test('CPF do Perfil: cifrado, só a própria pessoa e o root', async () => {
+  const chaveAntes = process.env.CPF_CHAVE;
+  process.env.CPF_CHAVE = 'chave-de-teste-do-cpf-com-32-letras-ou-mais';
+  try {
+    await api('POST', '/api/pessoas', ADMIN, { nome: 'Cpf Dona, Cpf Vizinha', funcao: 'cambone' });
+    const pes = (await api('GET', '/api/pessoas', ADMIN)).json;
+    const dona = pes.find((p) => p.nome === 'Cpf Dona');
+    const vizinha = pes.find((p) => p.nome === 'Cpf Vizinha');
+    const tDona = await entrarComSenha('Cpf Dona');
+    const tViz = await entrarComSenha('Cpf Vizinha');
+    // Admin do Perfil (vê o perfil de todos), mas não é root.
+    assert.equal((await api('POST', '/api/usuarios', ADMIN, { pessoaId: vizinha.id, email: 'admperfil@corrente.org', senha: 'senha-forte-7', papel: 'admin_perfil' })).status, 200);
+    const tAdmPerfil = (await api('POST', '/api/auth/entrar', null, { email: 'admperfil@corrente.org', senha: 'senha-forte-7' })).json.token;
+
+    assert.deepEqual((await api('GET', '/api/auth/cpf', tDona)).json, { tem: false, mascarado: '', atualizadoEm: null });
+    assert.equal((await api('POST', '/api/auth/cpf', tDona, { cpf: '111.111.111-11' })).status, 400, 'CPF inválido');
+    assert.equal((await api('POST', '/api/auth/cpf', tDona, { cpf: '529.982.247-24' })).status, 400, 'dígito errado');
+    const salvo = await api('POST', '/api/auth/cpf', tDona, { cpf: '529.982.247-25' });
+    assert.equal(salvo.status, 200, JSON.stringify(salvo.json));
+    assert.equal(salvo.json.mascarado, '•••.•••.•••-25');
+    assert.ok(!('cpf' in salvo.json), 'salvar não devolve o número');
+    assert.ok(!('cpf' in (await api('GET', '/api/auth/cpf', tDona)).json), 'sem ver=1, só mascarado');
+    assert.equal((await api('GET', '/api/auth/cpf?ver=1', tDona)).json.cpf, '52998224725');
+
+    // Ninguém mais além do root: nem outra pessoa, nem o admin do Perfil.
+    for (const t of [tViz, tAdmPerfil, USER]) {
+      assert.equal((await api('GET', `/api/auth/cpf?pessoaId=${dona.id}&ver=1`, t)).status, 403);
+      assert.equal((await api('POST', '/api/auth/cpf', t, { pessoaId: dona.id, cpf: '' })).status, 403);
+    }
+    assert.equal((await api('GET', '/api/auth/cpf', ADMIN)).status, 400, 'root sem cadastro não tem CPF próprio');
+    assert.equal((await api('GET', `/api/auth/cpf?pessoaId=${dona.id}&ver=1`, ADMIN)).json.cpf, '52998224725');
+    assert.equal((await api('POST', '/api/auth/cpf', ADMIN, { pessoaId: dona.id, cpf: '153.509.460-56' })).json.mascarado, '•••.•••.•••-56');
+    assert.equal((await api('GET', '/api/auth/cpf?ver=1', tDona)).json.cpf, '15350946056');
+
+    // No banco, só cifrado; e não vaza pelo perfil de todos nem pela lista de pessoas.
+    const noBanco = sql(`select cifrado from pessoas_cpf where pessoa_id = '${dona.id}'`);
+    assert.match(noBanco, /^v1\./);
+    assert.ok(!noBanco.includes('15350946056'));
+    assert.ok(!JSON.stringify((await api('GET', '/api/auth/perfil', ADMIN)).json).includes('15350946056'));
+    assert.ok(!JSON.stringify((await api('GET', '/api/pessoas', ADMIN)).json).includes('15350946056'));
+    // Texto cifrado copiado para outra pessoa não abre.
+    sql(`insert into pessoas_cpf (pessoa_id, cifrado) values ('${vizinha.id}', '${noBanco}')`);
+    assert.equal((await api('GET', '/api/auth/cpf', tViz)).status, 500);
+    assert.equal((await api('POST', '/api/auth/cpf', tViz, { cpf: '' })).json.tem, false, 'apagar o próprio');
+
+    // Sem a chave no servidor, recusa.
+    delete process.env.CPF_CHAVE;
+    assert.equal((await api('POST', '/api/auth/cpf', tDona, { cpf: '529.982.247-25' })).status, 503);
+    process.env.CPF_CHAVE = 'chave-de-teste-do-cpf-com-32-letras-ou-mais';
+
+    // Excluir a pessoa apaga o CPF.
+    assert.equal((await api('DELETE', '/api/pessoas/' + dona.id, ADMIN)).status, 200);
+    assert.equal(sql(`select count(*) from pessoas_cpf where pessoa_id = '${dona.id}'`), '0');
+  } finally {
+    if (chaveAntes === undefined) delete process.env.CPF_CHAVE; else process.env.CPF_CHAVE = chaveAntes;
+  }
+});

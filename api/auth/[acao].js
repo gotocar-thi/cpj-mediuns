@@ -14,6 +14,7 @@
 //   GET  /api/auth/perfil   → { eu: { pessoaId, nome, perfil } | null, todos?: [{ pessoaId, nome, funcao, perfil }] (admin) }
 //   POST /api/auth/perfil   { perfil }  salva o meu perfil inteiro (curimba: só as informações pessoais)
 //                           Aluno (depois de criar a senha): só os próprios dados, informações, orixás e guias.
+//   GET  /api/auth/cpf?pessoaId=…[&ver=1] · POST /api/auth/cpf { pessoaId?, cpf }  CPF cifrado (própria pessoa ou root; api/_lib/cpf.js)
 //   GET  /api/auth/foto?pessoaId=…  → { foto: base64 JPEG | null }  (qualquer um logado: a aba Gira mostra a foto de com quem você trabalha)
 //   POST /api/auth/foto     { pessoaId?, foto: base64 JPEG | null }  troca ou tira a foto (a própria, ou de qualquer um: admin)
 //   GET  /api/auth/anamnese → { perguntas: [{ id, texto, tipo }], minhas: { perguntaId: resposta } | null, todas?: [{ pessoaId, perguntaId, resposta }] (admin do perfil) }
@@ -26,6 +27,7 @@ import { exigir } from '../_lib/sessao.js';
 import { abaIemanja } from '../_lib/iemanja.js';
 import { ocultarSorteios } from '../_lib/escala.js';
 import { oracoes } from '../_lib/oracoes.js';
+import { rotaCpf } from '../_lib/cpf.js';
 import { temAbaPublica } from '../../shared/oferendas.js';
 import { gerarHash, conferirSenha, emitirToken, emitirTokenCorrente, emitirTokenGrupo, iguaisSeguro, SENHA_MINIMA } from '../_lib/senhas.js';
 import { permissoesDe, ehAcessoCorrente, grupoAcesso, pode, PIN_VALIDO, PERMISSOES_GRUPO } from '../../shared/permissoes.js';
@@ -211,6 +213,13 @@ const acoes = {
     if (!eu.pessoaId) throw new HttpError(400, 'Seu usuário não está ligado a uma pessoa da corrente.');
     const { funcao } = await db.rpc('perfil_ler', { pessoaId: eu.pessoaId });
     return limpo(await db.rpc('perfil_salvar', { pessoaId: eu.pessoaId, perfil: perfilDaFuncao(b.perfil, funcao) }));
+  },
+
+  // CPF: só a própria pessoa e o admin root (veja api/_lib/cpf.js).
+  async cpf(req) {
+    const eu = await exigir(req);
+    exigirSenhaCorrente(eu);
+    return rotaCpf(req, eu);
   },
 
   // Foto da pessoa: todos que estão logados veem (a aba Gira mostra com quem cada um trabalha);

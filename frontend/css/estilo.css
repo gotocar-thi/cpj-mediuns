@@ -968,6 +968,14 @@ body.deslogado .rodape{display:none}
 .pf-info-card .grp-h{align-items:center}
 .pf-info-sec{display:grid;gap:8px}
 .pf-info-sec h3{margin:0;font:800 .78rem var(--f-body);letter-spacing:.1em;text-transform:uppercase;color:var(--accent)}
+/* CPF: número mascarado + Mostrar/Alterar; formulário próprio (fora do Editar das informações) */
+.pf-cpf-l{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px}
+.pf-cpf-v{font-variant-numeric:tabular-nums;letter-spacing:.04em;min-width:0}
+.pf-cpf-bts{display:flex;flex-wrap:wrap;gap:6px}
+.pf-cpf-form{display:grid;gap:8px}
+.pf-cpf-form input{min-height:42px;font-variant-numeric:tabular-nums}
+.pf-cpf-remover{justify-self:start}
+.pf-cpf-aviso{margin:0;font-size:.78rem}
 .pf-info-contato{padding:10px 12px 12px;border-radius:10px;border:1px solid color-mix(in srgb,var(--accent) 30%,var(--line));background:color-mix(in srgb,var(--accent) 7%,transparent)}
 .pf-info .pf-info-c{font-size:.74rem;letter-spacing:.04em;text-transform:uppercase}
 .pf-info input{min-height:42px;text-transform:none;letter-spacing:normal}

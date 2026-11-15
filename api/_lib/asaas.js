@@ -16,6 +16,7 @@ import { db } from './db.js';
 import { iguaisSeguro } from './senhas.js';
 import { pode } from '../../shared/permissoes.js';
 import { chavePessoa } from '../../shared/ervas.js';
+import { cpfValido } from '../../shared/perfil.js';
 
 const SANDBOX = 'https://api-sandbox.asaas.com/v3';
 const urlApi = () => (process.env.ASAAS_API_URL || SANDBOX).replace(/\/+$/, '');
@@ -42,19 +43,6 @@ async function asaas(metodo, caminho, dados, ms = 8000) {
     throw new HttpError(r.status >= 500 ? 502 : 400, msg ? 'ASAAS: ' + msg : 'O ASAAS recusou o pedido.');
   }
   return json;
-}
-
-// ---------- CPF (só vai para o ASAAS; o app não guarda) ----------
-export function cpfValido(v) {
-  const d = String(v ?? '').replace(/\D/g, '');
-  if (d.length !== 11 || /^(\d)\1{10}$/.test(d)) return null;
-  const dv = (n) => {
-    let s = 0;
-    for (let i = 0; i < n; i++) s += Number(d[i]) * (n + 1 - i);
-    const r = (s * 10) % 11;
-    return r === 10 ? 0 : r;
-  };
-  return dv(9) === Number(d[9]) && dv(10) === Number(d[10]) ? d : null;
 }
 
 // ---------- pessoa: gerar o Pix ----------

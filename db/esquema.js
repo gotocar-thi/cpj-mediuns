@@ -9,7 +9,7 @@
 // Estrutura: veja db/ESTRUTURA-ESQUEMA.md para o mapa de versões, domínios e
 // quais migrações foram testadas no Postgres.
 
-export const VERSAO = 111;  // v111: linha do pedido de Compras guarda "Grupo · Item"
+export const VERSAO = 112;  // v112: CPF no Perfil (cifrado, tabela própria)
 
 import { PERFIS_PADRAO } from '../shared/permissoes.js';
 
@@ -4490,4 +4490,47 @@ export const MIGRACOES = [
      return guias_estado();
    end;
    $$`,
+  // ================================================== v112: CPF no Perfil
+  // Fica fora do perfil (jsonb), numa tabela só dele, e cifrado pelo backend (api/_lib/cpf.js):
+  // não vai nas listas de perfis, no backup nem para quem administra o Perfil. O banco nunca vê o número.
+  `create table if not exists pessoas_cpf (
+     pessoa_id      uuid primary key references pessoas(id) on delete cascade,
+     cifrado        text not null,
+     atualizado_em  timestamptz not null default now(),
+     atualizado_por text not null default ''
+   )`,
+  `create or replace function cpf_ler(p jsonb)
+   returns jsonb language sql stable as $$
+     select jsonb_build_object('cifrado', c.cifrado, 'atualizadoEm', c.atualizado_em)
+       from pessoas_cpf c where c.pessoa_id = (p ->> 'pessoaId')::uuid
+   $$`,
+  // cifrado '' apaga. Só pessoa ativa (quem saiu não tem CPF guardado).
+  `create or replace function cpf_salvar(p jsonb)
+   returns jsonb language plpgsql as $$
+   declare v_id uuid := (p ->> 'pessoaId')::uuid;
+   begin
+     if not exists (select 1 from pessoas where id = v_id and saida is null) then
+       raise exception 'Pessoa não encontrada.';
+     end if;
+     if coalesce(p ->> 'cifrado', '') = '' then
+       delete from pessoas_cpf where pessoa_id = v_id;
+     else
+       insert into pessoas_cpf (pessoa_id, cifrado, atualizado_em, atualizado_por)
+       values (v_id, p ->> 'cifrado', now(), coalesce(p ->> 'por', ''))
+       on conflict (pessoa_id) do update set cifrado = excluded.cifrado, atualizado_em = now(), atualizado_por = excluded.atualizado_por;
+     end if;
+     return cpf_ler(p);
+   end;
+   $$`,
+  // Excluir a pessoa (saida preenchida) apaga o CPF junto com o perfil, a foto e a senha.
+  `create or replace function pessoas_cpf_saida()
+   returns trigger language plpgsql as $$
+   begin
+     if new.saida is not null and old.saida is null then delete from pessoas_cpf where pessoa_id = new.id; end if;
+     return new;
+   end;
+   $$`,
+  `drop trigger if exists pessoas_cpf_saida on pessoas`,
+  `create trigger pessoas_cpf_saida after update of saida on pessoas
+   for each row execute function pessoas_cpf_saida()`,
 ];

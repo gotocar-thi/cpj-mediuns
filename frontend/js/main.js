@@ -389,7 +389,7 @@ main.addEventListener('input', (e) => {
   if (e.target.dataset.mascara === 'data') eventos.mascaraData(e.target, String(e.inputType || '').startsWith('delete'));
   if (e.target.dataset.mascara === 'tel' && !String(e.inputType || '').startsWith('delete')) mascaraTel(e.target);
   if (prefs.tab === 'fotos' && (e.target.id === 'ft-data' || e.target.id === 'ft-nome')) TELAS.fotos.digitando(e.target);
-  if (prefs.tab === 'perfil' && (e.target.dataset.act === 'pfinfo' || e.target.dataset.act === 'pfnome' || e.target.dataset.act === 'anaresp')) TELAS.perfil.digitando(e.target);
+  if (prefs.tab === 'perfil' && (e.target.dataset.act === 'pfinfo' || e.target.dataset.act === 'pfcpf' || e.target.dataset.act === 'pfnome' || e.target.dataset.act === 'anaresp')) TELAS.perfil.digitando(e.target);
   if (prefs.tab === 'ervas' && e.target.dataset.compra) TELAS.ervas.digitando(e.target);
   if (prefs.tab === 'guias' && e.target.dataset.guia) TELAS.guias.digitando(e.target);
   // Orientação da aba Amaci: até 10 linhas, guardada para um redesenho não apagar.

@@ -2,9 +2,9 @@
 // O admin também acompanha a corrente: quem já respondeu, os guias de todos e as oferendas pendentes.
 
 import { ORIXAS, LINHAS_CADASTRO, LINHA_KEYS } from '/shared/regras.js';
-import { POSICOES_ORIXA, POSICOES_GUIA, GUIAS, NOME_GUIA_MAX, respondeu, lerNascimento, nascimentoBR, telefoneBR, soNumeros, blocosAfinidade, cadastraEspiritual,
+import { POSICOES_ORIXA, POSICOES_GUIA, GUIAS, NOME_GUIA_MAX, respondeu, lerNascimento, nascimentoBR, telefoneBR, soNumeros, blocosAfinidade, cadastraEspiritual, cpfValido, cpfBR,
   ANAMNESE_TIPOS, ANAMNESE_PERGUNTA_MAX, ANAMNESE_TEXTO_MAX, ANAMNESE_SIMNAO, ANAMNESE_TIPO_LABEL, anamnesePreenchida, respostasPorPessoa, textoAnamnese, valorAnamnese } from '/shared/perfil.js';
-import { estado, pode, visaoAtiva, avisar, carregarPerfil, mudarPerfil, salvarAfinidade, carregarFoto, salvarFoto, salvarInfoDe, carregarAnamnese, acaoAnamnese } from '../estado.js';
+import { estado, pode, visaoAtiva, avisar, carregarPerfil, mudarPerfil, salvarAfinidade, carregarFoto, salvarFoto, salvarInfoDe, carregarAnamnese, acaoAnamnese, lerCpf, salvarCpf } from '../estado.js';
 import { esc, toast, iniciais, baixar, hoje } from '../util.js';
 
 const GUIA_LABEL = Object.fromEntries(GUIAS);
@@ -152,6 +152,7 @@ function cardInfo(eu) {
       ${x.parcial ? '' : campo('nascimento', 'Data de nascimento', 'type="text" inputmode="numeric" maxlength="10" data-mascara="data" autocomplete="bday"', '31/10/1990')}
       ${x.parcial ? '' : campo('celular', 'Celular', 'type="tel" inputmode="numeric" maxlength="15" data-mascara="tel" autocomplete="tel"', '(11) 91234-5678')}
     </div>${blocoFoto(x.pessoaId, x.nome, editando)}</div></div>
+    ${blocoCpf(x)}
     <div class="pf-info-sec pf-info-contato"><h3><span aria-hidden="true">📞</span> Pessoa para contato</h3><div class="pf-info">
       ${campo('contatoNome', 'Nome', 'type="text" maxlength="80"', 'Quem chamar')}
       ${campo('contatoTelefone', 'Telefone', 'type="tel" inputmode="numeric" maxlength="15" data-mascara="tel"', '(11) 91234-5678')}
@@ -161,6 +162,96 @@ function cardInfo(eu) {
       <button class="btn primary" data-act="pfinfosalvar" ${editando ? '' : 'disabled'}><span aria-hidden="true">💾</span> Salvar</button>
     </div>` : ''}</div>`;
 }
+
+// ---------- CPF (dado sensível) ----------
+// Só a própria pessoa e o admin root (o servidor confere). Fica fora do estado e do bloco Editar:
+// a tela recebe só o número mascarado; o inteiro vem em Mostrar e some sozinho em 30 s.
+const C = { pessoaId: '', dados: undefined, cpf: '', timer: 0, editando: false, rasc: '', conf: false, ocupado: false };
+const MOSTRAR_MS = 30000;
+const podeCpf = (x) => !!x && !x.parcial && !soAluno() && (x.propria || pode('usuarios:gerenciar'));
+const mascaraCpf = (v) => String(v).replace(/\D/g, '').slice(0, 11).replace(/^(\d{3})(\d{1,3})?(\d{1,3})?(\d{1,2})?$/, (_, a, b, c, d) => a + (b ? '.' + b : '') + (c ? '.' + c : '') + (d ? '-' + d : ''));
+function esconderCpf() { clearTimeout(C.timer); C.cpf = ''; }
+function resetCpf(pessoaId) { esconderCpf(); Object.assign(C, { pessoaId, dados: undefined, editando: false, rasc: '', conf: false, ocupado: false }); }
+async function carregarCpf(pessoaId) {
+  C.dados = null;
+  const r = await lerCpf(pessoaId);
+  if (C.pessoaId !== pessoaId) return;
+  C.dados = r || { erro: true };
+  avisar();
+}
+
+function blocoCpf(x) {
+  if (!podeCpf(x)) return '';
+  if (C.pessoaId !== x.pessoaId) resetCpf(x.pessoaId);
+  if (C.dados === undefined) carregarCpf(x.pessoaId);
+  const D = C.dados;
+  const aviso = `<p class="muted pf-cpf-aviso">${x.propria ? 'Só você e o admin root veem.' : 'Só a pessoa e o admin root veem.'} Fica guardado cifrado.</p>`;
+  let corpo;
+  if (!D) corpo = '<span class="muted">Carregando…</span>';
+  else if (D.erro) corpo = `<span class="muted">Não foi possível carregar.</span> <button type="button" class="btn small" data-act="pfcpftentar">Tentar de novo</button>`;
+  else if (C.editando) {
+    corpo = `<div class="pf-cpf-form">
+      <label class="field">${D.tem ? 'Novo CPF' : 'CPF'}<input id="pf-cpf-in" data-act="pfcpf" type="text" inputmode="numeric" maxlength="14" autocomplete="off" spellcheck="false" placeholder="000.000.000-00" value="${esc(C.rasc)}"></label>
+      <div class="pf-bts"><button type="button" class="btn" data-act="pfcpfcancelar" ${C.ocupado ? 'disabled' : ''}>✕ Cancelar</button>
+      <button type="button" class="btn primary" data-act="pfcpfsalvar" ${C.ocupado ? 'disabled' : ''}>💾 Salvar</button></div>
+      ${D.tem ? `<button type="button" class="btn link danger pf-cpf-remover" data-act="pfcpfremover" ${C.ocupado ? 'disabled' : ''}>Remover o CPF</button>` : ''}</div>`;
+  } else {
+    const valor = C.cpf ? `<b>${esc(cpfBR(C.cpf))}</b>` : D.tem ? `<b>${esc(D.mascarado)}</b>` : '<span class="muted">Não cadastrado</span>';
+    corpo = `<div class="pf-cpf-l"><span class="pf-cpf-v">${valor}</span><span class="pf-cpf-bts">
+      ${D.tem ? `<button type="button" class="btn small" data-act="${C.cpf ? 'pfcpfocultar' : 'pfcpfmostrar'}" ${C.ocupado ? 'disabled' : ''}>${C.cpf ? '🙈 Ocultar' : '👁 Mostrar'}</button>` : ''}
+      <button type="button" class="btn small" data-act="pfcpfeditar">${D.tem ? '✏️ Alterar' : '＋ Cadastrar'}</button></span></div>`;
+  }
+  return `<div class="pf-info-sec pf-cpf"><h3><span aria-hidden="true">🔒</span> CPF</h3>${corpo}${aviso}</div>`;
+}
+
+function janelaCpf() {
+  if (!C.conf) return '';
+  const x = pessoaDoBloco(estado.perfil.eu);
+  const remover = C.conf === 'remover';
+  const texto = remover ? `O CPF ${x?.propria ? 'guardado' : `de <b>${esc(x?.nome || '')}</b>`} será apagado.`
+    : `Confira: <b>${esc(cpfBR(cpfValido(C.rasc)))}</b>${x?.propria ? '' : ` será o CPF de <b>${esc(x?.nome || '')}</b>`}.`;
+  return `<div class="modal-fundo" role="dialog" aria-modal="true" aria-labelledby="pf-cpf-t"><div class="modal">
+    <h3 id="pf-cpf-t">${remover ? 'Remover o CPF?' : 'Salvar o CPF?'}</h3><p style="margin:0">${texto}</p>
+    <div class="row" style="justify-content:flex-end;gap:8px"><button class="btn" data-act="pfcpfconfnao">Cancelar</button><button class="btn ${remover ? 'danger' : 'primary'}" data-act="pfcpfconfsim">Confirmar</button></div>
+  </div></div>`;
+}
+
+const cliquesCpf = {
+  pfcpftentar() { C.dados = undefined; avisar(); },
+  async pfcpfmostrar() {
+    if (C.ocupado) return;
+    C.ocupado = true; avisar();
+    const id = C.pessoaId;
+    const r = await lerCpf(id, true);
+    C.ocupado = false;
+    if (C.pessoaId !== id) return;
+    if (r?.cpf) {
+      esconderCpf();
+      C.cpf = r.cpf;
+      C.timer = setTimeout(() => { C.cpf = ''; avisar(); }, MOSTRAR_MS);
+    }
+    avisar();
+  },
+  pfcpfocultar() { esconderCpf(); avisar(); },
+  pfcpfeditar() { esconderCpf(); Object.assign(C, { editando: true, rasc: '' }); avisar(); document.getElementById('pf-cpf-in')?.focus(); },
+  pfcpfcancelar() { Object.assign(C, { editando: false, rasc: '' }); avisar(); },
+  pfcpfsalvar() {
+    if (!cpfValido(C.rasc)) { toast('CPF inválido. Confira os 11 números.'); return; }
+    C.conf = 'salvar'; avisar();
+  },
+  pfcpfremover() { C.conf = 'remover'; avisar(); },
+  pfcpfconfnao() { C.conf = false; avisar(); },
+  async pfcpfconfsim() {
+    const remover = C.conf === 'remover';
+    const id = C.pessoaId;
+    C.conf = false; C.ocupado = true; avisar();
+    const r = await salvarCpf(id, remover ? '' : cpfValido(C.rasc));
+    if (C.pessoaId !== id) return;
+    C.ocupado = false;
+    if (r) { Object.assign(C, { dados: r, editando: false, rasc: '' }); toast(remover ? 'CPF removido.' : 'CPF salvo.'); }
+    avisar();
+  },
+};
 
 // Rascunho de Editar, pronto para gravar; avisa e devolve null se algum campo estiver inválido.
 function lerInfoRasc() {
@@ -508,10 +599,11 @@ export function render() {
   else if (eu) h += meusCards(eu) + cardAnamnese();
   else if (!admin()) h += `<div class="card"><p class="muted" style="margin:0">Seu usuário não está ligado a uma pessoa da corrente, então não tem perfil próprio.</p></div>`;
   h += cardGuiasCorrente(estado.perfil.guias || []);
-  return `<section class="panel pf-tela">${h}${janelaAnamnese()}${janelaInfo()}</section>`;
+  return `<section class="panel pf-tela">${h}${janelaAnamnese()}${janelaInfo()}${janelaCpf()}</section>`;
 }
 
 export const cliques = {
+  ...cliquesCpf,
   pfsemsenhafechar() { U().semSenhaFechado = true; avisar(); },
   pfcriarsenha() { U().semSenhaFechado = true; avisar(); document.querySelector('[data-conta="criarsenha"]')?.click(); },
   // Anamnese (pessoa): Editar e Salvar abrem a janela de confirmação.
@@ -683,6 +775,7 @@ export function digitando(el) {
   const k = el.dataset.k;
   // Bloco Informações: só guarda o rascunho, para um redesenho não apagar; grava em Salvar.
   if (el.dataset.act === 'pfinfo') { if (U().infoRasc) U().infoRasc[k] = el.value; return; }
+  if (el.dataset.act === 'pfcpf') { el.value = mascaraCpf(el.value); C.rasc = el.value; return; }
   const v = el.value.replace(/\s+/g, ' ').trim();
   mudarPerfil((P) => { if (v) P.outros[k] = v; else delete P.outros[k]; }, { silencioso: true });
 }
