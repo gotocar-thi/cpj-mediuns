@@ -15,6 +15,7 @@
 // POST /api/giras  { acao: 'conduta', id?, texto, anonimo? } (qualquer um logado, com o bloco ligado; editar só o próprio e antes de lido; anonimo grava sem autor)
 //                  { acao: 'condutaLer', id } · { acao: 'condutaResponder', id, resposta, publicar? } · { acao: 'condutaAtivar', ativa } · { acao: 'condutaExcluir', id } (só o root)
 //                  { acao: 'condutaCancelar', id } (quem abriu, antes de lido: apaga o relato)
+// GET  /api/giras?lista=atrasos[&atualizar=1] — pagamentos em atraso da conta B do ASAAS: cada um os seus, o root todos (api/_lib/atrasos.js)
 //                  → { ativa, relatos }
 // GET  /api/giras?lista=fotos — álbuns e fotos (aba Fotos), com links assinados do R2  → { albuns, fotos, usado, limite, configurado }
 // POST /api/giras  { acao: 'fotoAlbum', id?, data, nome }  → { ...fotos, albumId } (com id = editar: só admin)
@@ -28,6 +29,7 @@ import { ocultarSorteios } from '../_lib/escala.js';
 import { acaoVideo } from '../_lib/videos.js';
 import { ACOES_ORACOES, oracoes, acaoOracao } from '../_lib/oracoes.js';
 import { ACOES_CONDUTA, condutas, acaoConduta } from '../_lib/conduta.js';
+import { atrasos } from '../_lib/atrasos.js';
 import { ACOES_FOTOS, exigirFotosAtiva, fotosEstado, acaoFoto } from '../_lib/fotos.js';
 import { pode } from '../../shared/permissoes.js';
 import { OPCOES_GIRA, LINHA_LABEL, compactarRetratos } from '../../shared/regras.js';
@@ -77,6 +79,7 @@ export default rota({
       if (eu.grupo) throw new HttpError(403, 'Este acesso não tem permissão para ver os relatos.');
       return condutas(eu);
     }
+    if (req.query.lista === 'atrasos') return atrasos(await exigir(req), req.query.atualizar === '1');
     if (req.query.lista === 'ausencias') {
       await exigir(req, 'giras:editar');
       return db.rpc('ausencias_previas_listar');

@@ -2193,3 +2193,87 @@ test('Compras: item CPJ só para quem está cadastrado na corrente', async () =>
     await gu(ADMIN, { op: 'publicar', publicada: false });
   }
 });
+
+test('pagamentos em atraso (conta B do ASAAS): cada um os seus pelo CPF, o root todos', async () => {
+  const fetchReal = globalThis.fetch;
+  const BASE = 'http://asaasb.teste/v3';
+  const falso = { pedidos: [], falhar: false };
+  globalThis.fetch = async (url, op = {}) => {
+    const u = String(url);
+    if (!u.startsWith(BASE)) return fetchReal(url, op);
+    const caminho = u.slice(BASE.length);
+    falso.pedidos.push([op.method, caminho, op.headers?.access_token]);
+    const json = (st, j) => new Response(JSON.stringify(j), { status: st, headers: { 'Content-Type': 'application/json' } });
+    if (falso.falhar) return json(500, {});
+    if (caminho.startsWith('/payments?status=OVERDUE')) {
+      return json(200, { hasMore: false, data: [
+        { id: 'pay_ana', customer: 'cus_ana', value: 120, dueDate: '2026-10-10', description: 'Mensalidade outubro', invoiceUrl: 'https://www.asaas.com/i/pay_ana' },
+        { id: 'pay_ext', customer: 'cus_ext', value: 50.5, dueDate: '2026-10-20', description: 'Doação', invoiceUrl: 'javascript:alert(1)' },
+      ] });
+    }
+    if (caminho === '/customers/cus_ana') return json(200, { id: 'cus_ana', name: 'Ana no ASAAS', cpfCnpj: '52998224725' });
+    if (caminho === '/customers/cus_ext') return json(200, { id: 'cus_ext', name: 'Fulano Externo', cpfCnpj: '15350946056', mobilePhone: '11988887777' });
+    return json(404, { errors: [{ description: 'não encontrado' }] });
+  };
+  const env = { CPF_CHAVE: process.env.CPF_CHAVE, ASAAS2_API_KEY: process.env.ASAAS2_API_KEY, ASAAS2_API_URL: process.env.ASAAS2_API_URL };
+  const ler = (tok, atualizar) => api('GET', '/api/giras?lista=atrasos' + (atualizar ? '&atualizar=1' : ''), tok);
+  try {
+    process.env.CPF_CHAVE = 'chave-de-teste-do-cpf-com-32-letras-ou-mais';
+    delete process.env.ASAAS2_API_KEY;
+    assert.equal((await ler(ADMIN)).json.configurado, false, 'sem a chave da conta B');
+    Object.assign(process.env, { ASAAS2_API_KEY: 'chave-b', ASAAS2_API_URL: BASE });
+
+    await api('POST', '/api/pessoas', ADMIN, { nome: 'Atraso Ana, Atraso Bia, Atraso Sem Senha', funcao: 'cambone' });
+    const tAna = await entrarComSenha('Atraso Ana');
+    const tBia = await entrarComSenha('Atraso Bia');
+    assert.equal((await api('POST', '/api/auth/cpf', tAna, { cpf: '529.982.247-25' })).status, 200);
+    const semSenha = (await api('POST', '/api/auth/entrar', null, { email: 'cpj', senha: 'Atraso Sem Senha' })).json.token;
+
+    const ana = (await ler(tAna)).json;
+    assert.equal(ana.configurado, true);
+    assert.deepEqual(ana.atrasos, [{ id: 'pay_ana', valor: 120, vencimento: '2026-10-10', descricao: 'Mensalidade outubro', link: 'https://www.asaas.com/i/pay_ana' }],
+      'a pessoa vê só a sua, sem nome nem telefone');
+    assert.ok(falso.pedidos.every(([, , chave]) => chave === 'chave-b'), 'usa a chave da conta B');
+    assert.deepEqual((await ler(tBia)).json.atrasos, [], 'sem CPF que bata, nada');
+    assert.equal((await ler(semSenha)).json.semSenha, true, 'acesso da corrente sem senha não vê pagamentos');
+    assert.deepEqual((await ler(semSenha)).json.atrasos, []);
+
+    const root = (await ler(ADMIN)).json;
+    assert.equal(root.root, true);
+    assert.deepEqual(root.atrasos.map((a) => [a.id, a.nome, a.ligado]), [['pay_ana', 'Atraso Ana', true], ['pay_ext', 'Fulano Externo', false]]);
+    assert.equal(root.atrasos[1].telefone, '11988887777');
+    assert.equal(root.atrasos[1].link, '', 'link que não é https não passa');
+    assert.match(root.atualizadoEm, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/);
+
+    // Leitura guardada: sem Atualizar, não chama o ASAAS de novo; quem não é root não força.
+    const n = falso.pedidos.length;
+    await ler(ADMIN); await ler(USER, true);
+    assert.equal(falso.pedidos.length, n, 'usa a leitura guardada (o Atualizar da pessoa logo depois não chama o ASAAS)');
+    await ler(ADMIN, true);
+    assert.ok(falso.pedidos.length > n, 'Atualizar do root lê de novo');
+
+    // Atualizar da pessoa: só lê de novo se a última leitura tiver mais de 1 minuto.
+    const m = falso.pedidos.length;
+    await ler(tAna, true);
+    assert.equal(falso.pedidos.length, m, 'logo depois de uma leitura, a pessoa recebe a guardada');
+    sql("update sistema set valor = (now() - interval '2 minutes')::text where chave = 'asaas2_atualizado'");
+    await ler(tAna, true);
+    assert.ok(falso.pedidos.length > m, 'com mais de 1 minuto, o Atualizar da pessoa lê o ASAAS');
+
+    // ASAAS fora do ar: o Atualizar do root avisa; o da pessoa e a leitura vencida mostram a última, com aviso.
+    falso.falhar = true;
+    assert.equal((await ler(ADMIN, true)).status, 502);
+    sql("update sistema set valor = (now() - interval '2 minutes')::text where chave = 'asaas2_atualizado'");
+    const pessoaFalhou = await ler(tAna, true);
+    assert.equal(pessoaFalhou.status, 200);
+    assert.match(pessoaFalhou.json.erro, /última leitura/);
+    sql("update sistema set valor = (now() - interval '1 hour')::text where chave = 'asaas2_atualizado'");
+    const velha = (await ler(tAna)).json;
+    assert.match(velha.erro, /última leitura/);
+    assert.equal(velha.atrasos.length, 1);
+    falso.falhar = false;
+  } finally {
+    globalThis.fetch = fetchReal;
+    for (const [k, v] of Object.entries(env)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
+  }
+});

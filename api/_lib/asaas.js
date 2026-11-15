@@ -19,17 +19,19 @@ import { chavePessoa } from '../../shared/ervas.js';
 import { cpfValido } from '../../shared/perfil.js';
 
 const SANDBOX = 'https://api-sandbox.asaas.com/v3';
-const urlApi = () => (process.env.ASAAS_API_URL || SANDBOX).replace(/\/+$/, '');
+// prefixo = 'ASAAS' (conta A, Compras) ou 'ASAAS2' (conta B, pagamentos em atraso: api/_lib/atrasos.js).
+const urlDe = (prefixo) => (process.env[prefixo + '_API_URL'] || SANDBOX).replace(/\/+$/, '');
+const urlApi = () => urlDe('ASAAS');
 export const configurado = () => !!(process.env.ASAAS_API_KEY && process.env.ASAAS_WEBHOOK_TOKEN);
 const PAGO = ['RECEIVED', 'CONFIRMED', 'RECEIVED_IN_CASH'];
 
 // Chamada à API do ASAAS. Erro do ASAAS vira mensagem para a tela; falha de rede, 502.
-async function asaas(metodo, caminho, dados, ms = 8000) {
+export async function chamarAsaas(prefixo, metodo, caminho, dados, ms = 8000) {
   let r;
   try {
-    r = await fetch(urlApi() + caminho, {
+    r = await fetch(urlDe(prefixo) + caminho, {
       method: metodo,
-      headers: { access_token: process.env.ASAAS_API_KEY, 'Content-Type': 'application/json', 'User-Agent': 'cpj-mediuns' },
+      headers: { access_token: process.env[prefixo + '_API_KEY'], 'Content-Type': 'application/json', 'User-Agent': 'cpj-mediuns' },
       body: dados ? JSON.stringify(dados) : undefined,
       signal: AbortSignal.timeout(ms),
     });
@@ -39,11 +41,12 @@ async function asaas(metodo, caminho, dados, ms = 8000) {
   const json = await r.json().catch(() => null);
   if (!r.ok) {
     const msg = json?.errors?.map((e) => e.description).filter(Boolean).join(' ');
-    console.error('[asaas]', metodo, caminho, r.status, msg || '');
+    console.error('[' + prefixo.toLowerCase() + ']', metodo, caminho, r.status, msg || '');
     throw new HttpError(r.status >= 500 ? 502 : 400, msg ? 'ASAAS: ' + msg : 'O ASAAS recusou o pedido.');
   }
   return json;
 }
+const asaas = (...a) => chamarAsaas('ASAAS', ...a);
 
 // ---------- pessoa: gerar o Pix ----------
 export const pixLigado = async () => configurado() && !!(await db.rpc('asaas_ativo'));

@@ -9,7 +9,7 @@
 // Estrutura: veja db/ESTRUTURA-ESQUEMA.md para o mapa de versões, domínios e
 // quais migrações foram testadas no Postgres.
 
-export const VERSAO = 113;  // v113: item de Compras exclusivo da corrente (CPJ)
+export const VERSAO = 114;  // v114: pagamentos em atraso da conta B do ASAAS (aba Geral)
 
 import { PERFIS_PADRAO } from '../shared/permissoes.js';
 
@@ -4575,5 +4575,51 @@ export const MIGRACOES = [
                        'pix', case when l.pago_em is not null then null when c.status = 'criando' then 'pendente' else c.status end) order by lower(l.nome), l.criado_em), '[]'::jsonb)
                       from guias_linhas l left join asaas_cobrancas c on c.id = l.cobranca_id where l.pedido = pe.numero)) order by pe.numero desc), '[]'::jsonb)
                    from guias_pedidos pe))
+   $$`,
+  // ================================================== v114: pagamentos em atraso da conta B do ASAAS (aba Geral)
+  // Última leitura das cobranças vencidas da conta B (api/_lib/atrasos.js), trocada inteira a cada leitura.
+  // pessoa_id vem do CPF do Perfil (null = cliente do ASAAS que não bate com ninguém da corrente).
+  `create table if not exists asaas2_atrasos (
+     id          text primary key,
+     pessoa_id   uuid references pessoas(id) on delete set null,
+     nome        text not null default '',
+     telefone    text not null default '',
+     valor       numeric(10, 2) not null default 0,
+     vencimento  date,
+     descricao   text not null default '',
+     link        text not null default ''
+   )`,
+  // Os CPFs cifrados de quem está na corrente: o backend decifra para ligar cobrança e pessoa.
+  `create or replace function cpf_todos(p jsonb default '{}'::jsonb)
+   returns jsonb language sql stable as $$
+     select coalesce(jsonb_agg(jsonb_build_object('pessoaId', c.pessoa_id, 'cifrado', c.cifrado)), '[]'::jsonb)
+       from pessoas_cpf c join pessoas pe on pe.id = c.pessoa_id where pe.saida is null
+   $$`,
+  `create or replace function asaas2_atrasos_salvar(p jsonb)
+   returns jsonb language plpgsql as $$
+   begin
+     delete from asaas2_atrasos;
+     insert into asaas2_atrasos (id, pessoa_id, nome, telefone, valor, vencimento, descricao, link)
+     select x ->> 'id', nullif(x ->> 'pessoaId', '')::uuid, coalesce(x ->> 'nome', ''), coalesce(x ->> 'telefone', ''),
+            coalesce((x ->> 'valor')::numeric, 0), nullif(x ->> 'vencimento', '')::date, coalesce(x ->> 'descricao', ''), coalesce(x ->> 'link', '')
+       from jsonb_array_elements(coalesce(p -> 'itens', '[]'::jsonb)) x
+     on conflict (id) do nothing;
+     insert into sistema (chave, valor) values ('asaas2_atualizado', now()::text)
+     on conflict (chave) do update set valor = excluded.valor;
+     return jsonb_build_object('ok', true);
+   end;
+   $$`,
+  // Nome e celular da corrente quando a cobrança está ligada a uma pessoa; senão, os do cliente no ASAAS.
+  `create or replace function asaas2_atrasos_ler(p jsonb default '{}'::jsonb)
+   returns jsonb language sql stable as $$
+     select jsonb_build_object(
+       'atualizadoEm', (select to_char(valor::timestamptz at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') from sistema where chave = 'asaas2_atualizado'),
+       'itens', coalesce((select jsonb_agg(jsonb_build_object(
+           'id', a.id, 'pessoaId', a.pessoa_id, 'ligado', pe.id is not null,
+           'nome', coalesce(pe.nome, a.nome),
+           'telefone', coalesce(nullif(pe.perfil -> 'info' ->> 'celular', ''), a.telefone),
+           'valor', a.valor::float8, 'vencimento', a.vencimento, 'descricao', a.descricao, 'link', a.link)
+           order by a.vencimento nulls last, lower(coalesce(pe.nome, a.nome)))
+         from asaas2_atrasos a left join pessoas pe on pe.id = a.pessoa_id and pe.saida is null), '[]'::jsonb))
    $$`,
 ];

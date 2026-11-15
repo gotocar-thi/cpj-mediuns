@@ -1424,6 +1424,20 @@ button.eu-av{cursor:zoom-in}
 .cd-form textarea,.cd-resp-txt{font-family:var(--f-body);font-size:1rem;line-height:1.4;min-height:0;resize:none}
 .cd-lista{display:grid;gap:10px}
 .cd-sub{margin:4px 0 0;font-size:.95rem}
+/* Pagamentos em atraso (aba Geral, conta B do ASAAS) */
+.at-lista{display:grid;gap:8px}
+.at-item{display:flex;justify-content:space-between;align-items:center;gap:10px;border:1px solid var(--line);border-left:4px solid var(--off);border-radius:10px;padding:8px 10px}
+.at-info{display:grid;gap:2px;min-width:0;overflow-wrap:anywhere}
+.at-venc{font-size:.8rem}
+.at-lado{display:grid;justify-items:end;gap:6px;flex:none}
+.at-valor{font-variant-numeric:tabular-nums}
+.at-bts{display:flex;gap:6px;align-items:center}
+.at-bts a.btn{text-decoration:none}
+.at-info .badge{justify-self:start}
+.at-bts .wa-bt{min-height:34px;padding:4px 8px}
+.at-rodape{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:8px;font-size:.82rem}
+.at-erro{margin:0;font-size:.82rem;color:var(--warn)}
+.at-meu{border-color:var(--off)}
 .cd-item{display:grid;gap:6px;border:2px solid var(--line);border-radius:12px;padding:10px 12px;background:var(--bg)}
 .cd-item.novo{border-color:var(--warn);background:var(--warn-soft)}
 .cd-item.lido{border-color:var(--ok)}

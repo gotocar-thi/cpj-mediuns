@@ -53,6 +53,7 @@ export const estado = {
   entidadesApelidos: [], // apelidos opcionais das entidades, configurados pelo Admin root
   oracoes: [],         // aba Gira: orações dos últimos 7 dias
   conduta: null,       // aba Geral: Gestão de Conduta e Risco { ativa, relatos } (root: todos; os outros: os próprios)
+  atrasos: null,       // aba Geral: pagamentos em atraso da conta B do ASAAS { configurado, root, atualizadoEm, atrasos } (root: todos; os outros: os próprios)
   ausPrevias: null,    // aba Gira (admin): ausências antecipadas, de datas ainda sem gira — [{ data, pessoaId }]
   curimba: null,       // aba Curimba: { alunos, aulas, presencas }
   minhaCurimba: null,  // aba Gira: { aulas } de quem está logado, se for aluno da curimba
@@ -118,6 +119,7 @@ export async function carregarTudo() {
   definirConfig(r.config);
   estado.me = me;
   estado.conduta = null;   // relatos são de quem está logado: busca de novo
+  estado.atrasos = null;   // idem para os pagamentos em atraso
   estado.visaoRoot = 'root';
   if (me.grupo === 'alunos') {
     estado.eventos = r.eventos;
@@ -232,6 +234,7 @@ export async function atualizarDoServidor() {
 // O que não entra na versão dos dados (oferendas, ervas, Iemanjá, relatos): só da aba aberta, como antes.
 async function atualizarAbaAberta() {
   if (estado.conduta !== null && prefs.tab === 'gira') estado.conduta = await api('GET', '/giras?lista=conduta').catch(() => estado.conduta);
+  if (estado.atrasos !== null && prefs.tab === 'gira') estado.atrasos = await api('GET', '/giras?lista=atrasos').catch(() => estado.atrasos);
   // Oferendas: pega o que o admin publicou ou o que outros doaram (se não houver doação minha a enviar).
   // Geral e Gira mostram os compromissos das oferendas; atualizar quando qualquer uma estiver aberta.
   if (estado.oferendas !== null && (prefs.tab === 'oferendas' || prefs.tab === 'gira' || prefs.tab === 'agenda') && !Object.values(timersDoacao).some(Boolean)) {
@@ -521,6 +524,25 @@ export function carregarConduta() {
     avisar();
   })();
   return carregandoConduta;
+}
+// ---------- Pagamentos em atraso (conta B do ASAAS, aba Geral) ----------
+// Como o Conduta: um pedido por vez; atualizar = o root manda ler o ASAAS agora.
+let carregandoAtrasos = null;
+export function carregarAtrasos({ atualizar = false } = {}) {
+  if (carregandoAtrasos) return carregandoAtrasos;
+  const sessao = token();
+  carregandoAtrasos = (async () => {
+    try {
+      const r = await api('GET', '/giras?lista=atrasos' + (atualizar ? '&atualizar=1' : ''));
+      if (token() === sessao) estado.atrasos = r;
+      if (atualizar && !r.erro) toast('Pagamentos atualizados.');
+    } catch (e) {
+      if (token() === sessao) { if (atualizar) toast(e.message); estado.atrasos = estado.atrasos || { configurado: false, atrasos: [] }; }
+    }
+    carregandoAtrasos = null;
+    avisar();
+  })();
+  return carregandoAtrasos;
 }
 // redesenhar: false no rascunho da resposta (sair do campo): redesenhar ali trocaria o botão no meio do toque em Publicar.
 export async function acaoConduta(acao, dados = {}, { redesenhar = true } = {}) {

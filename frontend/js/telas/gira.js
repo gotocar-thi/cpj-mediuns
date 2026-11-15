@@ -19,6 +19,7 @@ import { cardSemana, cardOracoes, cardAulaCurimba, cardCompromissos } from './gi
 import { blocoLimpeza, blocoRecado, blocoLicenca, blocoBanho, blocoAusPrevia, blocoAusencia, blocoFaltas, avisoEntidade, contagemPresentes, blocoPedirErvas, blocosOferenda } from './giraInformacoes.js';
 import { duplasAbertas, botaoDobrar, acoesSorteio, tituloSorteio, confirmaSorteio, confirmaRemenajo, titDobra, linhaEscala } from './giraEscala.js';
 import { cardConduta, cliquesConduta, mudancasConduta } from './giraConduta.js';
+import { cardAtrasos, cliquesAtrasos } from './giraAtrasos.js';
 import { cardAno, cliquesAno, mudancasAno } from './giraAno.js';
 export { enviarOracao } from './giraTopo.js';
 export { enviarConduta, digitarConduta } from './giraConduta.js';
@@ -255,7 +256,7 @@ export function render() {
   if (visaoAtiva() === 'alunos') return `<section class="panel">${cardSemana()}${cardOracoes({ aluno: true })}</section>`;
   const g = giraAtual();
   const eu = estado.me?.pessoaId && (estado.giras[g.data] || licencaEm(estado.pessoas.find((x) => x.id === estado.me.pessoaId) || {}, g.data)) ? blocoEu(g) : '';
-  return `<section class="panel">${eu}${cardAulaCurimba()}${cardCompromissos()}${cardSemana()}${cardOracoes()}${cardConduta()}</section>`;
+  return `<section class="panel">${eu}${cardAulaCurimba()}${cardCompromissos()}${cardAtrasos()}${cardSemana()}${cardOracoes()}${cardConduta()}</section>`;
 }
 
 function renderGira() {
@@ -633,6 +634,7 @@ function janelaWhats() {
 export const cliques = {
   ...cliquesResumo,
   ...cliquesConduta,
+  ...cliquesAtrasos,
   ...cliquesAno,
   dobrarcard(el) { const k = el.dataset.k; if (abertos.has(k)) abertos.delete(k); else abertos.add(k); avisar(); },
   // Gira nova já vem com a próxima turma da limpeza (depois da última gira encerrada, pulando turmas vazias).
