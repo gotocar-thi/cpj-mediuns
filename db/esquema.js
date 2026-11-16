@@ -9,7 +9,7 @@
 // Estrutura: veja db/ESTRUTURA-ESQUEMA.md para o mapa de versões, domínios e
 // quais migrações foram testadas no Postgres.
 
-export const VERSAO = 116;  // v116: tipos de evento cadastrados pelo root, com as turmas de alunos que veem
+export const VERSAO = 117;  // v117: excluir tipo de evento (não os quatro de sempre, nem com eventos)
 
 import { PERFIS_PADRAO } from '../shared/permissoes.js';
 
@@ -4697,6 +4697,23 @@ export const MIGRACOES = [
      return eventos_tipos_estado();
    exception when unique_violation then
      raise exception 'Esse tipo já existe.';
+   end;
+   $$`,
+
+  // ================================================== v117: excluir tipo de evento
+  // Os quatro de sempre ficam (o app usa as chaves); tipo com eventos só sai depois de os eventos mudarem de tipo.
+  `create or replace function evento_tipo_excluir(p jsonb)
+   returns jsonb language plpgsql as $$
+   declare v_qtd int;
+   begin
+     if p ->> 'chave' in ('gira', 'amaci', 'aviso', 'evento') then raise exception 'Este tipo não pode ser excluído.'; end if;
+     select count(*) into v_qtd from eventos where tipo = p ->> 'chave';
+     if v_qtd > 0 then
+       raise exception '% com este tipo: mude o tipo deles antes de excluir.', case when v_qtd = 1 then 'Há 1 evento' else 'Há ' || v_qtd || ' eventos' end;
+     end if;
+     delete from eventos_tipos where chave = p ->> 'chave';
+     if not found then raise exception 'Tipo não encontrado.'; end if;
+     return eventos_tipos_estado();
    end;
    $$`,
 ];

@@ -93,6 +93,14 @@ function quemVe(t) {
   return nomes.length ? 'Alunos: ' + nomes.join(', ') : 'Só a corrente';
 }
 
+// Os quatro de sempre não têm Excluir (o app usa as chaves); o servidor também recusa tipo com eventos.
+function botaoExcluirTipo(t) {
+  if (TIPOS_EVENTO.some(([k]) => k === t.chave)) return '';
+  return estado.confirm === 'evt:' + t.chave
+    ? `<button class="btn small danger" data-act="evtipoexcluir" data-k="${t.chave}">Confirmar</button>`
+    : `<button class="btn small" data-act="askdel" data-k="evt:${t.chave}">Excluir</button>`;
+}
+
 export function blocoTipos() {
   if (!pode('usuarios:gerenciar')) return '';
   const u = U();
@@ -102,7 +110,7 @@ export function blocoTipos() {
   h += '<p class="muted evt-nota">A corrente vê todos os tipos. Gira e Evento aparecem para todos os alunos; os outros, só para as turmas marcadas no tipo.</p>';
   h += `<div class="ev-lista">${et.tipos.map((t) => (u.tipoEd === t.chave ? formTipo(t)
     : `<div class="ev-l evt-l"><span class="ev-nome"><span class="evs-tipo ${t.chave}">${esc(t.nome)}</span></span><span class="muted evt-quem">${esc(quemVe(t))}</span>
-      <span class="ev-acts"><button class="btn small" data-act="evtipoeditar" data-k="${t.chave}">Editar</button></span></div>`)).join('')}</div>`;
+      <span class="ev-acts"><button class="btn small" data-act="evtipoeditar" data-k="${t.chave}">Editar</button>${botaoExcluirTipo(t)}</span></div>`)).join('')}</div>`;
   h += u.tipoEd === '' ? formTipo(null) : '<button class="btn small" data-act="evtiponovo">＋ Novo tipo</button>';
   return h;
 }
@@ -147,6 +155,7 @@ export const cliques = {
   evtiponovo() { U().tipoEd = ''; avisar(); },
   evtipoeditar(el) { U().tipoEd = el.dataset.k; avisar(); },
   evtipocancelar() { U().tipoEd = null; avisar(); },
+  async evtipoexcluir(el) { estado.confirm = null; if (await salvarEventoTipo({ chave: el.dataset.k }, 'excluirEventoTipo')) toast('Tipo excluído.'); },
   async evexcluir(el) { estado.confirm = null; if (await acaoEventos('excluirEvento', { id: el.dataset.id })) toast('Evento excluído.'); },
 };
 

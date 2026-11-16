@@ -563,9 +563,9 @@ export async function carregarEventosTipos() {
   } catch (e) { toast(e.message); estado.eventosTipos = { tipos: [], turmas: [] }; }
   avisar();
 }
-export async function salvarEventoTipo(dados) {
+export async function salvarEventoTipo(dados, acao = 'eventoTipo') {
   try {
-    const r = await api('POST', '/giras', { acao: 'eventoTipo', ...dados });
+    const r = await api('POST', '/giras', { acao, ...dados });
     estado.eventosTipos = { tipos: r.tipos, turmas: r.turmas };
     estado.eventos = r.eventos;
     avisar();

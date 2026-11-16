@@ -4,6 +4,7 @@
 // POST /api/giras  { acao: 'evento', id?, data: 'AAAA-MM-DD', nome, tipo: chave do tipo } · { acao: 'excluirEvento', id }  → eventos (só o admin root)
 // GET  /api/giras?lista=eventosTipos — tipos de evento (só o root)  → { tipos: [{ chave, nome, turmas }], turmas: [{ id, nome }], eventos }
 // POST /api/giras  { acao: 'eventoTipo', chave?, nome, turmas: [id..] } (só o root; sem chave cria)  → o mesmo de ?lista=eventosTipos
+//                  { acao: 'excluirEventoTipo', chave } (só o root; não os quatro de sempre, nem tipo com eventos)  → idem
 // GET  /api/giras?lista=videos — vídeos do YouTube das giras (aba Vídeos), do mais recente ao mais antigo
 //      (quem não tem a aba no perfil só vê com a aba publicada)
 // POST /api/giras  { acao: 'video', id?, data, evento, youtube: link ou código, classes: [..] } · { acao: 'excluirVideo', id }  → vídeos
@@ -142,6 +143,10 @@ export default rota({
       if (b.chave !== undefined && b.chave !== '' && !/^[a-z0-9]{1,20}$/.test(String(b.chave))) throw new HttpError(400, 'Tipo inválido.');
       const turmas = Array.isArray(b.turmas) ? b.turmas.map((t) => validarId(t, 'Turma')) : [];
       return db.rpc('evento_tipo_salvar', { chave: String(b.chave || ''), nome, turmas });
+    }
+    if (b.acao === 'excluirEventoTipo') {
+      if (!/^[a-z0-9]{1,20}$/.test(String(b.chave ?? ''))) throw new HttpError(400, 'Tipo inválido.');
+      return db.rpc('evento_tipo_excluir', { chave: b.chave });
     }
     if (b.acao === 'excluirEvento') return db.rpc('evento_excluir', { id: validarId(b.id, 'Evento') });
     if (b.acao !== 'evento') throw new HttpError(400, 'Ação inválida.');

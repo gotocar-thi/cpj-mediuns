@@ -1456,7 +1456,15 @@ test('tipos de evento: o root cria e edita; alunos veem gira, evento e os tipos 
   assert.equal(ed.eventos.find((e) => e.tipo === festa.chave).tipoNome, 'Festa');
   assert.deepEqual(doTeste((await api('GET', '/api/giras?lista=eventos', dez)).json), ['amaci', 'evento', festa.chave, 'gira'].sort());
 
+  // Excluir: os quatro de sempre não; tipo com eventos só depois de os eventos saírem.
+  assert.equal((await api('POST', '/api/giras', ADMIN, { acao: 'excluirEventoTipo', chave: 'aviso' })).status, 400);
+  assert.equal((await api('POST', '/api/giras', USER, { acao: 'excluirEventoTipo', chave: festa.chave })).status, 403);
+  const comEvento = await api('POST', '/api/giras', ADMIN, { acao: 'excluirEventoTipo', chave: festa.chave });
+  assert.equal(comEvento.status, 400);
+  assert.match(comEvento.json.erro, /Há 1 evento/);
   for (const e of ed.eventos.filter((x) => x.nome.startsWith('Teste '))) await api('POST', '/api/giras', ADMIN, { acao: 'excluirEvento', id: e.id });
+  const semFesta = (await api('POST', '/api/giras', ADMIN, { acao: 'excluirEventoTipo', chave: festa.chave })).json;
+  assert.ok(!semFesta.tipos.some((t) => t.chave === festa.chave));
   await api('POST', '/api/giras', ADMIN, { acao: 'eventoTipo', chave: 'amaci', nome: 'Amaci', turmas: [] });
 });
 
