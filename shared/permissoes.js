@@ -6,20 +6,21 @@
 
 // Abas que entram na tabela de perfis (a aba Admin root, chave "usuarios", é sempre só do admin root).
 export const ABAS = [
-  { k: 'gira', nome: 'Gira', ver: 'A escala. Sem o Histórico, vê só o resultado do sorteio.', editar: 'Presença, entidade, sorteio e encerrar.' },
+  { k: 'gira', nome: 'Geral e Gira', ver: 'As abas Geral e Gira com a escala. Sem o Histórico, vê só o resultado do sorteio.', editar: 'Presença, entidade, sorteio e encerrar.' },
   { k: 'pessoas', nome: 'Pessoas', ver: 'A corrente, licenças e turmas da limpeza.', editar: 'Cadastrar, editar e excluir pessoas e licenças.' },
-  { k: 'alunos', nome: 'Alunos', ver: 'O bloco Alunos (na aba Pessoas).', editar: 'Cadastrar alunos e turmas.' },
+  { k: 'alunos', nome: 'Alunos (na aba Pessoas)', ver: 'O bloco Alunos na aba Pessoas.', editar: 'Cadastrar alunos e turmas.' },
   { k: 'hist', nome: 'Histórico', ver: 'Histórico, estatísticas e a presença completa na Gira.', editar: 'Excluir giras, backup e restauração.' },
   { k: 'ervas', nome: 'Ervas', ver: 'Escolher as próprias ervas.', editar: 'Ervas, preços, frete, pedidos e cobrança.' },
   { k: 'oferendas', nome: 'Oferendas', ver: 'Escolher o que doar.', editar: 'Criar oferendas, itens e marcar entregas.' },
   { k: 'guias', nome: 'Compras', ver: 'Ver os itens à venda e fazer os próprios pedidos.', editar: 'Grupos e itens, encerrar e começar pedidos, marcar ok e exportar.' },
-  { k: 'eventos', nome: 'Eventos', ver: 'O bloco Eventos na aba Gira (a lista do mês).', editar: 'Cadastrar, editar e excluir eventos.' },
-  { k: 'perfil', nome: 'Perfil', ver: 'O próprio perfil (orixás, guias e a própria Anamnese).', editar: 'Admin do perfil: ver o perfil de todos e as pendências, e a Anamnese (cadastrar perguntas, ver as respostas de todos e compartilhar).' },
+  { k: 'amaci', nome: 'Amaci', ver: 'A aba Amaci (quando está visível para todos): o amaci de cada orixá liberado.', editar: 'Ligar Visível para todos, liberar os orixás por turma e escrever os Recados.' },
+  { k: 'fotos', nome: 'Fotos', ver: 'Ver os álbuns e enviar fotos (quem entra pela corrente precisa ter senha).', editar: 'Apagar fotos de qualquer pessoa; editar e excluir álbuns.' },
   { k: 'curimba', nome: 'Curimba', ver: 'A aba Curimba: alunos, aulas e presença.', editar: 'Cadastrar alunos e aulas e marcar presença.' },
   { k: 'videos', nome: 'Vídeos', ver: 'A aba Vídeos: assistir aos vídeos das giras.', editar: 'Publicar, classificar e excluir vídeos.' },
-  { k: 'amaci', nome: 'Amaci', ver: 'A aba Amaci (quando está visível para todos): o amaci de cada orixá liberado.', editar: 'Ligar Visível para todos, liberar os orixás por turma e escrever a Orientação.' },
-  { k: 'fotos', nome: 'Fotos', ver: 'Ver os álbuns e enviar fotos (quem entra pela corrente precisa ter senha).', editar: 'Apagar fotos de qualquer pessoa; editar e excluir álbuns.' },
+  { k: 'perfil', nome: 'Perfil', ver: 'O próprio perfil (orixás, guias e a própria Anamnese).', editar: 'Admin do perfil: ver o perfil de todos e as pendências, e a Anamnese (cadastrar perguntas, ver as respostas de todos e compartilhar).' },
   { k: 'asaas', nome: 'ASAAS', ver: 'A aba ASAAS: os links de pagamento das Compras e o retorno do ASAAS.', editar: 'Ligar o Pix nas Compras e cancelar links de pagamento.' },
+  // Os eventos da casa são só do Admin root; o que sobrou desta permissão é a moderação das orações (aba Geral).
+  { k: 'eventos', nome: 'Orações (moderar)', ver: 'Nada a mais (todos já pedem oração e acendem vela).', editar: 'Excluir o pedido de oração de qualquer pessoa.' },
 ];
 export const ABA_KEYS = ABAS.map((a) => a.k);
 
