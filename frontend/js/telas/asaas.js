@@ -58,20 +58,22 @@ function linhaCobranca(c) {
       : ''}</span></li>`;
 }
 
-// Quadradinhos de situação em cada grupo: verde pago, amarelo pendente, cinza cancelado (e estornado), vermelho atrasado.
+// Quadradinhos de situação em cada grupo: verde pago, amarelo pendente, cinza cancelado, vermelho atrasado e laranja estornado.
 // Tocar abre a lista daquela situação embaixo; tocar de novo fecha.
 const QUADROS = [
   ['paga', 'Pago', 'as-q-ok', (c) => c.status === 'paga'],
   ['pendente', 'Pendente', 'as-q-pend', (c) => c.status === 'pendente'],
-  ['cancelada', 'Cancelado', 'as-q-canc', (c) => c.status === 'cancelada' || c.status === 'estornada'],
+  ['cancelada', 'Cancelado', 'as-q-canc', (c) => c.status === 'cancelada'],
   ['vencida', 'Atrasado', 'as-q-atr', (c) => c.status === 'vencida'],
+  // Estornado (laranja): só aparece no grupo que tem algum, para os quatro de sempre não virarem duas linhas.
+  ['estornada', 'Estornado', 'as-q-est', (c) => c.status === 'estornada'],
 ];
 function grupoCobrancas(nome, cs) {
   const sel = ui.cobSel[nome];
   const aberto = QUADROS.find((q) => q[0] === sel);
   const lista = aberto ? cs.filter(aberto[3]) : [];
   return `<div class="as-grupo"><div class="as-grupo-h"><b>${esc(nome)}</b><span class="muted">${cs.length} ${cs.length === 1 ? 'link' : 'links'}</span></div>
-    <div class="pf-of-totais as-quadros">${QUADROS.map(([k, rot, cls, f]) => {
+    <div class="pf-of-totais as-quadros${cs.some((c) => c.status === 'estornada') ? ' cinco' : ''}">${QUADROS.filter(([k, , , f]) => k !== 'estornada' || cs.some(f)).map(([k, rot, cls, f]) => {
       const n = cs.filter(f).length;
       return `<button type="button" class="pf-of-total ${cls}${sel === k ? ' selecionado' : ''}" data-act="asaasquadro" data-g="${esc(nome)}" data-k="${k}" aria-expanded="${sel === k}" aria-label="${esc(nome)}: ${n} ${rot.toLowerCase()}" ${n ? '' : 'disabled'}><b>${n}</b><span>${rot}</span></button>`;
     }).join('')}</div>

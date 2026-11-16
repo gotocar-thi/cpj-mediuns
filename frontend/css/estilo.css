@@ -1751,6 +1751,7 @@ section.panel.gi-tela{gap:12px}
 .pf-of-total.as-q-pend{--fn:var(--warn)}
 .pf-of-total.as-q-canc{--fn:var(--muted)}
 .pf-of-total.as-q-atr{--fn:var(--off)}
+.pf-of-total.as-q-est{--fn:var(--orange)}
 .as-grupo .as-lista{max-height:none}
 .as-sit{display:grid;gap:8px}
 .as-sit+.as-sit{border-top:1px solid var(--line);padding-top:12px}
