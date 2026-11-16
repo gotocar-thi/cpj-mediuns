@@ -43,8 +43,15 @@ export async function entrar(email, senha, digitado, pin) {
   const r = await chamar('POST', 'entrar', { email, senha, ...(digitado ? { digitado } : {}), ...(pin ? { pin } : {}) });
   if (r.confirmar) return { candidatos: r.candidatos || [] };
   if (r.precisaSenha) return { precisaSenha: true, nome: r.nome };
+  if (r.criarSenha) return { criarSenha: true, confirmar: r.confirmar };
   guardar(r.token);
   return {};
+}
+
+// Sem senha, entrando com e-mail ou celular: confirma com o outro contato do cadastro, cria a senha e já entra.
+export async function criarSenhaContato(contato, confirmacao, senha) {
+  const r = await chamar('POST', 'criarSenhaContato', { contato, confirmacao, senha });
+  guardar(r.token);
 }
 
 // Criar cadastro na tela de login (entra como aluno sem turma) e já fica logado.

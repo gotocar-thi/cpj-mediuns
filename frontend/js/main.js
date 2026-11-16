@@ -1,11 +1,11 @@
 // Ponto de entrada do frontend: login, abas, renderização e eventos.
 
-import { estadoDoApp, logado, entrar, cadastrar, instalar, sair, trocarSenha, criarSenhaCorrente } from './auth.js';
+import { estadoDoApp, logado, entrar, cadastrar, criarSenhaContato, instalar, sair, trocarSenha, criarSenhaCorrente } from './auth.js';
 import { quandoSessaoExpirar } from './api.js';
 import { estado, prefs, salvarPrefs, pode, visaoAtiva, aoMudar, avisar, carregarTudo, atualizarDoServidor, salvarPerfilAgora, mudarVisaoRoot, veErvas, veOferendas, veGuias, veAmaci, temPendencia } from './estado.js';
 import { esc, toast, mascaraTel, guardarRascunhos, devolverRascunhos } from './util.js';
 import { iniciarAtualizacao } from './atualizacao.js';
-import { ehAcessoGrupo, PIN_VALIDO } from '/shared/permissoes.js';
+import { ehAcessoGrupo, PIN_NOVO, PIN_NOVO_MSG } from '/shared/permissoes.js';
 import { FOTOS_ATIVA } from '/shared/fotos.js';
 import * as gira from './telas/gira.js';
 import * as eventos from './telas/eventos.js';
@@ -57,7 +57,8 @@ let emailLogin = '';
 let candidatosLogin = null;   // acesso da corrente: nomes parecidos para a pessoa confirmar
 let digitadoLogin = '';       // o nome como a pessoa digitou (para juntar o que ela preencheu antes)
 let pinLogin = null;          // acesso da corrente: a pessoa tem senha → { nome } (pede a senha)
-let telaLogin = '';           // '' (entrar) · 'cadastro' (Criar cadastro) · 'esqueci' (Esqueci a senha)
+let telaLogin = '';           // '' (entrar) · 'cadastro' (Criar cadastro) · 'esqueci' (Esqueci a senha) · 'criarsenha'
+let confirmarLogin = '';      // criar senha sem login: 'celular' ou 'email' (o outro contato do cadastro)
 let cadastroDigitado = null;  // o que a pessoa digitou no Criar cadastro (volta depois de um erro)
 let instalado = true;
 let ultimoDesenho = '';    // aba + HTML do último desenho (a aba Vídeos não redesenha se nada mudou)
@@ -97,6 +98,7 @@ function render() {
         : pinLogin ? login.renderPin(erroLogin, pinLogin.nome)
         : telaLogin === 'cadastro' ? login.renderCadastro(erroLogin)
         : telaLogin === 'esqueci' ? login.renderEsqueci()
+        : telaLogin === 'criarsenha' ? login.renderCriarSenha(erroLogin, emailLogin, confirmarLogin)
         : login.render(erroLogin, emailLogin, candidatosLogin);
       if (instalado && !pinLogin && !telaLogin && ehAcessoGrupo(emailLogin)) login.ajustarCampoSenha(true);
       if (telaLogin === 'cadastro' && cadastroDigitado) {
@@ -245,9 +247,9 @@ async function cliqueConta(e) {
     if (nova.length < 8) { toast('A senha precisa ter pelo menos 8 caracteres.'); return; }
     try { await trocarSenha(atual, nova); toast('Senha alterada. Outras sessões abertas foram encerradas.'); } catch (err) { toast(err.message); }
   } else if (b.dataset.conta === 'criarsenha') {
-    const s1 = prompt('Crie a sua senha: de 4 a 8 números.\nDepois disso, ela será pedida sempre que você entrar.');
+    const s1 = prompt('Crie a sua senha: de 6 a 8 números.\nDepois disso, ela será pedida sempre que você entrar.');
     if (s1 === null) return;
-    if (!PIN_VALIDO.test(s1.trim())) { toast('A senha precisa ter de 4 a 8 números.'); return; }
+    if (!PIN_NOVO.test(s1.trim())) { toast(PIN_NOVO_MSG); return; }
     const s2 = prompt('Digite a senha de novo, para confirmar:');
     if (s2 === null) return;
     if (s1.trim() !== s2.trim()) { toast('As senhas não conferem. Tente de novo.'); return; }
@@ -431,11 +433,24 @@ main.addEventListener('submit', async (e) => {
       erroLogin = '';
       if (r.candidatos) { candidatosLogin = r.candidatos; render(); return; }
       if (r.precisaSenha) { pinLogin = { nome: r.nome }; render(); return; }
+      if (r.criarSenha) { telaLogin = 'criarsenha'; confirmarLogin = r.confirmar; render(); document.getElementById('cs-conf')?.focus(); return; }
       await iniciar();
     } catch (err) {
       erroLogin = err.message;
       render();
     }
+  } else if (id === 'f-criarsenha') {
+    const v = (x) => document.getElementById(x).value;
+    if (v('cs-senha') !== v('cs-senha2')) { erroLogin = 'As senhas não conferem.'; render(); return; }
+    const btn = document.getElementById('cs-btn');
+    btn.disabled = true;
+    btn.textContent = 'Criando…';
+    try {
+      await criarSenhaContato(emailLogin, v('cs-conf').trim(), v('cs-senha'));
+      erroLogin = '';
+      telaLogin = '';
+      await iniciar();
+    } catch (err) { erroLogin = err.message; render(); }
   } else if (id === 'f-pin') {
     const btn = document.getElementById('l-btn');
     btn.disabled = true;

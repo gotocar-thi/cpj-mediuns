@@ -4,7 +4,7 @@ import { FUNCOES, LINHAS_CADASTRO, LINHA_LABEL, LINHA_KEYS, TURMAS_LIMPEZA, CURI
 import { config } from '/shared/config.js';
 import { estado, prefs, salvarPrefs, pode, pessoasOrd, adicionarPessoas, atualizarPessoa, excluirPessoa, salvarLicenca, editarLicenca, removerLicenca, carregarAlunos, acaoAlunos, revelarCpfAluno, acaoUsuarios, avisar } from '../estado.js';
 import { esc, toast, hoje } from '../util.js';
-import { PIN_VALIDO } from '/shared/permissoes.js';
+import { PIN_NOVO, PIN_NOVO_MSG } from '/shared/permissoes.js';
 import { cardOferendasPendentes, cliques as cliquesPerfil } from './perfil.js';
 import { ICONE_WHATS } from './giraComum.js';
 
@@ -646,11 +646,17 @@ export const cliques = {
   delaluno(el) { estado.confirm = null; acaoAlunos('excluirAluno', { id: el.dataset.id }); },
   exAlunosAbrir() { estado.exAlunosAberto = !estado.exAlunosAberto; avisar(); },
   async reativarAluno(el) { if (await acaoAlunos('reativarAluno', { id: el.dataset.id })) toast('Voltou para os alunos.'); },
-  // Root: nova senha para o aluno que esqueceu; as sessões abertas dele são encerradas.
+  // Root: nova senha para o aluno que esqueceu, ou em branco para limpar (ele cria outra ao entrar);
+  // as sessões abertas dele são encerradas.
   async senhaaluno(el) {
-    const senha = prompt(`Nova senha de ${el.dataset.nome}: de 4 a 8 números.`);
+    const senha = prompt(`Nova senha de ${el.dataset.nome}: de 6 a 8 números.\nDeixe em branco para LIMPAR a senha (o aluno cria outra ao entrar).`);
     if (senha === null) return;
-    if (!PIN_VALIDO.test(senha.trim())) { toast('A senha precisa ter de 4 a 8 números.'); return; }
+    if (!senha.trim()) {
+      if (!confirm(`Limpar a senha de ${el.dataset.nome}? Ele vai criar uma nova ao entrar, confirmando o celular ou o e-mail.`)) return;
+      if (await acaoUsuarios('pinAluno', { alunoId: el.dataset.id, limpar: true })) toast('Senha do aluno limpa.');
+      return;
+    }
+    if (!PIN_NOVO.test(senha.trim())) { toast(PIN_NOVO_MSG); return; }
     if (await acaoUsuarios('pinAluno', { alunoId: el.dataset.id, senha: senha.trim() })) toast('Senha do aluno alterada.');
   },
 };

@@ -112,8 +112,11 @@ export const ehAcessoGrupo = (email) => !!grupoAcesso(email);
 // O aluno também vê a aba Amaci (quando está visível para todos), só com os orixás liberados para a turma dele.
 export const PERMISSOES_GRUPO = { alunos: ['alunos:ver', 'guias:pedir', 'amaci:ver'], curimba: ['guias:pedir'] };
 
-// Senha (PIN) de quem entra pelo acesso da corrente: só números, de 4 a 8.
+// Senha (PIN) de quem entra pelo acesso da corrente: só números, de 4 a 8 (as antigas continuam valendo).
 export const PIN_VALIDO = /^\d{4,8}$/;
+// Senha nova (criar, cadastrar ou o root definir): de 6 a 8 números.
+export const PIN_NOVO = /^\d{6,8}$/;
+export const PIN_NOVO_MSG = 'A senha precisa ter de 6 a 8 números.';
 
 // Quem já foi identificado no backend (exigir) carrega a lista "permissoes".
 export function pode(quem, permissao) {

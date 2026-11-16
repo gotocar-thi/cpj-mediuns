@@ -1,7 +1,7 @@
 // Aba "Admin root" (só o admin root): quem acessa o app e com qual perfil, os perfis e, do Histórico,
 // Cadastrar gira antiga e Cadastrar escala, e os eventos da casa (cadastrar e eventos cadastrados).
 
-import { SEM_CADASTRO, ABAS, PERFIS_SISTEMA, PIN_VALIDO, normalizarAbas } from '/shared/permissoes.js';
+import { SEM_CADASTRO, ABAS, PERFIS_SISTEMA, PIN_NOVO, PIN_NOVO_MSG, normalizarAbas } from '/shared/permissoes.js';
 import { estado, pessoasOrd, carregarUsuarios, carregarPerfil, criarUsuario, atualizarUsuario, excluirUsuario, atualizarPessoa, adicionarPessoas, acaoUsuarios, salvarApelidosEntidade, salvarConfigCasa, avisar } from '../estado.js';
 import { esc, toast, ajustarRolagem } from '../util.js';
 import { renderAjustesPerfil, formSenha } from './perfil.js';
@@ -244,6 +244,11 @@ export const cliques = {
     document.getElementById('sn-in')?.focus();
   },
   snfechar() { estado.senhaEdit = null; avisar(); },
+  // Limpar a senha da corrente: a pessoa cria outra ao entrar (palavra-passe + celular, ou e-mail/celular confirmando o outro).
+  async snlimpar(el) {
+    if (!confirm(`Limpar a senha de ${el.dataset.nome}? A pessoa vai criar uma nova ao entrar.`)) return;
+    if (await acaoUsuarios('pin', { pessoaId: el.dataset.id, limpar: true })) { estado.senhaEdit = null; toast('Senha limpa.'); avisar(); }
+  },
   // Ajustes perfil → Sem senha: abre/fecha a lista; o nome leva para a Senha da pessoa.
   ajsemdobrar() { estado.ajUi.semAberto = !estado.ajUi.semAberto; avisar(); },
   ajsemsenha(el) { Object.assign(estado.ajUi, { pessoa: el.dataset.id, campo: 'senha' }); estado.senhaEdit = null; avisar(); },
@@ -278,7 +283,7 @@ export async function confirmarSenha(form) {
   const v = document.getElementById('sn-in').value.trim();
   const { tipo, id } = form.dataset;
   if (tipo === 'pin') {
-    if (!PIN_VALIDO.test(v)) { toast('A senha precisa ter de 4 a 8 números.'); return; }
+    if (!PIN_NOVO.test(v)) { toast(PIN_NOVO_MSG); return; }
     if (await acaoUsuarios('pin', { pessoaId: id, senha: v })) { estado.senhaEdit = null; toast('Senha da corrente alterada.'); avisar(); }
   } else {
     if (v.length < 8) { toast('A senha do e-mail precisa ter pelo menos 8 caracteres.'); return; }

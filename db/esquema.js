@@ -9,7 +9,7 @@
 // Estrutura: veja db/ESTRUTURA-ESQUEMA.md para o mapa de versões, domínios e
 // quais migrações foram testadas no Postgres.
 
-export const VERSAO = 126;  // v126: UP CPJ leva o CPF; limite de consultas por IP no login e no Criar cadastro
+export const VERSAO = 127;  // v127: celular único; criar senha pelo login com e-mail ou celular
 
 import { PERFIS_PADRAO } from '../shared/permissoes.js';
 
@@ -5521,4 +5521,72 @@ export const MIGRACOES = [
      return jsonb_build_object('ok', v_total <= v_max, 'restantes', greatest(v_max - v_total, 0));
    end;
    $$`,
+  // ================================================== v127: celular único; criar senha pelo login com e-mail ou celular
+  // Para criar a senha sem estar logado: o e-mail confirma quem entrou pelo celular, e o celular quem entrou pelo e-mail.
+  `create or replace function login_candidatos(p jsonb)
+   returns jsonb language sql stable as $$
+     with k as (select lower(btrim(coalesce(p ->> 'email', ''))) as email, coalesce(p ->> 'celular', '') as cel),
+     c as (
+       select 1 as ordem, 'usuario' as tipo, u.id, u.nome, u.senha_hash as hash, 0 as versao, u.email as chave,
+              '' as cel_cad, u.email as email_cad
+         from usuarios u, k where k.email <> '' and u.email = k.email
+       union all
+       select 2, 'corrente', pe.id, pe.nome, pe.pin_hash, pe.pin_versao, 'pin:' || pe.id::text,
+              celular_chave(pe.perfil -> 'info' ->> 'celular'), lower(btrim(coalesce(pe.perfil -> 'info' ->> 'email', '')))
+         from pessoas pe, k where pe.saida is null
+          and ((k.email <> '' and lower(btrim(pe.perfil -> 'info' ->> 'email')) = k.email)
+            or (k.cel <> '' and celular_chave(pe.perfil -> 'info' ->> 'celular') = k.cel))
+       union all
+       select 3, 'aluno', al.id, al.nome, al.pin_hash, al.pin_versao, 'pina:' || al.id::text,
+              celular_chave(al.perfil -> 'info' ->> 'celular'), lower(btrim(coalesce(al.perfil -> 'info' ->> 'email', '')))
+         from alunos al, k where al.saida is null
+          and ((k.email <> '' and lower(btrim(al.perfil -> 'info' ->> 'email')) = k.email)
+            or (k.cel <> '' and celular_chave(al.perfil -> 'info' ->> 'celular') = k.cel))
+     )
+     select coalesce(jsonb_agg(jsonb_build_object('tipo', c.tipo, 'id', c.id, 'nome', c.nome, 'hash', c.hash, 'versao', c.versao,
+              'chave', c.chave, 'celular', c.cel_cad, 'email', c.email_cad,
+              'bloqueado', exists (select 1 from login_falhas f where f.email = c.chave and f.bloqueado_ate > now()))
+              order by c.ordem, lower(c.nome)), '[]'::jsonb)
+       from c
+   $$`,
+  // Cada celular só pode estar em um cadastro: pessoa ativa da corrente, aluno ou ex-aluno (o ex-aluno guarda o cadastro).
+  // Só confere quando o celular muda ou o cadastro volta a valer; repetidos de antes desta regra não travam outras edições.
+  // A mesma pessoa no UP CPJ (mesmo nome nas duas tabelas, na transferência) não conta como repetida.
+  `create or replace function celular_em_uso(v_cel text, v_pessoa uuid, v_aluno uuid, v_nome text)
+   returns boolean language sql stable as $$
+     select exists (select 1 from pessoas pe where pe.saida is null and celular_chave(pe.perfil -> 'info' ->> 'celular') = v_cel
+                     and pe.id is distinct from v_pessoa and not (v_aluno is not null and lower(btrim(pe.nome)) = lower(btrim(v_nome))))
+         or exists (select 1 from alunos al where al.apagado_em is null and celular_chave(al.perfil -> 'info' ->> 'celular') = v_cel
+                     and al.id is distinct from v_aluno and not (v_pessoa is not null and lower(btrim(al.nome)) = lower(btrim(v_nome))))
+   $$`,
+  `create or replace function pessoas_celular_unico()
+   returns trigger language plpgsql as $$
+   declare v_cel text := celular_chave(new.perfil -> 'info' ->> 'celular');
+   begin
+     if v_cel = '' or new.saida is not null then return new; end if;
+     if tg_op = 'UPDATE' and old.saida is null and celular_chave(old.perfil -> 'info' ->> 'celular') = v_cel then return new; end if;
+     if celular_em_uso(v_cel, new.id, null, new.nome) then
+       raise exception 'Este celular já está em outro cadastro. Cada celular só pode ter um cadastro.';
+     end if;
+     return new;
+   end;
+   $$`,
+  `drop trigger if exists pessoas_celular_unico on pessoas`,
+  `create trigger pessoas_celular_unico before insert or update of perfil, saida on pessoas
+   for each row execute function pessoas_celular_unico()`,
+  `create or replace function alunos_celular_unico()
+   returns trigger language plpgsql as $$
+   declare v_cel text := celular_chave(new.perfil -> 'info' ->> 'celular');
+   begin
+     if v_cel = '' or new.apagado_em is not null then return new; end if;
+     if tg_op = 'UPDATE' and old.apagado_em is null and celular_chave(old.perfil -> 'info' ->> 'celular') = v_cel then return new; end if;
+     if celular_em_uso(v_cel, null, new.id, new.nome) then
+       raise exception 'Este celular já está em outro cadastro. Cada celular só pode ter um cadastro.';
+     end if;
+     return new;
+   end;
+   $$`,
+  `drop trigger if exists alunos_celular_unico on alunos`,
+  `create trigger alunos_celular_unico before insert or update of perfil, saida, apagado_em on alunos
+   for each row execute function alunos_celular_unico()`,
 ];

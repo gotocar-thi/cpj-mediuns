@@ -4,7 +4,7 @@
 // POST /api/usuarios   { email, senha, papel, pessoaId }  (root: { nome } no lugar de pessoaId)
 //                      { acao: 'perfil', chave?, nome, abas }  cria ou edita um perfil → perfis
 //                      { acao: 'excluirPerfil', chave }        → perfis
-//                      { acao: 'pin', pessoaId, senha }        troca a senha (PIN) de uma pessoa → senhas
+//                      { acao: 'pin', pessoaId, senha | limpar: true }  troca ou limpa a senha (PIN) de uma pessoa → senhas
 //                      { acao: 'pinAluno', alunoId, senha }    troca a senha de um aluno
 //                      { acao: 'config', config }              Configurações da casa (shared/config.js) → config completa
 import { rota, corpo, validarId, HttpError } from '../_lib/http.js';
@@ -12,8 +12,16 @@ import { exigir } from '../_lib/sessao.js';
 import { db } from '../_lib/db.js';
 import { gerarHash, SENHA_MINIMA } from '../_lib/senhas.js';
 import { papelValido } from '../_lib/perfis.js';
-import { SEM_CADASTRO, PERFIS_SISTEMA, PIN_VALIDO, normalizarAbas } from '../../shared/permissoes.js';
+import { SEM_CADASTRO, PERFIS_SISTEMA, PIN_NOVO, PIN_NOVO_MSG, normalizarAbas } from '../../shared/permissoes.js';
 import { CAMPOS_CONFIG, configCasa } from '../../shared/config.js';
+
+// Senha que o root define (6 a 8 números) ou '' para limpar.
+async function hashPinNovo(b) {
+  if (b.limpar === true) return '';
+  const senha = String(b.senha ?? '');
+  if (!PIN_NOVO.test(senha)) throw new HttpError(400, PIN_NOVO_MSG);
+  return gerarHash(senha);
+}
 
 const semVersao = (lista) => lista.map(({ sessaoVersao, abas, ...u }) => u);
 
@@ -61,15 +69,13 @@ export default rota({
     const b = corpo(req);
     if (b.acao === 'perfil' || b.acao === 'excluirPerfil') return acaoPerfil(b);
     if (b.acao === 'config') return configCasa(await db.rpc('config_casa_salvar', { config: validarConfig(b.config) }));
+    // limpar: apaga a senha (as sessões abertas caem); a pessoa cria outra ao entrar (palavra-passe + celular, ou
+    // e-mail/celular confirmando o outro).
     if (b.acao === 'pinAluno') {
-      const senha = String(b.senha ?? '');
-      if (!PIN_VALIDO.test(senha)) throw new HttpError(400, 'A senha precisa ter de 4 a 8 números.');
-      return db.rpc('aluno_pin_definir', { alunoId: validarId(b.alunoId, 'Aluno'), pinHash: await gerarHash(senha) });
+      return db.rpc('aluno_pin_definir', { alunoId: validarId(b.alunoId, 'Aluno'), pinHash: await hashPinNovo(b) });
     }
     if (b.acao === 'pin') {
-      const senha = String(b.senha ?? '');
-      if (!PIN_VALIDO.test(senha)) throw new HttpError(400, 'A senha precisa ter de 4 a 8 números.');
-      await db.rpc('pin_definir', { pessoaId: validarId(b.pessoaId, 'Pessoa'), pinHash: await gerarHash(senha) });
+      await db.rpc('pin_definir', { pessoaId: validarId(b.pessoaId, 'Pessoa'), pinHash: await hashPinNovo(b) });
       return db.rpc('senhas_listar');
     }
     const email = String(b.email || '').trim().toLowerCase();
