@@ -1737,14 +1737,21 @@ button.iem-tot-n{cursor:pointer}
 .grp-h h2.at-tit{flex:1 1 auto;min-width:0}
 .at-conta{display:grid;gap:8px}
 .at-conta+.at-conta{border-top:1px solid var(--line);padding-top:12px}
+/* Blocos Por nome e Por descrição (as mesmas cobranças, agrupadas de dois jeitos); começam minimizados. */
+.at-bloco{border:1px solid color-mix(in srgb,var(--gold) 40%,var(--line));border-radius:12px;overflow:hidden}
+.at-bloco-h{display:flex;justify-content:space-between;align-items:center;gap:8px;width:100%;min-height:48px;padding:10px 12px;background:color-mix(in srgb,var(--gold) 8%,transparent);border:0;color:var(--ink);font:inherit;text-align:left;cursor:pointer}
+.at-bloco-h h3{margin:0;font-size:1.02rem}
+.at-bloco-h .seta{color:var(--accent);font-size:1.1rem}
+.at-bloco-c{display:grid;gap:12px;padding:12px;border-top:1px solid var(--line)}
 .at-conta-h{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
-.at-conta-h h3{margin:0;font-size:1rem}
+.at-conta-h h4{margin:0;font-size:.98rem}
 .at-conta-h .muted{font-size:.85rem;white-space:nowrap}
 .at-pessoas{display:grid;gap:8px}
 .at-pessoa{border:1px solid var(--line);border-radius:10px;background:var(--bg);overflow:hidden}
 .at-pessoa-h{display:flex;justify-content:space-between;align-items:center;gap:8px;width:100%;min-height:44px;padding:8px 12px;background:none;border:0;color:var(--ink);font:inherit;text-align:left;cursor:pointer}
-.at-pessoa-h b{overflow-wrap:anywhere}
-.at-pessoa-x{display:inline-flex;align-items:center;gap:6px;color:var(--muted);font-size:.85rem;white-space:nowrap}
+.at-pessoa-h{flex-wrap:wrap}
+.at-pessoa-h b{flex:1 1 auto;min-width:0;overflow-wrap:break-word}
+.at-pessoa-x{display:inline-flex;align-items:center;gap:6px;color:var(--muted);font-size:.85rem;white-space:nowrap;margin-left:auto}
 .at-pessoa-x .seta{color:var(--accent);font-size:1rem}
 .at-pessoa .at-lista{padding:0 8px 8px}
 /* Pessoas do grupo (admin): borda verde-limão = já escolheu item; vermelha = ainda não */

@@ -29,40 +29,62 @@ function lembrete(a) {
   return `<a class="btn small wa-bt" href="https://wa.me/55${tel}?text=${encodeURIComponent(txt)}" target="_blank" rel="noopener noreferrer" aria-label="Lembrete no WhatsApp para ${esc(a.nome)}"><span class="wa-ico" aria-hidden="true">${ICONE_WHATS}</span></a>`;
 }
 
-// comNome = false: dentro do grupo da pessoa (o nome já está no título do grupo).
-const linha = (a, root, comNome = true) => `<div class="at-item">
+// comNome = false: dentro do grupo da pessoa; comDesc = false: dentro do grupo da descrição (já estão no título do grupo).
+const linha = (a, root, comNome = true, comDesc = true) => `<div class="at-item">
     <div class="at-info">${root && comNome ? `<b>${esc(a.nome || 'Sem nome')}</b>${a.ligado ? '' : ' <span class="badge re" title="O CPF do ASAAS não bate com nenhum Perfil">sem ligação</span>'}` : ''}
-      <span class="${root ? 'muted' : ''}">${!root && a.conta === 'A' ? '<span class="badge new">Compras</span> ' : ''}${esc(a.descricao || 'Cobrança')}</span>
+      ${comDesc ? `<span class="${root ? 'muted' : ''}">${!root && a.conta === 'A' ? '<span class="badge new">Compras</span> ' : ''}${esc(a.descricao || 'Cobrança')}</span>` : ''}
       <span class="muted at-venc">${atraso(a.vencimento)}</span></div>
     <div class="at-lado"><b class="at-valor">${R(a.valor)}</b><span class="at-bts">${pagar(a)}${root ? lembrete(a) : ''}</span></div>
   </div>`;
 
-// Dentro da conta, uma linha por pessoa (nome, quantas pendências e o total), minimizada; tocar no nome abre a lista dela.
-// A ordem é a da lista (vencimento mais antigo primeiro).
-function porPessoa(k, itens) {
+// Dentro da conta, uma linha por grupo — a pessoa (nome) ou a descrição da cobrança (a REF) —, com quantas pendências
+// e o total, minimizada; tocar abre a lista. Ordem: mais pendências primeiro (depois o maior total e o nome).
+// No grupo da pessoa, as cobranças não repetem o nome; no da descrição, mostram de quem é.
+const MODOS = {
+  pessoa: { chave: (a) => a.nome || 'Sem nome', comNome: false, comDesc: true },
+  desc: { chave: (a) => String(a.descricao || '').trim() || 'Sem descrição', comNome: true, comDesc: false },
+};
+function agrupado(modo, k, itens) {
+  const M = MODOS[modo];
   const grupos = new Map();
-  itens.forEach((a) => { const nome = a.nome || 'Sem nome'; if (!grupos.has(nome)) grupos.set(nome, []); grupos.get(nome).push(a); });
-  return `<div class="at-pessoas">${[...grupos].map(([nome, L]) => {
-    const chave = `${k}:${nome}`;
+  itens.forEach((a) => {
+    const rotulo = M.chave(a);
+    const id = rotulo.toLocaleLowerCase('pt-BR');
+    if (!grupos.has(id)) grupos.set(id, { rotulo, L: [] });
+    grupos.get(id).L.push(a);
+  });
+  const soma = (L) => L.reduce((s, a) => s + Number(a.valor || 0), 0);
+  const ordem = [...grupos.values()].sort((x, y) => y.L.length - x.L.length || soma(y.L) - soma(x.L) || x.rotulo.localeCompare(y.rotulo, 'pt-BR'));
+  return `<div class="at-pessoas">${ordem.map(({ rotulo, L }) => {
+    const chave = `${modo}:${k}:${rotulo}`;
     const aberto = pessoasAbertas.has(chave);
-    const total = L.reduce((s, a) => s + Number(a.valor || 0), 0);
+    const semLigacao = modo === 'pessoa' && L.some((a) => !a.ligado) ? ' <span class="badge re" title="O CPF do ASAAS não bate com nenhum Perfil">sem ligação</span>' : '';
     return `<div class="at-pessoa"><button class="at-pessoa-h" data-act="atpessoa" data-k="${esc(chave)}" aria-expanded="${aberto}">
-      <b>${esc(nome)}${L.some((a) => !a.ligado) ? ' <span class="badge re" title="O CPF do ASAAS não bate com nenhum Perfil">sem ligação</span>' : ''}</b><span class="at-pessoa-x">${L.length} ${L.length === 1 ? 'pendência' : 'pendências'} · ${R(total)}<span class="seta" aria-hidden="true">${aberto ? '▾' : '▸'}</span></span></button>
-      ${aberto ? `<div class="at-lista">${L.map((a) => linha(a, true, false)).join('')}</div>` : ''}</div>`;
+      <b>${esc(rotulo)}${semLigacao}</b><span class="at-pessoa-x">${L.length} ${L.length === 1 ? 'pendência' : 'pendências'} · ${R(soma(L))}<span class="seta" aria-hidden="true">${aberto ? '▾' : '▸'}</span></span></button>
+      ${aberto ? `<div class="at-lista">${L.map((a) => linha(a, true, M.comNome, M.comDesc)).join('')}</div>` : ''}</div>`;
   }).join('')}</div>`;
 }
 
 // Root: uma seção por conta, com o total de cada uma (conta desligada avisa qual variável falta).
 const CONTAS = [['B', 'Mensalidades e outras (conta B)', 'ASAAS2_API_KEY'], ['A', 'Compras (conta A)', 'ASAAS_API_KEY']];
-function secoesRoot(A, lista) {
+function secoesRoot(A, lista, modo) {
   return CONTAS.map(([k, nome, variavel]) => {
     const itens = lista.filter((a) => (a.conta || 'B') === k);
     const total = itens.reduce((s, a) => s + Number(a.valor || 0), 0);
     const corpo = !A.contas?.[k] ? `<p class="muted" style="margin:0">Conta não conectada (variável <code>${variavel}</code> na Vercel).</p>`
-      : itens.length ? porPessoa(k, itens)
+      : itens.length ? agrupado(modo, k, itens)
         : '<p class="muted" style="margin:0">Nenhum pagamento em atraso.</p>';
-    return `<div class="at-conta"><div class="at-conta-h"><h3>${nome}</h3><span class="muted">${itens.length ? `${itens.length} · ${R(total)}` : ''}</span></div>${corpo}</div>`;
+    return `<div class="at-conta"><div class="at-conta-h"><h4>${nome}</h4><span class="muted">${itens.length ? `${itens.length} · ${R(total)}` : ''}</span></div>${corpo}</div>`;
   }).join('');
+}
+
+// Root: dois blocos com as mesmas cobranças — por nome e por descrição —, os dois começando minimizados.
+const blocosAbertos = new Set();
+function blocoRoot(A, lista, modo, icone, titulo) {
+  const aberto = blocosAbertos.has(modo);
+  return `<div class="at-bloco"><button class="at-bloco-h" data-act="atbloco" data-k="${modo}" aria-expanded="${aberto}">
+    <h3><span aria-hidden="true">${icone}</span> ${titulo}</h3><span class="seta" aria-hidden="true">${aberto ? '▾' : '▸'}</span></button>
+    ${aberto ? `<div class="at-bloco-c">${secoesRoot(A, lista, modo)}</div>` : ''}</div>`;
 }
 
 export function cardAtrasos() {
@@ -81,7 +103,7 @@ export function cardAtrasos() {
   }
   const total = lista.reduce((s, a) => s + Number(a.valor || 0), 0);
   const quando = A.atualizadoEm ? new Date(A.atualizadoEm).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }).replace(', ', ' às ') : '';
-  const corpo = root ? secoesRoot(A, lista)
+  const corpo = root ? blocoRoot(A, lista, 'pessoa', '👤', 'Por nome') + blocoRoot(A, lista, 'desc', '🧾', 'Por descrição')
     : `<div class="at-lista">${lista.map((a) => linha(a, root)).join('')}</div>`;
   const rodape = root ? `<div class="at-rodape"><span class="muted">${lista.length ? `Total ${R(total)} · ` : ''}${quando ? `lido em ${quando}` : 'ainda não lido'}</span>
       <button class="btn small" data-act="atatualizar">↻ Atualizar</button></div>`
@@ -93,5 +115,6 @@ export function cardAtrasos() {
 export const cliquesAtrasos = {
   atatualizar() { carregarAtrasos({ atualizar: true }); },
   atdobrar() { minimizado = !minimizado; avisar(); },
+  atbloco(el) { const k = el.dataset.k; if (blocosAbertos.has(k)) blocosAbertos.delete(k); else blocosAbertos.add(k); avisar(); },
   atpessoa(el) { const k = el.dataset.k; if (pessoasAbertas.has(k)) pessoasAbertas.delete(k); else pessoasAbertas.add(k); avisar(); },
 };
