@@ -1,6 +1,7 @@
-// Pagamentos em atraso (aba Geral), lidos da conta B do ASAAS pelo servidor (api/_lib/atrasos.js).
+// Pagamentos em atraso (aba Geral), lidos das duas contas do ASAAS pelo servidor (api/_lib/atrasos.js):
+// a B (mensalidades e outras cobranças feitas no ASAAS) e a A (links das Compras).
 // Pessoa: só as próprias cobranças vencidas, com o link para pagar; sem nenhuma, o bloco não aparece.
-// Admin root: todas, com o nome (da corrente, pelo CPF do Perfil, ou o do cliente no ASAAS) e lembrete no WhatsApp.
+// Admin root: todas, separadas por conta, com o nome (da corrente, pelo CPF do Perfil, ou o do cliente no ASAAS) e lembrete no WhatsApp.
 // Atualizar: para todos (quem acabou de pagar vê sumir); o servidor segura toques repetidos da pessoa.
 // É o primeiro bloco da aba Geral. Para o root começa minimizado (tocar no título abre; vale até sair do app),
 // com o rótulo ADMIN FINANCEIRO na moldura.
@@ -12,6 +13,7 @@ import { ICONE_WHATS } from './giraComum.js';
 
 const R = (v) => reais(centavos(v));
 let minimizado = true;
+const pessoasAbertas = new Set();   // root: pessoas expandidas ('conta:nome'); todas começam minimizadas
 const ehRoot = () => pode('usuarios:gerenciar');
 const dias = (venc) => Math.max(0, Math.round((pd(hoje()) - pd(venc)) / 86400000));
 const atraso = (venc) => (venc ? `Venceu em ${dShort(venc)}${dias(venc) ? ` · ${dias(venc)} ${dias(venc) === 1 ? 'dia' : 'dias'}` : ''}` : 'Sem vencimento');
@@ -27,12 +29,41 @@ function lembrete(a) {
   return `<a class="btn small wa-bt" href="https://wa.me/55${tel}?text=${encodeURIComponent(txt)}" target="_blank" rel="noopener noreferrer" aria-label="Lembrete no WhatsApp para ${esc(a.nome)}"><span class="wa-ico" aria-hidden="true">${ICONE_WHATS}</span></a>`;
 }
 
-const linha = (a, root) => `<div class="at-item">
-    <div class="at-info">${root ? `<b>${esc(a.nome || 'Sem nome')}</b>${a.ligado ? '' : ' <span class="badge re" title="O CPF do ASAAS não bate com nenhum Perfil">sem ligação</span>'}` : ''}
-      <span class="${root ? 'muted' : ''}">${esc(a.descricao || 'Cobrança')}</span>
+// comNome = false: dentro do grupo da pessoa (o nome já está no título do grupo).
+const linha = (a, root, comNome = true) => `<div class="at-item">
+    <div class="at-info">${root && comNome ? `<b>${esc(a.nome || 'Sem nome')}</b>${a.ligado ? '' : ' <span class="badge re" title="O CPF do ASAAS não bate com nenhum Perfil">sem ligação</span>'}` : ''}
+      <span class="${root ? 'muted' : ''}">${!root && a.conta === 'A' ? '<span class="badge new">Compras</span> ' : ''}${esc(a.descricao || 'Cobrança')}</span>
       <span class="muted at-venc">${atraso(a.vencimento)}</span></div>
     <div class="at-lado"><b class="at-valor">${R(a.valor)}</b><span class="at-bts">${pagar(a)}${root ? lembrete(a) : ''}</span></div>
   </div>`;
+
+// Dentro da conta, uma linha por pessoa (nome, quantas pendências e o total), minimizada; tocar no nome abre a lista dela.
+// A ordem é a da lista (vencimento mais antigo primeiro).
+function porPessoa(k, itens) {
+  const grupos = new Map();
+  itens.forEach((a) => { const nome = a.nome || 'Sem nome'; if (!grupos.has(nome)) grupos.set(nome, []); grupos.get(nome).push(a); });
+  return `<div class="at-pessoas">${[...grupos].map(([nome, L]) => {
+    const chave = `${k}:${nome}`;
+    const aberto = pessoasAbertas.has(chave);
+    const total = L.reduce((s, a) => s + Number(a.valor || 0), 0);
+    return `<div class="at-pessoa"><button class="at-pessoa-h" data-act="atpessoa" data-k="${esc(chave)}" aria-expanded="${aberto}">
+      <b>${esc(nome)}${L.some((a) => !a.ligado) ? ' <span class="badge re" title="O CPF do ASAAS não bate com nenhum Perfil">sem ligação</span>' : ''}</b><span class="at-pessoa-x">${L.length} ${L.length === 1 ? 'pendência' : 'pendências'} · ${R(total)}<span class="seta" aria-hidden="true">${aberto ? '▾' : '▸'}</span></span></button>
+      ${aberto ? `<div class="at-lista">${L.map((a) => linha(a, true, false)).join('')}</div>` : ''}</div>`;
+  }).join('')}</div>`;
+}
+
+// Root: uma seção por conta, com o total de cada uma (conta desligada avisa qual variável falta).
+const CONTAS = [['B', 'Mensalidades e outras (conta B)', 'ASAAS2_API_KEY'], ['A', 'Compras (conta A)', 'ASAAS_API_KEY']];
+function secoesRoot(A, lista) {
+  return CONTAS.map(([k, nome, variavel]) => {
+    const itens = lista.filter((a) => (a.conta || 'B') === k);
+    const total = itens.reduce((s, a) => s + Number(a.valor || 0), 0);
+    const corpo = !A.contas?.[k] ? `<p class="muted" style="margin:0">Conta não conectada (variável <code>${variavel}</code> na Vercel).</p>`
+      : itens.length ? porPessoa(k, itens)
+        : '<p class="muted" style="margin:0">Nenhum pagamento em atraso.</p>';
+    return `<div class="at-conta"><div class="at-conta-h"><h3>${nome}</h3><span class="muted">${itens.length ? `${itens.length} · ${R(total)}` : ''}</span></div>${corpo}</div>`;
+  }).join('');
+}
 
 export function cardAtrasos() {
   if (estado.atrasos === null) { carregarAtrasos(); return ''; }
@@ -41,17 +72,17 @@ export function cardAtrasos() {
   const lista = A.atrasos || [];
   if (!root && (!A.configurado || A.semSenha || !lista.length)) return '';
   const titulo = root
-    ? `<button class="grp-h dobra" data-act="atdobrar" aria-expanded="${!minimizado}" aria-label="${minimizado ? 'Expandir' : 'Minimizar'}"><h2><span aria-hidden="true">💳</span> Pagamentos em atraso</h2>
+    ? `<button class="grp-h dobra" data-act="atdobrar" aria-expanded="${!minimizado}" aria-label="${minimizado ? 'Expandir' : 'Minimizar'}"><h2 class="at-tit"><span aria-hidden="true">💳</span> CPJ - Pgto atrasado</h2>
         <span class="count">${lista.length} <span class="seta" aria-hidden="true">${minimizado ? '▸' : '▾'}</span></span></button>`
-    : `<div class="grp-h"><h2><span aria-hidden="true">💳</span> Pagamentos em atraso</h2><span class="count">${lista.length}</span></div>`;
+    : `<div class="grp-h"><h2 class="at-tit"><span aria-hidden="true">💳</span> CPJ - Pgto atrasado</h2><span class="count">${lista.length}</span></div>`;
   if (root && minimizado) return `<div class="card adm adm-financeiro">${titulo}</div>`;
   if (!A.configurado) {
-    return `<div class="card adm adm-financeiro">${titulo}<p class="muted" style="margin:0">A conta B do ASAAS não está conectada (variável <code>ASAAS2_API_KEY</code> na Vercel).</p></div>`;
+    return `<div class="card adm adm-financeiro">${titulo}<p class="muted" style="margin:0">Nenhuma conta do ASAAS está conectada (variáveis <code>ASAAS_API_KEY</code> e <code>ASAAS2_API_KEY</code> na Vercel).</p></div>`;
   }
   const total = lista.reduce((s, a) => s + Number(a.valor || 0), 0);
   const quando = A.atualizadoEm ? new Date(A.atualizadoEm).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }).replace(', ', ' às ') : '';
-  const corpo = lista.length ? `<div class="at-lista">${lista.map((a) => linha(a, root)).join('')}</div>`
-    : '<p class="muted" style="margin:0">Nenhum pagamento em atraso.</p>';
+  const corpo = root ? secoesRoot(A, lista)
+    : `<div class="at-lista">${lista.map((a) => linha(a, root)).join('')}</div>`;
   const rodape = root ? `<div class="at-rodape"><span class="muted">${lista.length ? `Total ${R(total)} · ` : ''}${quando ? `lido em ${quando}` : 'ainda não lido'}</span>
       <button class="btn small" data-act="atatualizar">↻ Atualizar</button></div>`
     : '<div class="at-rodape"><span></span><button class="btn small" data-act="atatualizar">↻ Atualizar</button></div>';
@@ -62,4 +93,5 @@ export function cardAtrasos() {
 export const cliquesAtrasos = {
   atatualizar() { carregarAtrasos({ atualizar: true }); },
   atdobrar() { minimizado = !minimizado; avisar(); },
+  atpessoa(el) { const k = el.dataset.k; if (pessoasAbertas.has(k)) pessoasAbertas.delete(k); else pessoasAbertas.add(k); avisar(); },
 };

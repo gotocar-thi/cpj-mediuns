@@ -1733,6 +1733,20 @@ button.iem-tot-n{cursor:pointer}
 .iem-pg-t.dobra .seta{margin-left:auto;color:var(--accent);letter-spacing:0}
 .card.adm.adm-oferendas::before{content:"ADMIN OFERENDAS"}
 .card.adm.adm-financeiro::before{content:"ADMIN FINANCEIRO"}
+/* Título do bloco de pagamentos atrasados: quebra a linha em vez de passar da borda no celular. */
+.grp-h h2.at-tit{flex:1 1 auto;min-width:0}
+.at-conta{display:grid;gap:8px}
+.at-conta+.at-conta{border-top:1px solid var(--line);padding-top:12px}
+.at-conta-h{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.at-conta-h h3{margin:0;font-size:1rem}
+.at-conta-h .muted{font-size:.85rem;white-space:nowrap}
+.at-pessoas{display:grid;gap:8px}
+.at-pessoa{border:1px solid var(--line);border-radius:10px;background:var(--bg);overflow:hidden}
+.at-pessoa-h{display:flex;justify-content:space-between;align-items:center;gap:8px;width:100%;min-height:44px;padding:8px 12px;background:none;border:0;color:var(--ink);font:inherit;text-align:left;cursor:pointer}
+.at-pessoa-h b{overflow-wrap:anywhere}
+.at-pessoa-x{display:inline-flex;align-items:center;gap:6px;color:var(--muted);font-size:.85rem;white-space:nowrap}
+.at-pessoa-x .seta{color:var(--accent);font-size:1rem}
+.at-pessoa .at-lista{padding:0 8px 8px}
 /* Pessoas do grupo (admin): borda verde-limão = já escolheu item; vermelha = ainda não */
 .iem-pg-nomes .iem-p.com-item{border-color:#9be81f}
 .iem-pg-nomes .iem-p.sem-item{border-color:var(--off)}

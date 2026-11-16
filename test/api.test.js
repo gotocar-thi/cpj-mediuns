@@ -2317,9 +2317,18 @@ test('Compras: item CPJ só para quem está cadastrado na corrente', async () =>
 test('pagamentos em atraso (conta B do ASAAS): cada um os seus pelo CPF, o root todos', async () => {
   const fetchReal = globalThis.fetch;
   const BASE = 'http://asaasb.teste/v3';
-  const falso = { pedidos: [], falhar: false };
+  const BASE_A = 'http://asaasa.teste/v3';
+  const falso = { pedidos: [], falhar: false, contaA: [] };
   globalThis.fetch = async (url, op = {}) => {
     const u = String(url);
+    // Conta A (Compras): as vencidas que o teste montar em falso.contaA; o cliente que o app criou tem a chave da pessoa.
+    if (u.startsWith(BASE_A)) {
+      const c = u.slice(BASE_A.length);
+      const j = (st, x) => new Response(JSON.stringify(x), { status: st, headers: { 'Content-Type': 'application/json' } });
+      if (c.startsWith('/payments?status=OVERDUE')) return j(200, { hasMore: false, data: falso.contaA });
+      if (c.startsWith('/customers/')) return j(200, { id: c.split('/')[2], name: 'Cliente A', externalReference: falso.refCliente });
+      return j(404, {});
+    }
     if (!u.startsWith(BASE)) return fetchReal(url, op);
     const caminho = u.slice(BASE.length);
     falso.pedidos.push([op.method, caminho, op.headers?.access_token]);
@@ -2335,12 +2344,14 @@ test('pagamentos em atraso (conta B do ASAAS): cada um os seus pelo CPF, o root 
     if (caminho === '/customers/cus_ext') return json(200, { id: 'cus_ext', name: 'Fulano Externo', cpfCnpj: '15350946056', mobilePhone: '11988887777' });
     return json(404, { errors: [{ description: 'não encontrado' }] });
   };
-  const env = { CPF_CHAVE: process.env.CPF_CHAVE, ASAAS2_API_KEY: process.env.ASAAS2_API_KEY, ASAAS2_API_URL: process.env.ASAAS2_API_URL };
+  const env = { CPF_CHAVE: process.env.CPF_CHAVE, ASAAS2_API_KEY: process.env.ASAAS2_API_KEY, ASAAS2_API_URL: process.env.ASAAS2_API_URL,
+    ASAAS_API_KEY: process.env.ASAAS_API_KEY, ASAAS_API_URL: process.env.ASAAS_API_URL };
   const ler = (tok, atualizar) => api('GET', '/api/giras?lista=atrasos' + (atualizar ? '&atualizar=1' : ''), tok);
   try {
     process.env.CPF_CHAVE = 'chave-de-teste-do-cpf-com-32-letras-ou-mais';
     delete process.env.ASAAS2_API_KEY;
-    assert.equal((await ler(ADMIN)).json.configurado, false, 'sem a chave da conta B');
+    delete process.env.ASAAS_API_KEY;
+    assert.equal((await ler(ADMIN)).json.configurado, false, 'sem a chave de nenhuma conta');
     Object.assign(process.env, { ASAAS2_API_KEY: 'chave-b', ASAAS2_API_URL: BASE });
 
     await api('POST', '/api/pessoas', ADMIN, { nome: 'Atraso Ana, Atraso Bia, Atraso Sem Senha', funcao: 'cambone' });
@@ -2351,7 +2362,7 @@ test('pagamentos em atraso (conta B do ASAAS): cada um os seus pelo CPF, o root 
 
     const ana = (await ler(tAna)).json;
     assert.equal(ana.configurado, true);
-    assert.deepEqual(ana.atrasos, [{ id: 'pay_ana', valor: 120, vencimento: '2026-10-10', descricao: 'Mensalidade outubro', link: 'https://www.asaas.com/i/pay_ana' }],
+    assert.deepEqual(ana.atrasos, [{ id: 'pay_ana', conta: 'B', valor: 120, vencimento: '2026-10-10', descricao: 'Mensalidade outubro', link: 'https://www.asaas.com/i/pay_ana' }],
       'a pessoa vê só a sua, sem nome nem telefone');
     assert.ok(falso.pedidos.every(([, , chave]) => chave === 'chave-b'), 'usa a chave da conta B');
     assert.deepEqual((await ler(tBia)).json.atrasos, [], 'sem CPF que bata, nada');
@@ -2392,6 +2403,30 @@ test('pagamentos em atraso (conta B do ASAAS): cada um os seus pelo CPF, o root 
     assert.match(velha.erro, /última leitura/);
     assert.equal(velha.atrasos.length, 1);
     falso.falhar = false;
+
+    // Conta A (Compras): a vencida de fora do app conta; a do app só enquanto tiver item por pagar ligado a ela.
+    const anaId = sql("select id from pessoas where nome = 'Atraso Ana'");
+    const novaCobranca = () => sql(`with x as (insert into asaas_cobrancas (chave, nome, pedido, valor, status) values ('p:${anaId}', 'Atraso Ana', 1, 30, 'vencida') returning id) select id from x`);
+    const viva = novaCobranca();
+    const trocada = novaCobranca();
+    sql(`insert into guias_linhas (pedido, descricao, valor, quantidade, chave, nome, cobranca_id) values (1, 'Teste · Guia', 30, 1, 'p:${anaId}', 'Atraso Ana', '${viva}')`);
+    falso.refCliente = 'p:' + anaId;
+    falso.contaA = [
+      { id: 'pay_viva', customer: 'cus_a', value: 30, dueDate: '2026-11-01', description: 'CPJ · Compras · pedido nº 1', externalReference: viva, invoiceUrl: 'https://www.asaas.com/i/pay_viva' },
+      { id: 'pay_trocada', customer: 'cus_a', value: 30, dueDate: '2026-10-30', description: 'CPJ · Compras · pedido nº 1', externalReference: trocada, invoiceUrl: 'https://www.asaas.com/i/pay_trocada' },
+      { id: 'pay_fora', customer: 'cus_a', value: 15, dueDate: '2026-10-25', description: 'Cobrança feita no ASAAS', invoiceUrl: 'https://www.asaas.com/i/pay_fora' },
+    ];
+    Object.assign(process.env, { ASAAS_API_KEY: 'chave-a', ASAAS_API_URL: BASE_A });
+    const comA = (await ler(ADMIN, true)).json;
+    assert.deepEqual(comA.contas, { A: true, B: true });
+    assert.deepEqual(comA.atrasos.filter((a) => a.conta === 'A').map((a) => a.id).sort(), ['pay_fora', 'pay_viva'], 'o link trocado por outro não conta');
+    assert.ok(comA.atrasos.filter((a) => a.conta === 'A').every((a) => a.nome === 'Atraso Ana'), 'ligada à pessoa pela chave do cliente');
+    assert.deepEqual((await ler(tAna)).json.atrasos.map((a) => [a.conta, a.id]).sort(), [['A', 'pay_fora'], ['A', 'pay_viva'], ['B', 'pay_ana']], 'a pessoa vê as suas das duas contas');
+    // Pagou o item: o link some sem precisar ler o ASAAS de novo.
+    sql(`update guias_linhas set pago_em = now() where cobranca_id = '${viva}'`);
+    assert.ok(!(await ler(ADMIN)).json.atrasos.some((a) => a.id === 'pay_viva'));
+    sql(`delete from guias_linhas where cobranca_id = '${viva}'`);
+    sql(`delete from asaas_cobrancas where id in ('${viva}', '${trocada}')`);
   } finally {
     globalThis.fetch = fetchReal;
     for (const [k, v] of Object.entries(env)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }

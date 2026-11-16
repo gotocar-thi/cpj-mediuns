@@ -9,7 +9,7 @@
 // Estrutura: veja db/ESTRUTURA-ESQUEMA.md para o mapa de versões, domínios e
 // quais migrações foram testadas no Postgres.
 
-export const VERSAO = 119;  // v119: Compras com pedido próprio por grupo
+export const VERSAO = 120;  // v120: pagamentos atrasados também da conta A (Compras)
 
 import { PERFIS_PADRAO } from '../shared/permissoes.js';
 
@@ -4990,5 +4990,49 @@ export const MIGRACOES = [
                     'nome', c.nome, 'pedido', c.pedido,
                     'itens', (select coalesce(jsonb_agg(l.quantidade || 'x ' || l.descricao order by l.criado_em), '[]'::jsonb) from guias_linhas l where l.cobranca_id = c.id)) as j
              from asaas_eventos e left join asaas_cobrancas c on c.id = e.cobranca_id order by e.recebido_em desc limit 50) x), '[]'::jsonb))
+   $$`,
+
+  // ================================================== v120: pagamentos atrasados também da conta A (Compras)
+  // O mesmo bloco lê as vencidas das duas contas. Na conta A, a cobrança feita pelo app (referência = id da cobrança)
+  // só conta enquanto ainda tem item por pagar ligado a ela: link vencido que a pessoa já trocou por outro, ou de
+  // item cancelado ou pago, continua OVERDUE no ASAAS mas não é dívida.
+  `alter table asaas2_atrasos add column if not exists conta text not null default 'B'`,
+  `alter table asaas2_atrasos add column if not exists referencia text not null default ''`,
+  `alter table asaas2_atrasos drop constraint if exists asaas2_atrasos_pkey`,
+  `do $$ begin
+     if not exists (select 1 from pg_constraint where conname = 'asaas2_atrasos_conta_id') then
+       alter table asaas2_atrasos add constraint asaas2_atrasos_conta_id primary key (conta, id);
+     end if;
+   end $$`,
+  // p = { conta: 'A'|'B', itens } — troca só a leitura daquela conta.
+  `create or replace function atrasos_salvar(p jsonb)
+   returns jsonb language plpgsql as $$
+   declare v_conta text := coalesce(nullif(p ->> 'conta', ''), 'B');
+   begin
+     delete from asaas2_atrasos where conta = v_conta;
+     insert into asaas2_atrasos (conta, id, pessoa_id, nome, telefone, valor, vencimento, descricao, link, referencia)
+     select v_conta, x ->> 'id', nullif(x ->> 'pessoaId', '')::uuid, coalesce(x ->> 'nome', ''), coalesce(x ->> 'telefone', ''),
+            coalesce((x ->> 'valor')::numeric, 0), nullif(x ->> 'vencimento', '')::date, coalesce(x ->> 'descricao', ''), coalesce(x ->> 'link', ''),
+            coalesce(x ->> 'referencia', '')
+       from jsonb_array_elements(coalesce(p -> 'itens', '[]'::jsonb)) x
+     on conflict (conta, id) do nothing;
+     insert into sistema (chave, valor) values ('asaas2_atualizado', now()::text)
+     on conflict (chave) do update set valor = excluded.valor;
+     return jsonb_build_object('ok', true);
+   end;
+   $$`,
+  `create or replace function atrasos_ler(p jsonb default '{}'::jsonb)
+   returns jsonb language sql stable as $$
+     select jsonb_build_object(
+       'atualizadoEm', (select to_char(valor::timestamptz at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') from sistema where chave = 'asaas2_atualizado'),
+       'itens', coalesce((select jsonb_agg(jsonb_build_object(
+           'id', a.id, 'conta', a.conta, 'pessoaId', a.pessoa_id, 'ligado', pe.id is not null,
+           'nome', coalesce(pe.nome, a.nome),
+           'telefone', coalesce(nullif(pe.perfil -> 'info' ->> 'celular', ''), a.telefone),
+           'valor', a.valor::float8, 'vencimento', a.vencimento, 'descricao', a.descricao, 'link', a.link)
+           order by a.vencimento nulls last, lower(coalesce(pe.nome, a.nome)))
+         from asaas2_atrasos a left join pessoas pe on pe.id = a.pessoa_id and pe.saida is null
+        where not (a.conta = 'A' and exists (select 1 from asaas_cobrancas c where c.id::text = a.referencia)
+                   and not exists (select 1 from guias_linhas l where l.cobranca_id::text = a.referencia and l.pago_em is null))), '[]'::jsonb))
    $$`,
 ];
