@@ -423,6 +423,8 @@ const acoes = {
     const b = corpo(req);
     const senha = String(b.senha ?? '');
     if (!PIN_VALIDO.test(senha)) throw new HttpError(400, 'A senha precisa ter de 4 a 8 números.');
+    // Sem o campo celular no pedido é o app antigo (de antes desta conferência), que não pergunta o celular.
+    if (!('celular' in b)) throw new HttpError(400, 'Atualize o app para criar a senha: feche e abra de novo (ou toque em Atualizar no aviso de nova versão).');
     const digitado = String(b.celular ?? '').replace(/\D/g, '');
     if (digitado.length < 10 || digitado.length > 11) throw new HttpError(400, 'Digite o seu celular com DDD (10 ou 11 números).');
     const perfil = aluno ? await db.rpc('aluno_perfil_ler', { alunoId: eu.alunoId }) : (await db.rpc('perfil_ler', { pessoaId: eu.pessoaId })).perfil;

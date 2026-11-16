@@ -1229,7 +1229,8 @@ test('senha da corrente (PIN): cria uma vez, o login passa a pedir, o root troca
   assert.equal((await api('POST', '/api/auth/criarSenha', t1, { senha: 'abcd' })).status, 400);
   assert.equal((await api('POST', '/api/auth/criarSenha', ADMIN, { senha: '1234' })).status, 400, 'só o acesso da corrente');
   // Para criar a senha, o celular digitado tem de bater com o do cadastro (Perfil); sem celular no cadastro, não cria.
-  assert.equal((await api('POST', '/api/auth/criarSenha', t1, { senha: '4321' })).status, 400, 'sem celular');
+  assert.match((await api('POST', '/api/auth/criarSenha', t1, { senha: '4321' })).json.erro, /Atualize o app/, 'app antigo (sem o campo celular)');
+  assert.match((await api('POST', '/api/auth/criarSenha', t1, { senha: '4321', celular: '' })).json.erro, /celular com DDD/, 'celular em branco');
   assert.match((await api('POST', '/api/auth/criarSenha', t1, { senha: '4321', celular: '11987654321' })).json.erro, /não está no cadastro/);
   const penha = (await api('GET', '/api/pessoas', ADMIN)).json.find((p) => p.nome === 'Penha Pin').id;
   await api('POST', '/api/auth/perfil', ADMIN, { pessoaId: penha, info: { celular: '11987654321' } });
