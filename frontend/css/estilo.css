@@ -535,6 +535,11 @@ body.deslogado header.top{min-height:0;padding-bottom:0}
 .ev-grupo{gap:10px}
 .ev-grupo>.card{padding:12px;background:var(--bg);box-shadow:none}
 .ev-grupo>.card h2{font-size:1.05rem}
+/* Admin root → Eventos: cadastrar (sem título), eventos cadastrados e tipos, separados por uma linha. */
+.ev-grupo .ev-sec-h{display:flex;justify-content:space-between;align-items:center;gap:8px;border-top:1px solid var(--line);padding-top:12px}
+.ev-grupo .ev-sec-h .root-sub{margin:0}
+.ev-grupo .ev-sec-h .count{font-size:.85rem;color:var(--muted);font-variant-numeric:tabular-nums}
+.ev-dica{margin:0;font-size:.82rem}
 .ev-grupo>.card.adm{border:1px solid var(--line)}   /* a moldura dourada fica só no bloco de fora */
 /* Ausência: no mesmo padrão da Licença (fundo neutro), faixa cinza e os nomes em pílulas */
 .limpeza.ausencia{border-left-color:var(--off);background:color-mix(in srgb,var(--off) 8%,var(--bg))}

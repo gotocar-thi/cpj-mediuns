@@ -47,16 +47,16 @@ export function blocosEventos(embutido = false) {
   let h = '';
   if (editar) {
     const aberto = embutido || !!u.novo;
-    h += `${embutido ? '<h3 class="root-sub">＋ Cadastrar evento</h3>' : `<div class="card adm"><button class="grp-h dobra" data-act="evnovo" aria-expanded="${aberto}"><h2>＋ Cadastrar evento</h2><span class="count"><span class="seta" aria-hidden="true">${aberto ? '▾' : '▸'}</span></span></button>`}
+    h += `${embutido ? '' : `<div class="card adm"><button class="grp-h dobra" data-act="evnovo" aria-expanded="${aberto}"><h2>＋ Cadastrar evento</h2><span class="count"><span class="seta" aria-hidden="true">${aberto ? '▾' : '▸'}</span></span></button>`}
       ${aberto ? `<form id="f-evento" class="ev-form" autocomplete="off">
         <label class="field ev-data">Data<input type="text" id="ev-data" name="data" inputmode="numeric" maxlength="10" data-mascara="data" required placeholder="31/10"></label>
         ${seletorTipo(estado.evUi?.ultimoTipo)}
         <label class="field grow">Nome<input type="text" id="ev-nome" name="nome" maxlength="120" required placeholder="Ex.: Festa de Iemanjá"></label>
         <span class="row ev-bts"><button class="btn primary" type="submit">Cadastrar</button></span></form>
-        <p class="muted" style="margin:0;font-size:.82rem">Digite só dia e mês (3110 vira 31/10). Se a data deste ano já passou há mais de 2 meses, fica para o ano que vem; para outro ano, continue digitando o ano (31/10/2027).</p>` : ''}${fim}`;
+        <p class="muted ev-dica">Digite só dia e mês (3110 vira 31/10). Se a data deste ano já passou há mais de 2 meses, fica para o ano que vem; para outro ano, continue digitando o ano (31/10/2027).</p>` : ''}${fim}`;
   }
   const aberto = embutido || !!u.lista;
-  h += embutido ? '<h3 class="root-sub">📅 Eventos cadastrados</h3>' : `<div class="card"><button class="grp-h dobra" data-act="evlista" aria-expanded="${aberto}"><h2>📅 Eventos cadastrados</h2><span class="count">${evs.length} <span class="seta" aria-hidden="true">${aberto ? '▾' : '▸'}</span></span></button>`;
+  h += embutido ? `<div class="ev-sec-h"><h3 class="root-sub">📅 Eventos cadastrados</h3><span class="count">${evs.length}</span></div>` : `<div class="card"><button class="grp-h dobra" data-act="evlista" aria-expanded="${aberto}"><h2>📅 Eventos cadastrados</h2><span class="count">${evs.length} <span class="seta" aria-hidden="true">${aberto ? '▾' : '▸'}</span></span></button>`;
   if (!aberto) return h + fim;
   if (!evs.length) return h + '<p class="muted" style="margin:0">Nenhum evento cadastrado.</p>' + fim;
   // O mês atual e os próximos em cima; os que já passaram, no fim (escondidos).
@@ -105,7 +105,11 @@ export function blocoTipos() {
   if (!pode('usuarios:gerenciar')) return '';
   const u = U();
   const et = estado.eventosTipos;
-  let h = '<h3 class="root-sub">🏷️ Tipos de evento</h3>';
+  // Começa minimizado; tocar no título expande e recolhe.
+  const aberto = !!u.tipos;
+  let h = `<button class="grp-h dobra ev-sec-h" data-act="evtipos" aria-expanded="${aberto}"><h3 class="root-sub">🏷️ Tipos de evento</h3>
+    <span class="count">${et ? et.tipos.length : ''} <span class="seta" aria-hidden="true">${aberto ? '▾' : '▸'}</span></span></button>`;
+  if (!aberto) return h;
   if (!et) return h + '<p class="muted" style="margin:0">Carregando…</p>';
   h += '<p class="muted evt-nota">A corrente vê todos os tipos. Gira e Evento aparecem para todos os alunos; os outros, só para as turmas marcadas no tipo.</p>';
   h += `<div class="ev-lista">${et.tipos.map((t) => (u.tipoEd === t.chave ? formTipo(t)
@@ -152,6 +156,7 @@ export const cliques = {
   eveditar(el) { U().editar = el.dataset.id; avisar(); },
   evcancelar() { U().editar = null; avisar(); },
   evpassados() { U().passados = !U().passados; avisar(); },
+  evtipos() { U().tipos = !U().tipos; avisar(); },
   evtiponovo() { U().tipoEd = ''; avisar(); },
   evtipoeditar(el) { U().tipoEd = el.dataset.k; avisar(); },
   evtipocancelar() { U().tipoEd = null; avisar(); },
