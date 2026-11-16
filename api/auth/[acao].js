@@ -27,6 +27,7 @@ import { exigir } from '../_lib/sessao.js';
 import { abaIemanja } from '../_lib/iemanja.js';
 import { ocultarSorteios } from '../_lib/escala.js';
 import { oracoes } from '../_lib/oracoes.js';
+import { eventosDe } from '../_lib/eventos.js';
 import { rotaCpf } from '../_lib/cpf.js';
 import { temAbaPublica } from '../../shared/oferendas.js';
 import { gerarHash, conferirSenha, emitirToken, emitirTokenCorrente, emitirTokenGrupo, iguaisSeguro, SENHA_MINIMA } from '../_lib/senhas.js';
@@ -127,11 +128,11 @@ const opcional = (promessa) => promessa.catch((e) => {
 async function listasDoGrupo(eu) {
   const config = opcional(db.rpc('config_casa'));
   if (eu.grupo === 'alunos') {
-    const [eventos, ora] = await Promise.all([db.rpc('eventos_listar'), opcional(db.rpc('oracoes_listar'))]);
+    const [eventos, ora] = await Promise.all([eventosDe(eu), opcional(db.rpc('oracoes_listar'))]);
     return { eventos, oracoes: ora ? await oracoes(eu, ora) : undefined, config: await config };
   }
-  const [eventos, minhaCurimba] = await Promise.all([db.rpc('eventos_listar'), db.rpc('curimba_minha', { alunoId: eu.curimbaAlunoId })]);
-  return { eventos: eventos.filter((x) => x.tipo !== 'aviso'), minhaCurimba, config: await config };
+  const [eventos, minhaCurimba] = await Promise.all([eventosDe(eu), db.rpc('curimba_minha', { alunoId: eu.curimbaAlunoId })]);
+  return { eventos, minhaCurimba, config: await config };
 }
 
 // Corrente e usuários: tudo de uma vez no banco (inicio_dados). Com a versão que o app já tem e nada mudado,

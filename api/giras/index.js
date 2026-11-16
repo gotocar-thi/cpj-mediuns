@@ -1,7 +1,9 @@
 // GET  /api/giras — todas as giras (com presença e duplas), da mais recente para a mais antiga.
 //      O frontend usa a lista para o histórico, os selos de rodízio e a tabela "quem já cambonou quem".
-// GET  /api/giras?lista=eventos — eventos da casa (todos veem; a aba Gira mostra os da semana)
-// POST /api/giras  { acao: 'evento', id?, data: 'AAAA-MM-DD', nome, tipo: 'gira'|'amaci'|'aviso'|'evento' } · { acao: 'excluirEvento', id }  → eventos (só o admin root)
+// GET  /api/giras?lista=eventos — eventos da casa (a corrente vê todos; alunos, gira, evento e os tipos da sua turma; curimba, sem avisos)
+// POST /api/giras  { acao: 'evento', id?, data: 'AAAA-MM-DD', nome, tipo: chave do tipo } · { acao: 'excluirEvento', id }  → eventos (só o admin root)
+// GET  /api/giras?lista=eventosTipos — tipos de evento (só o root)  → { tipos: [{ chave, nome, turmas }], turmas: [{ id, nome }], eventos }
+// POST /api/giras  { acao: 'eventoTipo', chave?, nome, turmas: [id..] } (só o root; sem chave cria)  → o mesmo de ?lista=eventosTipos
 // GET  /api/giras?lista=videos — vídeos do YouTube das giras (aba Vídeos), do mais recente ao mais antigo
 //      (quem não tem a aba no perfil só vê com a aba publicada)
 // POST /api/giras  { acao: 'video', id?, data, evento, youtube: link ou código, classes: [..] } · { acao: 'excluirVideo', id }  → vídeos
@@ -24,12 +26,12 @@
 import { rota, corpo, validarData, validarId, HttpError } from '../_lib/http.js';
 import { exigir } from '../_lib/sessao.js';
 import { db } from '../_lib/db.js';
-import { TIPO_EVENTO_KEYS } from '../../shared/eventos.js';
 import { ocultarSorteios } from '../_lib/escala.js';
 import { acaoVideo } from '../_lib/videos.js';
 import { ACOES_ORACOES, oracoes, acaoOracao } from '../_lib/oracoes.js';
 import { ACOES_CONDUTA, condutas, acaoConduta } from '../_lib/conduta.js';
 import { atrasos } from '../_lib/atrasos.js';
+import { eventosDe } from '../_lib/eventos.js';
 import { ACOES_FOTOS, exigirFotosAtiva, fotosEstado, acaoFoto } from '../_lib/fotos.js';
 import { pode } from '../../shared/permissoes.js';
 import { OPCOES_GIRA, LINHA_LABEL, compactarRetratos } from '../../shared/regras.js';
@@ -61,8 +63,11 @@ export default rota({
     }
     if (req.query.lista === 'eventos') {
       const eu = await exigir(req);
-      const eventos = await db.rpc('eventos_listar');
-      return eu.grupo === 'curimba' ? eventos.filter((x) => x.tipo !== 'aviso') : eventos;
+      return eventosDe(eu);
+    }
+    if (req.query.lista === 'eventosTipos') {
+      await exigir(req, 'usuarios:gerenciar');
+      return db.rpc('eventos_tipos_estado');
     }
     if (req.query.lista === 'videos') {
       const eu = await exigir(req);
@@ -131,11 +136,18 @@ export default rota({
     }
     // Eventos da casa: só o admin root cadastra, edita e exclui (aba Admin root).
     await exigir(req, 'usuarios:gerenciar');
+    if (b.acao === 'eventoTipo') {
+      const nome = String(b.nome ?? '').replace(/\s+/g, ' ').trim();
+      if (!nome || nome.length > 40) throw new HttpError(400, 'Informe o nome do tipo (até 40 letras).');
+      if (b.chave !== undefined && b.chave !== '' && !/^[a-z0-9]{1,20}$/.test(String(b.chave))) throw new HttpError(400, 'Tipo inválido.');
+      const turmas = Array.isArray(b.turmas) ? b.turmas.map((t) => validarId(t, 'Turma')) : [];
+      return db.rpc('evento_tipo_salvar', { chave: String(b.chave || ''), nome, turmas });
+    }
     if (b.acao === 'excluirEvento') return db.rpc('evento_excluir', { id: validarId(b.id, 'Evento') });
     if (b.acao !== 'evento') throw new HttpError(400, 'Ação inválida.');
     const nome = String(b.nome ?? '').replace(/\s+/g, ' ').trim();
     if (!nome || nome.length > 120) throw new HttpError(400, 'Informe o nome do evento (até 120 letras).');
-    if (!TIPO_EVENTO_KEYS.includes(b.tipo)) throw new HttpError(400, 'Escolha o tipo (gira, amaci, aviso ou evento).');
+    if (!/^[a-z0-9]{1,20}$/.test(String(b.tipo ?? ''))) throw new HttpError(400, 'Escolha o tipo do evento.');
     return db.rpc('evento_salvar', { id: b.id ? validarId(b.id, 'Evento') : '', data: validarData(String(b.data || '')), nome, tipo: b.tipo });
   },
 });

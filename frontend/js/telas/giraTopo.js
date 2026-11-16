@@ -2,7 +2,7 @@
 
 import { estado, pode, carregarOferendas, acaoOracoes, avisar } from '../estado.js';
 import { esc, dDM, toast, hoje, pd } from '../util.js';
-import { eventosDoTopo, proximosEventos, orixasDoDia, dataCurta, TIPO_EVENTO_LABEL, aniversariantesDoDia } from '/shared/eventos.js';
+import { eventosDoTopo, proximosEventos, orixasDoDia, dataCurta, rotuloTipo, aniversariantesDoDia } from '/shared/eventos.js';
 import { corDaFaixa } from './curimba.js';
 import { textoEntrega, dataBR, ROTULO_MEDIUM, compromissosDe, qtdTxt } from '/shared/oferendas.js';
 import { abertos, cabDobra, ICONE_WHATS } from './giraComum.js';
@@ -20,7 +20,7 @@ export function cardSemana({ ocultarAvisos = false } = {}) {
     : [...new Set([...eventosDoTopo(eventos, hj), ...prox]), ...orixasDoDia(hj), ...aniversariosPerto(hj)].sort((a, b) => a.data.localeCompare(b.data) || ordem(a) - ordem(b));
   // Cada evento: "folhinha" com o dia da semana (ou HOJE) e a data, o nome e o tipo num selo à direita.
   const semana = (d) => (d === hj ? 'Hoje' : pd(d).toLocaleDateString('pt-BR', { weekday: 'short' }).replace('.', '').replace(/^./, (c) => c.toUpperCase()));
-  const tipo = (e) => (e.niver ? ['niver', 'Aniversário'] : e.orixa ? ['orixa', 'Orixá'] : [e.tipo || 'evento', TIPO_EVENTO_LABEL[e.tipo] || 'Evento']);
+  const tipo = (e) => (e.niver ? ['niver', 'Aniversário'] : e.orixa ? ['orixa', 'Orixá'] : [e.tipo || 'evento', rotuloTipo(e)]);
   // Mostra os três próximos; "Ver mais" mostra todos e "Ver menos" volta.
   const todos = !!estado.evsTodos;
   const lista = todos ? evs : evs.slice(0, 3);

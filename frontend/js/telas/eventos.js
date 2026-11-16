@@ -1,13 +1,15 @@
 // Tela "Eventos": o admin cadastra os eventos da casa (data "31/10" e nome).
 // Todos veem os dos próximos 7 dias no topo da aba Gira.
 
-import { lerDataCurta, dataCurta, TIPOS_EVENTO, TIPO_EVENTO_LABEL } from '/shared/eventos.js';
-import { estado, pode, acaoEventos, avisar } from '../estado.js';
+import { lerDataCurta, dataCurta, TIPOS_EVENTO, TIPOS_TODOS_ALUNOS, rotuloTipo } from '/shared/eventos.js';
+import { estado, pode, acaoEventos, carregarEventosTipos, salvarEventoTipo, avisar } from '../estado.js';
 import { esc, toast, hoje, wd } from '../util.js';
 
 const MESES = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
 const U = () => (estado.evUi ||= { novo: null, editar: null, passados: false });
-const seletorTipo = (atual = 'evento') => `<label class="field ev-tipo">Tipo<select name="tipo">${TIPOS_EVENTO.map(([k, l]) => `<option value="${k}" ${k === atual ? 'selected' : ''}>${l}</option>`).join('')}</select></label>`;
+// Tipos cadastrados (o root carrega na aba Admin root); antes de chegarem, os quatro de sempre.
+const listaTipos = () => estado.eventosTipos?.tipos?.map((t) => [t.chave, t.nome]) || TIPOS_EVENTO;
+const seletorTipo = (atual = 'evento') => `<label class="field ev-tipo">Tipo<select name="tipo">${listaTipos().map(([k, l]) => `<option value="${k}" ${k === atual ? 'selected' : ''}>${l}</option>`).join('')}</select></label>`;
 const dia = (d) => `${wd(d).replace(/^./, (c) => c.toUpperCase())} ${dataCurta(d)}`;
 
 function linha(e, editar) {
@@ -20,7 +22,7 @@ function linha(e, editar) {
       <span class="row ev-bts"><button class="btn small primary" type="submit">Salvar</button><button class="btn small" type="button" data-act="evcancelar">Cancelar</button></span></form>`;
   }
   const conf = estado.confirm === 'ev:' + e.id;
-  return `<div class="ev-l${e.data === hoje() ? ' hoje' : ''}"><span class="ev-dia">${dia(e.data)}</span><span class="ev-nome">${esc(e.nome)} <span class="evs-tipo ${e.tipo || 'evento'}">${TIPO_EVENTO_LABEL[e.tipo] || 'Evento'}</span></span>
+  return `<div class="ev-l${e.data === hoje() ? ' hoje' : ''}"><span class="ev-dia">${dia(e.data)}</span><span class="ev-nome">${esc(e.nome)} <span class="evs-tipo ${e.tipo || 'evento'}">${esc(rotuloTipo(e))}</span></span>
     ${editar ? `<span class="ev-acts"><button class="btn small" data-act="eveditar" data-id="${e.id}">Editar</button>
       ${conf ? `<button class="btn small danger" data-act="evexcluir" data-id="${e.id}">Confirmar</button>` : `<button class="btn small" data-act="askdel" data-k="ev:${e.id}">Excluir</button>`}</span>` : ''}</div>`;
 }
@@ -38,6 +40,7 @@ function blocoMes(chave, lista, editar) {
 // embutido: dentro de um bloco que já abre e fecha (aba Admin root), os dois vêm abertos, sem card próprio.
 export function blocosEventos(embutido = false) {
   const editar = pode('usuarios:gerenciar');   // só o admin root (o servidor confere)
+  if (editar && estado.eventosTipos === null) { estado.eventosTipos = undefined; carregarEventosTipos(); }
   const evs = estado.eventos || [];
   const u = U();
   const fim = embutido ? '' : '</div>';
@@ -69,6 +72,53 @@ export function blocosEventos(embutido = false) {
   return h + fim;
 }
 
+// Tipos de evento (dentro do bloco Eventos da aba Admin root): o root cria e edita o nome e as turmas de alunos que veem.
+// A corrente vê todos os tipos; gira e evento, todos os alunos.
+function formTipo(t) {
+  const todos = t && TIPOS_TODOS_ALUNOS.includes(t.chave);
+  const turmas = estado.eventosTipos?.turmas || [];
+  const marcadas = new Set(t?.turmas || []);
+  const escolha = todos ? '<p class="muted evt-nota">Todos os alunos veem este tipo.</p>'
+    : turmas.length ? `<fieldset class="evt-turmas"><legend>Turmas de alunos que veem</legend>${turmas.map((x) => `<label class="evt-ck"><input type="checkbox" name="turma" value="${x.id}" ${marcadas.has(x.id) ? 'checked' : ''}> ${esc(x.nome)}</label>`).join('')}</fieldset>`
+      : '<p class="muted evt-nota">Nenhuma turma de alunos cadastrada: só a corrente vê este tipo.</p>';
+  return `<form id="f-evtipo" class="ev-form" data-chave="${t?.chave || ''}" autocomplete="off">
+    <label class="field grow">Nome do tipo<input type="text" name="nome" maxlength="40" required value="${esc(t?.nome || '')}" placeholder="Ex.: Festa"></label>
+    ${escolha}
+    <span class="row ev-bts"><button class="btn small primary" type="submit">${t ? 'Salvar' : 'Criar tipo'}</button><button class="btn small" type="button" data-act="evtipocancelar">Cancelar</button></span></form>`;
+}
+
+function quemVe(t) {
+  if (TIPOS_TODOS_ALUNOS.includes(t.chave)) return 'Todos os alunos';
+  const nomes = (estado.eventosTipos?.turmas || []).filter((x) => t.turmas.includes(x.id)).map((x) => x.nome);
+  return nomes.length ? 'Alunos: ' + nomes.join(', ') : 'Só a corrente';
+}
+
+export function blocoTipos() {
+  if (!pode('usuarios:gerenciar')) return '';
+  const u = U();
+  const et = estado.eventosTipos;
+  let h = '<h3 class="root-sub">🏷️ Tipos de evento</h3>';
+  if (!et) return h + '<p class="muted" style="margin:0">Carregando…</p>';
+  h += '<p class="muted evt-nota">A corrente vê todos os tipos. Gira e Evento aparecem para todos os alunos; os outros, só para as turmas marcadas no tipo.</p>';
+  h += `<div class="ev-lista">${et.tipos.map((t) => (u.tipoEd === t.chave ? formTipo(t)
+    : `<div class="ev-l evt-l"><span class="ev-nome"><span class="evs-tipo ${t.chave}">${esc(t.nome)}</span></span><span class="muted evt-quem">${esc(quemVe(t))}</span>
+      <span class="ev-acts"><button class="btn small" data-act="evtipoeditar" data-k="${t.chave}">Editar</button></span></div>`)).join('')}</div>`;
+  h += u.tipoEd === '' ? formTipo(null) : '<button class="btn small" data-act="evtiponovo">＋ Novo tipo</button>';
+  return h;
+}
+
+export async function enviarTipo(form) {
+  const nome = form.elements.nome.value.replace(/\s+/g, ' ').trim();
+  if (!nome) { toast('Digite o nome do tipo.'); form.elements.nome.focus(); return; }
+  const chave = form.dataset.chave || '';
+  const turmas = [...form.querySelectorAll('input[name="turma"]:checked')].map((x) => x.value);
+  if (await salvarEventoTipo({ chave, nome, turmas })) {
+    U().tipoEd = null;
+    toast(chave ? 'Tipo alterado.' : 'Tipo criado.');
+    avisar();
+  }
+}
+
 export function render() {
   return `<section class="panel">${blocosEventos()}</section>`;
 }
@@ -94,6 +144,9 @@ export const cliques = {
   eveditar(el) { U().editar = el.dataset.id; avisar(); },
   evcancelar() { U().editar = null; avisar(); },
   evpassados() { U().passados = !U().passados; avisar(); },
+  evtiponovo() { U().tipoEd = ''; avisar(); },
+  evtipoeditar(el) { U().tipoEd = el.dataset.k; avisar(); },
+  evtipocancelar() { U().tipoEd = null; avisar(); },
   async evexcluir(el) { estado.confirm = null; if (await acaoEventos('excluirEvento', { id: el.dataset.id })) toast('Evento excluído.'); },
 };
 

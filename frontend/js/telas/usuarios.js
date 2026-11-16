@@ -5,7 +5,7 @@ import { SEM_CADASTRO, ABAS, PERFIS_SISTEMA, PIN_VALIDO, normalizarAbas } from '
 import { estado, pessoasOrd, carregarUsuarios, carregarPerfil, criarUsuario, atualizarUsuario, excluirUsuario, atualizarPessoa, adicionarPessoas, acaoUsuarios, salvarApelidosEntidade, salvarConfigCasa, avisar } from '../estado.js';
 import { esc, toast, ajustarRolagem } from '../util.js';
 import { renderAjustesPerfil, formSenha } from './perfil.js';
-import { blocosEventos, cliques as cliquesEventos } from './eventos.js';
+import { blocosEventos, blocoTipos, cliques as cliquesEventos } from './eventos.js';
 import { cardGiraAntiga, cliquesGiraAntiga, mudancasGiraAntiga, corpoBackup, cliquesBackup } from './historico.js';
 import { cardEscala, cliquesEscala, mudancasEscala } from '../cadastrarEscala.js';
 import { contaNaPresenca, LINHA_LABEL, FUNCOES, CURIMBA } from '/shared/regras.js';
@@ -189,7 +189,7 @@ function cardEntidades() {
 function cardEventos() {
   setTimeout(ajustarRolagem, 0);
   const ab = abertosRoot.has('eventos');
-  return `<div class="card adm root ev-grupo">${cabRoot('eventos', '<span aria-hidden="true">🗓️</span> Eventos', (estado.eventos || []).length)}${ab ? blocosEventos(true) : ''}</div>`;
+  return `<div class="card adm root ev-grupo">${cabRoot('eventos', '<span aria-hidden="true">🗓️</span> Eventos', (estado.eventos || []).length)}${ab ? blocosEventos(true) + blocoTipos() : ''}</div>`;
 }
 
 // Do Histórico: cadastrar gira antiga (já encerrada, só para o histórico) e cadastrar a escala de uma gira salva.

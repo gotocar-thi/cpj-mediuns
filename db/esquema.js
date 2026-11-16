@@ -9,7 +9,7 @@
 // Estrutura: veja db/ESTRUTURA-ESQUEMA.md para o mapa de versões, domínios e
 // quais migrações foram testadas no Postgres.
 
-export const VERSAO = 115;  // v115: funções dos atrasos sem número no nome (db.rpc só aceita letras e _)
+export const VERSAO = 116;  // v116: tipos de evento cadastrados pelo root, com as turmas de alunos que veem
 
 import { PERFIS_PADRAO } from '../shared/permissoes.js';
 
@@ -4626,4 +4626,77 @@ export const MIGRACOES = [
   // db.rpc só aceita nomes com letras e _: as da v114 (asaas2_atrasos_*) nunca podiam ser chamadas; agora são atrasos_*.
   `drop function if exists asaas2_atrasos_salvar(jsonb)`,
   `drop function if exists asaas2_atrasos_ler(jsonb)`,
+
+  // ================================================== v116: tipos de evento cadastrados pelo root, com as turmas de alunos que veem
+  // A corrente vê todos os tipos. Alunos: gira e evento, todos; os outros tipos, só as turmas marcadas no tipo.
+  `create table if not exists eventos_tipos (
+     chave      text primary key,
+     nome       text not null check (length(btrim(nome)) between 1 and 40),
+     turmas     uuid[] not null default '{}',
+     criado_em  timestamptz not null default now()
+   )`,
+  `create unique index if not exists eventos_tipos_nome_unico on eventos_tipos (lower(btrim(nome)))`,
+  `insert into eventos_tipos (chave, nome) values ('gira', 'Gira'), ('amaci', 'Amaci'), ('aviso', 'Aviso'), ('evento', 'Evento') on conflict do nothing`,
+  `alter table eventos drop constraint if exists eventos_tipo_check`,
+  `do $$ begin
+     if not exists (select 1 from pg_constraint where conname = 'eventos_tipo_fk') then
+       alter table eventos add constraint eventos_tipo_fk foreign key (tipo) references eventos_tipos (chave);
+     end if;
+   end $$`,
+  // Renomear um tipo muda o selo que a corrente vê: sobe a versão dos dados.
+  `drop trigger if exists versao_dados on eventos_tipos`,
+  `create trigger versao_dados after insert or update or delete on eventos_tipos for each row execute function versao_dados_subir()`,
+  // p = { aluno?: true, turmaId? } — com aluno, só os tipos que a turma vê.
+  `create or replace function eventos_listar(p jsonb default '{}'::jsonb)
+   returns jsonb language sql stable as $$
+     select coalesce(jsonb_agg(jsonb_build_object('id', e.id, 'data', e.data, 'nome', e.nome, 'tipo', e.tipo, 'tipoNome', t.nome)
+                     order by e.data, lower(e.nome)), '[]'::jsonb)
+       from eventos e join eventos_tipos t on t.chave = e.tipo
+      where not coalesce((p ->> 'aluno')::boolean, false)
+         or e.tipo in ('gira', 'evento')
+         or nullif(p ->> 'turmaId', '')::uuid = any(t.turmas)
+   $$`,
+  `create or replace function evento_salvar(p jsonb)
+   returns jsonb language plpgsql as $$
+   begin
+     if not exists (select 1 from eventos_tipos where chave = p ->> 'tipo') then raise exception 'Escolha o tipo do evento.'; end if;
+     if coalesce(p ->> 'id', '') = '' then
+       insert into eventos (data, nome, tipo) values ((p ->> 'data')::date, btrim(p ->> 'nome'), p ->> 'tipo');
+     else
+       update eventos set data = (p ->> 'data')::date, nome = btrim(p ->> 'nome'), tipo = p ->> 'tipo' where id = (p ->> 'id')::uuid;
+       if not found then raise exception 'Evento não encontrado.'; end if;
+     end if;
+     return eventos_listar();
+   end;
+   $$`,
+  // Para o root: os tipos (os quatro de sempre primeiro), as turmas de alunos e os eventos (o selo muda ao renomear).
+  `create or replace function eventos_tipos_estado(p jsonb default '{}'::jsonb)
+   returns jsonb language sql stable as $$
+     select jsonb_build_object(
+       'tipos', coalesce((select jsonb_agg(jsonb_build_object('chave', t.chave, 'nome', t.nome,
+           'turmas', coalesce((select jsonb_agg(ta.id order by lower(ta.nome)) from turmas_alunos ta where ta.id = any(t.turmas)), '[]'::jsonb))
+           order by array_position(array['gira', 'amaci', 'aviso', 'evento'], t.chave) nulls last, lower(t.nome))
+         from eventos_tipos t), '[]'::jsonb),
+       'turmas', coalesce((select jsonb_agg(jsonb_build_object('id', id, 'nome', nome) order by lower(nome)) from turmas_alunos), '[]'::jsonb),
+       'eventos', eventos_listar())
+   $$`,
+  // p = { chave?, nome, turmas: [id..] } — sem chave cria. Turma que não existe é ignorada.
+  `create or replace function evento_tipo_salvar(p jsonb)
+   returns jsonb language plpgsql as $$
+   declare
+     v_turmas uuid[] := array(select ta.id from turmas_alunos ta
+                               where ta.id::text in (select jsonb_array_elements_text(coalesce(p -> 'turmas', '[]'::jsonb))));
+   begin
+     if coalesce(p ->> 'chave', '') = '' then
+       insert into eventos_tipos (chave, nome, turmas)
+       values ('t' || substr(replace(gen_random_uuid()::text, '-', ''), 1, 10), btrim(p ->> 'nome'), v_turmas);
+     else
+       update eventos_tipos set nome = btrim(p ->> 'nome'), turmas = v_turmas where chave = p ->> 'chave';
+       if not found then raise exception 'Tipo não encontrado.'; end if;
+     end if;
+     return eventos_tipos_estado();
+   exception when unique_violation then
+     raise exception 'Esse tipo já existe.';
+   end;
+   $$`,
 ];

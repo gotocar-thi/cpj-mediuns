@@ -1419,6 +1419,47 @@ test('eventos: o admin cadastra, edita e exclui; todos leem', async () => {
   assert.ok(!fim.some((e) => e.id === ev.id));
 });
 
+test('tipos de evento: o root cria e edita; alunos veem gira, evento e os tipos da própria turma', async () => {
+  const est = (await api('GET', '/api/giras?lista=eventosTipos', ADMIN)).json;
+  assert.deepEqual(est.tipos.slice(0, 4).map((t) => t.chave), ['gira', 'amaci', 'aviso', 'evento']);
+  const t9 = est.turmas.find((t) => t.nome === 'Turma 09');
+  const t10 = est.turmas.find((t) => t.nome === 'Turma 10');
+  assert.equal((await api('GET', '/api/giras?lista=eventosTipos', USER)).status, 403);
+  assert.equal((await api('POST', '/api/giras', USER, { acao: 'eventoTipo', nome: 'Festa' })).status, 403);
+  const criado = await api('POST', '/api/giras', ADMIN, { acao: 'eventoTipo', nome: '  Festa   da T9 ', turmas: [t9.id] });
+  assert.equal(criado.status, 200, JSON.stringify(criado.json));
+  const festa = criado.json.tipos.find((t) => t.nome === 'Festa da T9');
+  assert.deepEqual(festa.turmas, [t9.id]);
+  assert.equal((await api('POST', '/api/giras', ADMIN, { acao: 'eventoTipo', nome: 'festa da t9' })).status, 400, 'nome repetido');
+  assert.equal((await api('POST', '/api/giras', ADMIN, { acao: 'evento', data: '2035-01-10', nome: 'X', tipo: 'naoexiste' })).status, 400);
+
+  const datas = { gira: '2035-01-11', amaci: '2035-01-12', aviso: '2035-01-13', evento: '2035-01-14', [festa.chave]: '2035-01-15' };
+  for (const [tipo, data] of Object.entries(datas)) await api('POST', '/api/giras', ADMIN, { acao: 'evento', data, nome: 'Teste ' + tipo, tipo });
+  const doTeste = (lista) => lista.filter((e) => e.data >= '2035-01-11' && e.data <= '2035-01-15').map((e) => e.tipo).sort();
+
+  await api('POST', '/api/pessoas', ADMIN, { acao: 'alunos', nome: 'Aluno Nove, Aluno Dez' });
+  const als = (await api('GET', '/api/pessoas?lista=alunos', ADMIN)).json.alunos;
+  await api('POST', '/api/pessoas', ADMIN, { acao: 'aluno', id: als.find((a) => a.nome === 'Aluno Nove').id, turmaId: t9.id });
+  await api('POST', '/api/pessoas', ADMIN, { acao: 'aluno', id: als.find((a) => a.nome === 'Aluno Dez').id, turmaId: t10.id });
+  const nove = (await api('POST', '/api/auth/entrar', null, { email: 'alunos', senha: 'aluno nove' })).json.token;
+  const dez = (await api('POST', '/api/auth/entrar', null, { email: 'alunos', senha: 'aluno dez' })).json.token;
+  const ana = (await api('POST', '/api/auth/entrar', null, { email: 'cpj', senha: 'Ana' })).json.token;
+
+  assert.deepEqual(doTeste((await api('GET', '/api/giras?lista=eventos', nove)).json), ['evento', festa.chave, 'gira'].sort());
+  assert.deepEqual(doTeste((await api('GET', '/api/giras?lista=eventos', dez)).json), ['evento', 'gira']);
+  assert.deepEqual(doTeste((await api('GET', '/api/auth/inicio', nove)).json.eventos), ['evento', festa.chave, 'gira'].sort(), 'na abertura do app também');
+  assert.deepEqual(doTeste((await api('GET', '/api/giras?lista=eventos', ana)).json), Object.keys(datas).sort(), 'a corrente vê todos');
+
+  // Editar: marca a T10 no amaci e renomeia o tipo novo (o selo muda).
+  await api('POST', '/api/giras', ADMIN, { acao: 'eventoTipo', chave: 'amaci', nome: 'Amaci', turmas: [t10.id] });
+  const ed = (await api('POST', '/api/giras', ADMIN, { acao: 'eventoTipo', chave: festa.chave, nome: 'Festa', turmas: [t9.id, t10.id] })).json;
+  assert.equal(ed.eventos.find((e) => e.tipo === festa.chave).tipoNome, 'Festa');
+  assert.deepEqual(doTeste((await api('GET', '/api/giras?lista=eventos', dez)).json), ['amaci', 'evento', festa.chave, 'gira'].sort());
+
+  for (const e of ed.eventos.filter((x) => x.nome.startsWith('Teste '))) await api('POST', '/api/giras', ADMIN, { acao: 'excluirEvento', id: e.id });
+  await api('POST', '/api/giras', ADMIN, { acao: 'eventoTipo', chave: 'amaci', nome: 'Amaci', turmas: [] });
+});
+
 test('perfil: a própria pessoa salva só as informações; outra pessoa, só o admin', async () => {
   const ps = (await api('GET', '/api/pessoas', ADMIN)).json;
   const ana = ps.find((p) => p.nome === 'Ana').id;

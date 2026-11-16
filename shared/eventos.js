@@ -28,6 +28,10 @@ export function lerDataCurta(txt, hoje) {
 export const TIPOS_EVENTO = [['gira', 'Gira'], ['amaci', 'Amaci'], ['aviso', 'Aviso'], ['evento', 'Evento']];
 export const TIPO_EVENTO_KEYS = TIPOS_EVENTO.map(([k]) => k);
 export const TIPO_EVENTO_LABEL = Object.fromEntries(TIPOS_EVENTO);
+// Tipos que todos os alunos veem; os outros, só as turmas marcadas no tipo (o banco filtra: eventos_listar).
+export const TIPOS_TODOS_ALUNOS = ['gira', 'evento'];
+// Nome do tipo no selo: o cadastrado (tipoNome vem do servidor) ou o dos quatro de sempre.
+export const rotuloTipo = (e) => e.tipoNome || TIPO_EVENTO_LABEL[e.tipo] || 'Evento';
 
 const porData = (a, b) => (a.data < b.data ? -1 : a.data > b.data ? 1 : 0);
 // Eventos de hoje até daqui a 7 dias.

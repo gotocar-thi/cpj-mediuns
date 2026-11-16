@@ -883,6 +883,14 @@ body.deslogado .rodape{display:none}
 .of-med-etqs{display:inline-flex;gap:4px;flex-wrap:wrap;justify-content:flex-end}
 .of-med-cont .muted{font-size:.8rem;align-self:center}
 .ev-tipo{flex:0 1 130px}
+.evt-nota{margin:0;font-size:.82rem;flex-basis:100%}
+.evt-l{flex-wrap:nowrap}
+.evt-l .ev-nome{flex:none}
+.evt-l .ev-nome .evs-tipo{margin-left:0}
+.evt-quem{flex:1 1 auto;min-width:0;text-align:right;font-size:.82rem}
+.evt-turmas{display:flex;flex-wrap:wrap;gap:6px 14px;border:0;padding:0;margin:0;flex-basis:100%;min-width:0}
+.evt-turmas legend{font-size:.82rem;color:var(--muted);padding:0;margin-bottom:4px}
+.evt-ck{display:inline-flex;align-items:center;gap:6px;font-size:.9rem}
 .evs-tipo{flex:none;margin-left:auto;font-size:.72rem;font-weight:700;border-radius:20px;padding:1px 8px;background:var(--bg);color:var(--muted);border:1px solid var(--line);align-self:center}
 .ev-nome .evs-tipo{margin-left:4px;vertical-align:middle}
 .evs-tipo.gira{background:var(--accent-soft);color:var(--accent);border-color:color-mix(in srgb,var(--accent) 35%,var(--line))}

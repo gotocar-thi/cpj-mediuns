@@ -50,6 +50,7 @@ export const estado = {
   limpezaPessoaEditando: null, // aba Pessoas: pessoa com turma da limpeza em edição
   stPerfis: null,      // Histórico → Estatísticas: contagens do Perfil { total, chefe, frente, orixa } (undefined = carregando)
   eventos: [],         // eventos da casa (aba Eventos e "Eventos da semana")
+  eventosTipos: null,  // GET /api/giras?lista=eventosTipos (só o root): { tipos, turmas }
   entidadesApelidos: [], // apelidos opcionais das entidades, configurados pelo Admin root
   oracoes: [],         // aba Gira: orações dos últimos 7 dias
   conduta: null,       // aba Geral: Gestão de Conduta e Risco { ativa, relatos } (root: todos; os outros: os próprios)
@@ -553,6 +554,24 @@ export async function acaoConduta(acao, dados = {}, { redesenhar = true } = {}) 
   } catch (e) { toast(e.message); avisar(); return false; }
 }
 
+// Tipos de evento (só o root): { tipos, turmas, eventos }.
+export async function carregarEventosTipos() {
+  try {
+    const r = await api('GET', '/giras?lista=eventosTipos');
+    estado.eventosTipos = { tipos: r.tipos, turmas: r.turmas };
+    estado.eventos = r.eventos;
+  } catch (e) { toast(e.message); estado.eventosTipos = { tipos: [], turmas: [] }; }
+  avisar();
+}
+export async function salvarEventoTipo(dados) {
+  try {
+    const r = await api('POST', '/giras', { acao: 'eventoTipo', ...dados });
+    estado.eventosTipos = { tipos: r.tipos, turmas: r.turmas };
+    estado.eventos = r.eventos;
+    avisar();
+    return true;
+  } catch (e) { toast(e.message); avisar(); return false; }
+}
 export async function acaoEventos(acao, dados = {}) {
   try {
     estado.eventos = await api('POST', '/giras', { acao, ...dados });
