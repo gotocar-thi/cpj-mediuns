@@ -1649,6 +1649,20 @@ button.iem-tot-n{cursor:pointer}
 .gi-meu-desc .muted{font-size:.82rem}
 .gi-meu-val{white-space:nowrap;font-variant-numeric:tabular-nums}
 .gi-suporte{margin:0;font-size:.85rem;color:var(--muted);font-style:italic}
+/* Aba Compras: blocos mais juntos e mais compactos (cabem mais coisas no celular), mas bem separados —
+   sombra leve, faixa colorida à esquerda nos blocos da pessoa e uma linha entre o título e o conteúdo. */
+section.panel.gi-tela{gap:12px}
+.gi-tela>.card{padding:12px;gap:10px;box-shadow:0 1px 3px rgba(0,0,0,.07)}
+.gi-tela>.card:not(.adm){border-left:4px solid var(--accent)}
+.gi-tela>.card>.grp-h h2{font-size:1.12rem;margin:0}
+.gi-tela>.card>.grp-h:not(:last-child){padding-bottom:8px;border-bottom:1px solid var(--line)}
+.gi-tela>.card.adm>.of-sw:only-child{margin:0}
+.gi-tela .gi-lista{gap:8px}
+.gi-tela .gi-item{grid-template-columns:52px minmax(0,1fr) auto;gap:8px;padding:6px}
+.gi-tela .gi-foto{width:52px;height:52px}
+.gi-tela .gi-aviso{font-size:.92rem}
+.gi-tela .gp-grupo-h{padding:10px 12px;min-height:44px}
+.gi-tela .hist-compra{padding:8px}
 .gi-form{display:grid;gap:10px;border:1px solid var(--line);border-radius:10px;padding:12px;background:var(--surface)}
 .gi-form h3{margin:0}
 .gi-foto-campo{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
@@ -1685,6 +1699,22 @@ button.iem-tot-n{cursor:pointer}
 .gp-grupo-c{padding:0 12px 12px;border-top:1px solid var(--line);padding-top:12px}
 .gp-grupo-c .gp-pessoa{background:var(--surface)}
 .gp-pessoa.pago{opacity:.75}
+/* Lista compacta do pedido (Painel e Pedidos encerrados): uma faixa por pessoa, separadas por borda,
+   com a cor da situação à esquerda e o selo uma vez só. */
+.gp-lista{border:1px solid var(--line);border-radius:10px;background:var(--surface);overflow:hidden;margin-bottom:6px}
+.gp-row{--sit:var(--line);display:grid;gap:2px;padding:7px 8px 7px 10px;border-left:4px solid var(--sit)}
+.gp-row+.gp-row{border-top:1px solid var(--line)}
+.gp-sit-borda-ok{--sit:var(--ok)}.gp-sit-borda-pend{--sit:var(--warn)}.gp-sit-borda-atr{--sit:var(--off)}.gp-sit-borda-canc{--sit:var(--muted)}
+.gp-row-h{display:flex;align-items:center;gap:6px;min-width:0}
+.gp-row-h>b:first-child{overflow-wrap:break-word;min-width:0}
+.gp-row-t{margin-left:auto;white-space:nowrap;font-variant-numeric:tabular-nums}
+.gp-row-l{display:grid;grid-template-columns:minmax(0,1fr) auto auto;align-items:center;gap:6px;font-size:.9rem;color:var(--muted)}
+.gp-row-l .gp-desc{color:var(--ink)}
+.gp-row-l .gp-x{padding:0 4px;min-height:28px}
+.gp-sit{display:inline-block;font-size:.7rem;font-weight:700;border-radius:20px;padding:0 7px;line-height:1.6;white-space:nowrap;vertical-align:middle}
+.gp-sit-ok{background:var(--ok-soft);color:var(--ok)}.gp-sit-pend{background:var(--warn-soft);color:var(--warn)}
+.gp-sit-atr{background:var(--off-soft);color:var(--off)}.gp-sit-canc{background:var(--bg);color:var(--muted);border:1px solid var(--line)}
+.gp-todos{justify-self:start;margin:-4px 0 0;padding-left:2px}
 .gp-pessoa-v{display:inline-flex;align-items:center;gap:6px;flex:none}
 .gp-pessoa-v b{white-space:nowrap;font-variant-numeric:tabular-nums}
 .gx-sel{gap:8px;flex-wrap:wrap}
@@ -1705,7 +1735,8 @@ button.iem-tot-n{cursor:pointer}
 .pf-of-totais.as-quadros{grid-template-columns:repeat(4,minmax(0,1fr))}
 .as-quadros .pf-of-total{background:var(--surface)}
 .pf-of-totais.as-quadros.cinco{grid-template-columns:repeat(3,minmax(0,1fr))}
-.gp-grupo-c .as-quadros{margin-bottom:10px}
+.gp-grupo-c{display:grid;gap:8px}
+.gp-grupo-c>.gp-status{margin-bottom:0}
 .pf-of-total.as-q-ok{--fn:var(--ok)}
 .pf-of-total.as-q-pend{--fn:var(--warn)}
 .pf-of-total.as-q-canc{--fn:var(--muted)}
