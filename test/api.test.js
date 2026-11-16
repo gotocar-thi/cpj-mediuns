@@ -1870,6 +1870,20 @@ test('pedidos de guias: aba escondida até publicar; grupos, itens, pedir baixa 
   G = (await gu(ADMIN, { op: 'item', grupoId: g.id, descricao: 'Guia verde', quantidade: 3, valor: '25,50' })).json;
   const it = G.grupos.find((x) => x.id === g.id).itens[0];
   assert.equal(it.valor, 25.5);
+  // Foto: a resposta leva só a versão (fotoV); a imagem vem pelo link próprio, como JPEG, com cache longo.
+  const jpeg = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff]), Buffer.alloc(200, 7)]).toString('base64');
+  G = (await gu(ADMIN, { op: 'item', id: it.id, foto: jpeg })).json;
+  const comFoto = G.grupos.find((x) => x.id === g.id).itens.find((i) => i.id === it.id);
+  assert.equal(comFoto.foto, undefined, 'a foto não vai na resposta');
+  assert.match(comFoto.fotoV, /^[0-9a-f]{10}$/);
+  const img = await fetch(`${base}/api/oferendas?lista=guiaFoto&id=${it.id}&v=${comFoto.fotoV}`);
+  assert.equal(img.status, 200);
+  assert.equal(img.headers.get('content-type'), 'image/jpeg');
+  assert.match(img.headers.get('cache-control'), /immutable/);
+  assert.equal(Buffer.from(await img.arrayBuffer()).toString('base64'), jpeg);
+  G = (await gu(ADMIN, { op: 'item', id: it.id, foto: null })).json;
+  assert.equal(G.grupos.find((x) => x.id === g.id).itens.find((i) => i.id === it.id).fotoV, null, 'sem foto, sem versão');
+  assert.equal((await fetch(`${base}/api/oferendas?lista=guiaFoto&id=${it.id}`)).status, 404);
   G = (await gu(ADMIN, { op: 'item', grupoId: g.id, descricao: 'Guia oculta', quantidade: 5, valor: 10, visivel: false })).json;
   const oculto = G.grupos.find((x) => x.id === g.id).itens.find((i) => i.descricao === 'Guia oculta');
   assert.equal(G.grupos.find((x) => x.id === g.id).aberto, 1, 'o primeiro grupo fica com o pedido nº 1, que já começa aberto');

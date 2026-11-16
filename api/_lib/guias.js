@@ -13,7 +13,7 @@ import { db } from './db.js';
 import { HttpError, validarId } from './http.js';
 import { pode } from '../../shared/permissoes.js';
 import { chavePessoa } from '../../shared/ervas.js';
-import { pixDaPessoa, gerarPix, pixAntesDePedir, pixLigado, conferirReservas } from './asaas.js';
+import { pixDaPessoa, pixDe, gerarPix, pixAntesDePedir, configurado, conferirReservas } from './asaas.js';
 
 const ehAdmin = (eu) => pode(eu, 'guias:gerenciar');
 // Cadastrada na corrente: a sessão está ligada a uma pessoa (acesso cpj, e-mail ou curimba ligados à pessoa).
@@ -44,11 +44,34 @@ function paraTela(estado, eu) {
 // Junto com a tela, o Pix da pessoa (se o root ligou na aba ASAAS).
 const comPix = async (tela, eu) => ({ ...tela, ...(await pixDaPessoa(eu)) });
 
+// Abertura da aba: tudo numa ida só ao banco (guias_tela). Só volta ao banco (e ao ASAAS) se houver um link que
+// ficou sem resposta do ASAAS numa tentativa anterior, para conferir (sem travar a tela se falhar).
 export async function respostaGuias(eu) {
-  await exigirAba(eu);
-  // Link que ficou sem resposta do ASAAS numa tentativa anterior: confere ao abrir a aba (sem travar a tela se falhar).
-  if (await pixLigado()) await conferirReservas(chavePessoa(eu)).catch((e) => console.error('[asaas] conferir ao abrir', e?.message || e));
-  return comPix(paraTela(await db.rpc('guias_estado'), eu), eu);
+  if (!pode(eu, 'guias:pedir') && !ehAdmin(eu)) throw new HttpError(403, 'Seu perfil não tem a aba Compras.');
+  const chave = chavePessoa(eu);
+  let t = await db.rpc('guias_tela', { chave });
+  if (!ehAdmin(eu) && !t.publicada) throw new HttpError(403, 'A aba Compras não está disponível no momento.');
+  if (configurado() && t.ativo && t.paradas) {
+    try {
+      await conferirReservas(chave);
+      t = await db.rpc('guias_tela', { chave });
+    } catch (e) { console.error('[asaas] conferir ao abrir', e?.message || e); }
+  }
+  return { ...paraTela(t.estado, eu), ...pixDe(t.ativo, t.minhas) };
+}
+
+// Foto de um item: o JPEG puro, com cache longo (o endereço muda quando a foto muda: ?v=). Sem sessão, porque a
+// tag <img> não manda o token; o id do item não dá para adivinhar e a foto é só a do produto à venda.
+export async function fotoGuia(req, res) {
+  const id = validarId(req.query.id, 'Item');
+  const b64 = await db.rpc('guia_foto', { id });
+  if (!b64) throw new HttpError(404, 'Foto não encontrada.');
+  const buf = Buffer.from(b64, 'base64');
+  res.statusCode = 200;
+  res.setHeader('Content-Type', 'image/jpeg');
+  res.setHeader('Content-Length', String(buf.length));
+  res.setHeader('Cache-Control', req.query.v ? 'public, max-age=31536000, immutable' : 'public, max-age=300');
+  res.end(buf);
 }
 
 function texto(v, oque, max) {

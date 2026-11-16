@@ -9,6 +9,10 @@ import { gerarImagemLista, compartilharImagem } from '../imagemLista.js';
 
 const R = (v) => reais(centavos(v));
 const dataUrl = (b64) => 'data:image/jpeg;base64,' + b64;
+// A foto do item salvo vem por link próprio (com cache; o ?v= muda quando a foto muda). A prévia do formulário
+// (foto escolhida e ainda não salva) continua em base64.
+const fotoUrl = (i) => `/api/oferendas?lista=guiaFoto&id=${encodeURIComponent(i.id)}&v=${encodeURIComponent(i.fotoV)}`;
+const fonteFoto = (i) => (i.foto ? dataUrl(i.foto) : i.fotoV && i.id ? fotoUrl(i) : '');
 const dia = (iso) => new Date(iso).toLocaleDateString('pt-BR');
 const plural = (n, s, p) => `${n} ${n === 1 ? s : p}`;
 
@@ -66,8 +70,9 @@ const itensDe = (linhas) => linhas.reduce((a, l) => a + l.quantidade, 0);
 // ---------- pessoa ----------
 // zoom: tocar na foto abre em tela cheia (só no item já salvo, não na prévia do formulário).
 function fotoItem(i, cls = 'gi-foto', zoom = false) {
-  const abre = zoom && i.foto && i.id ? ` data-act="guiazoom" data-id="${i.id}" role="button" tabindex="0" aria-label="Ver foto de ${esc(i.descricao)}"` : '';
-  return `<div class="${cls}${abre ? ' zoom' : ''}"${abre}>${i.foto ? `<img src="${dataUrl(i.foto)}" alt="" loading="lazy">` : '<span aria-hidden="true">📿</span>'}</div>`;
+  const src = fonteFoto(i);
+  const abre = zoom && i.fotoV && i.id ? ` data-act="guiazoom" data-id="${i.id}" role="button" tabindex="0" aria-label="Ver foto de ${esc(i.descricao)}"` : '';
+  return `<div class="${cls}${abre ? ' zoom' : ''}"${abre}>${src ? `<img src="${esc(src)}" alt="" loading="lazy" decoding="async">` : '<span aria-hidden="true">📿</span>'}</div>`;
 }
 
 function cardItens(G) {
@@ -179,11 +184,14 @@ function cardTopo(G) {
 }
 
 function formItem(I) {
-  const temFoto = I.foto !== undefined ? I.foto : acharItem(I.id)?.foto;
+  // Foto nova escolhida (ou removida) no formulário; senão, a do item salvo.
+  const salvo = I.id ? acharItem(I.id) : null;
+  const fonte = I.foto !== undefined ? (I.foto ? { foto: I.foto } : null) : (salvo?.fotoV ? salvo : null);
+  const temFoto = !!fonte;
   return `<form id="f-guia-item" class="gi-form" autocomplete="off">
     <h3>${I.id ? 'Editar item' : 'Novo item'}</h3>
     <label class="field">Descrição<input type="text" id="gi-desc" data-guia="descricao" maxlength="120" value="${esc(I.descricao)}" required></label>
-    <div class="gi-foto-campo">${fotoItem({ foto: temFoto }, 'gi-foto')}
+    <div class="gi-foto-campo">${fotoItem(fonte ? { foto: fonte.foto, id: fonte.id, fotoV: fonte.fotoV } : {}, 'gi-foto')}
       <label class="btn small">📷 ${temFoto ? 'Trocar foto' : 'Pôr foto'}<input type="file" accept="image/*" data-act="guiafoto" hidden></label>
       ${temFoto ? '<button type="button" class="btn link" data-act="guiatirafoto">Remover</button>' : ''}</div>
     <div class="row gi-nums">
@@ -412,10 +420,10 @@ function cardExportar(G) {
 // Foto do item em tela cheia (mesmo visual da aba Fotos); tocar em qualquer lugar fecha.
 function telaFoto() {
   const i = ui.zoom && acharItem(ui.zoom);
-  if (!i?.foto) return '';
+  if (!i?.fotoV) return '';
   return `<div class="ft-luz" role="dialog" aria-modal="true" aria-label="Foto de ${esc(i.descricao)}" data-act="guiazoomfechar">
     <div class="ft-luz-topo"><span class="ft-luz-tit">${esc(i.descricao)}</span><button class="btn small" data-act="guiazoomfechar" aria-label="Fechar">✕</button></div>
-    <div class="ft-luz-img"><img src="${dataUrl(i.foto)}" alt=""></div>
+    <div class="ft-luz-img"><img src="${esc(fotoUrl(i))}" alt=""></div>
     <div class="ft-luz-rodape"><b>${R(i.valor)}</b><span class="muted">${plural(i.quantidade, 'disponível', 'disponíveis')}</span></div></div>`;
 }
 

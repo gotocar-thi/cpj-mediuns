@@ -9,7 +9,7 @@
 // Estrutura: veja db/ESTRUTURA-ESQUEMA.md para o mapa de versões, domínios e
 // quais migrações foram testadas no Postgres.
 
-export const VERSAO = 121;  // v121: aba ASAAS nos perfis e o perfil Admin financeiro
+export const VERSAO = 122;  // v122: aba Compras mais leve (foto por link próprio, abertura numa ida só ao banco)
 
 import { PERFIS_PADRAO } from '../shared/permissoes.js';
 
@@ -5041,4 +5041,49 @@ export const MIGRACOES = [
   // ficam sem a aba (o root marca na aba Admin root). Se o root já criou um perfil com esse nome, fica o dele.
   ...PERFIS_PADRAO.filter((p) => p.chave === 'admin_financeiro').map((p) => `insert into perfis (chave, nome, abas, ordem)
      values ('${p.chave}', '${p.nome}', '${JSON.stringify(p.abas)}'::jsonb, ${p.ordem}) on conflict do nothing`),
+
+  // ================================================== v122: aba Compras mais leve
+  // A foto do item sai da resposta (ia inteira, em base64, a cada abertura e a cada ação): vai só a versão (fotoV),
+  // e a imagem vem por um link próprio, guardado em cache pelo celular (guia_foto). A abertura da aba lê tudo numa
+  // ida só ao banco (guias_tela), e o Pix da pessoa também (asaas_pessoa).
+  `create or replace function guias_estado(p jsonb default '{}'::jsonb)
+   returns jsonb language sql stable as $$
+     select jsonb_build_object(
+       'publicada', guias_publicada(),
+       'grupos', (select coalesce(jsonb_agg(jsonb_build_object('id', g.id, 'descricao', g.descricao, 'visivel', g.visivel,
+           'aberto', guia_pedido_do_grupo(g.id),
+           'itens', (select coalesce(jsonb_agg(jsonb_build_object('id', i.id, 'descricao', i.descricao,
+                       'fotoV', case when i.foto is null then null else substr(md5(i.foto), 1, 10) end, 'quantidade', i.quantidade,
+                       'valor', i.valor, 'visivel', i.visivel, 'cpj', i.cpj) order by i.criado_em), '[]'::jsonb)
+                     from guias_itens i where i.grupo_id = g.id)) order by g.criado_em), '[]'::jsonb)
+                  from guias_grupos g),
+       'pedidos', (select coalesce(jsonb_agg(jsonb_build_object('numero', pe.numero, 'criadoEm', pe.criado_em, 'encerradoEm', pe.encerrado_em,
+           'grupos', (select coalesce(jsonb_agg(jsonb_build_object('grupoId', pg.grupo_id, 'criadoEm', pg.criado_em, 'encerradoEm', pg.encerrado_em)), '[]'::jsonb)
+                      from guias_pedido_grupos pg where pg.pedido = pe.numero),
+           'linhas', (select coalesce(jsonb_agg(jsonb_build_object('id', l.id, 'itemId', l.item_id, 'grupoId', l.grupo_id, 'descricao', l.descricao, 'valor', l.valor,
+                       'quantidade', l.quantidade, 'chave', l.chave, 'nome', l.nome, 'ok', l.ok, 'criadoEm', l.criado_em,
+                       'pago', l.pago_em is not null,
+                       'pix', case when l.pago_em is not null then null when c.status = 'criando' then 'pendente' else c.status end) order by lower(l.nome), l.criado_em), '[]'::jsonb)
+                      from guias_linhas l left join asaas_cobrancas c on c.id = l.cobranca_id where l.pedido = pe.numero)) order by pe.numero desc), '[]'::jsonb)
+                   from guias_pedidos pe))
+   $$`,
+  `create or replace function guia_foto(p jsonb)
+   returns jsonb language sql stable as $$
+     select to_jsonb(foto) from guias_itens where id = (p ->> 'id')::uuid and foto is not null
+   $$`,
+  // p = { chave } — o Pix da pessoa: se está ligado, o cliente no ASAAS e as cobranças.
+  `create or replace function asaas_pessoa(p jsonb)
+   returns jsonb language sql stable as $$
+     select jsonb_build_object('ativo', asaas_ativo(), 'minhas', asaas_minhas(p))
+   $$`,
+  // p = { chave } — tudo que a aba Compras precisa ao abrir; paradas = há reserva do ASAAS sem resposta para conferir.
+  `create or replace function guias_tela(p jsonb)
+   returns jsonb language sql stable as $$
+     select jsonb_build_object(
+       'publicada', guias_publicada(),
+       'ativo', asaas_ativo(),
+       'paradas', exists (select 1 from asaas_cobrancas where chave = p ->> 'chave' and status = 'criando' and criado_em < now() - interval '20 seconds'),
+       'estado', guias_estado(),
+       'minhas', asaas_minhas(p))
+   $$`,
 ];

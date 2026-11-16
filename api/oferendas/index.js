@@ -10,6 +10,7 @@
 //                excluirItem { id } · entregue { id, entregue }
 //                status { id, status: 'rascunho' | 'aguardando' | 'publicado' | 'encerrado' }
 // Aba Compras: GET ?lista=guias e POST { acao: 'guias', op, ... } (veja api/_lib/guias.js).
+//              GET ?lista=guiaFoto&id=<item>&v=<versão> — a foto do item (JPEG, sem sessão, com cache longo).
 // ASAAS (veja api/_lib/asaas.js): webhook sem sessão, com token, em POST ?webhook=asaas; aba ASAAS (root e quem tem a aba no perfil) em GET ?lista=asaas e POST { acao: 'asaas', op, ... }.
 // Quem não administra as oferendas vê as publicadas (e doa nelas) e as bloqueadas (sem os itens).
 //                doarPor { itemId, pessoaId | chave, quantidade }  — doação de outra pessoa (0 = exclui)
@@ -20,7 +21,7 @@ import { pode } from '../../shared/permissoes.js';
 import { chavePessoa } from '../../shared/ervas.js';
 import { PAGAMENTO_KEYS, ENTREGA_KEYS, grupoOferendaValido, abasOcultas, temAbaPublica, limparDetalhes, detalhesOk, DETALHES_LINHAS, unidadeValida, quantidadeValida, aceitaFracao } from '../../shared/oferendas.js';
 import { respostaIemanja, acaoIemanja } from '../_lib/iemanja.js';
-import { respostaGuias, acaoGuias } from '../_lib/guias.js';
+import { respostaGuias, acaoGuias, fotoGuia } from '../_lib/guias.js';
 import { webhookAsaas, respostaAsaas, acaoAsaas } from '../_lib/asaas.js';
 
 const STATUS = ['rascunho', 'aguardando', 'publicado', 'encerrado'];
@@ -69,9 +70,10 @@ function validarGrupos(v) {
 }
 
 export default rota({
-  GET: async (req) => {
+  GET: async (req, res) => {
     if (req.query.lista === 'iemanja') return respostaIemanja(await exigir(req));
     if (req.query.lista === 'guias') return respostaGuias(await exigir(req));
+    if (req.query.lista === 'guiaFoto') return fotoGuia(req, res);
     if (req.query.lista === 'asaas') return respostaAsaas(await exigir(req));
     const eu = await exigir(req, 'oferendas:doar');
     // Já inclui os novos cadastrados nas listas por pessoa.

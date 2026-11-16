@@ -52,10 +52,14 @@ const asaas = (...a) => chamarAsaas('ASAAS', ...a);
 export const pixLigado = async () => configurado() && !!(await db.rpc('asaas_ativo'));
 
 // O que a tela Compras recebe de Pix: se está ligado, se precisa do CPF e as cobranças da pessoa.
+// pixDe monta a partir do que o banco já devolveu (ativo + asaas_minhas); pixDaPessoa busca numa ida só.
+export const pixDe = (ativo, minhas) => (configurado() && ativo
+  ? { pix: true, pixPrecisaCpf: !minhas.cliente, cobrancas: minhas.cobrancas.map((c) => ({ ...c, valor: Number(c.valor) })) }
+  : { pix: false });
 export async function pixDaPessoa(eu) {
-  if (!(await pixLigado())) return { pix: false };
-  const r = await db.rpc('asaas_minhas', { chave: chavePessoa(eu) });
-  return { pix: true, pixPrecisaCpf: !r.cliente, cobrancas: r.cobrancas.map((c) => ({ ...c, valor: Number(c.valor) })) };
+  if (!configurado()) return { pix: false };
+  const r = await db.rpc('asaas_pessoa', { chave: chavePessoa(eu) });
+  return pixDe(r.ativo, r.minhas);
 }
 
 // Antes de pedir com o Pix ligado: sem cliente no ASAAS, o CPF tem de vir válido (senão nem faz o pedido).
