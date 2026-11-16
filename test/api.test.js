@@ -2157,6 +2157,7 @@ test('ASAAS: Pedir gera o link de pagamento; só o webhook conferido no ASAAS ma
     const criadas = () => falso.n;
     const pedirUm = async (qtd) => (await gu(ADMIN, { op: 'pedir', itemId: it.id, quantidade: qtd })).json;
     const daQtd = (qtd) => G.meus.find((l) => l.pedido === n && l.descricao === 'Pix teste · Guia Pix' && l.quantidade === qtd);
+    assert.equal((await gu(ADMIN, { op: 'item', id: it.id, quantidade: 100 })).status, 200, 'estoque para os pedidos abaixo');
     falso.demorar = true;
     let antes = criadas();
     G = await pedirUm(4);
