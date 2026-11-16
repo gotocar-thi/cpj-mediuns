@@ -11,7 +11,7 @@ import { db } from './db.js';
 import { HttpError, validarId } from './http.js';
 import { pode } from '../../shared/permissoes.js';
 import { chavePessoa } from '../../shared/ervas.js';
-import { pixDaPessoa, gerarPix, pixAntesDePedir } from './asaas.js';
+import { pixDaPessoa, gerarPix, pixAntesDePedir, pixLigado, conferirReservas } from './asaas.js';
 
 const ehAdmin = (eu) => pode(eu, 'guias:gerenciar');
 // Cadastrada na corrente: a sessão está ligada a uma pessoa (acesso cpj, e-mail ou curimba ligados à pessoa).
@@ -45,6 +45,8 @@ const comPix = async (tela, eu) => ({ ...tela, ...(await pixDaPessoa(eu)) });
 
 export async function respostaGuias(eu) {
   await exigirAba(eu);
+  // Link que ficou sem resposta do ASAAS numa tentativa anterior: confere ao abrir a aba (sem travar a tela se falhar).
+  if (await pixLigado()) await conferirReservas(chavePessoa(eu)).catch((e) => console.error('[asaas] conferir ao abrir', e?.message || e));
   return comPix(paraTela(await db.rpc('guias_estado'), eu), eu);
 }
 

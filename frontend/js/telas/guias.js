@@ -37,8 +37,9 @@ export function limpar() {
 }
 
 const admin = () => pode('guias:gerenciar') && estado.guias?.admin;
-// Texto do botão: enquanto a ação dele está no servidor, mostra o "carregando".
-const rot = (op, normal, carregando) => (ui.ocupado === op ? carregando : normal);
+// Texto do botão: enquanto a ação dele está no servidor, mostra o "carregando" com a rodinha girando.
+const girando = (txt) => `<span class="gi-spin" aria-hidden="true"></span>${txt}`;
+const rot = (op, normal, carregando) => (ui.ocupado === op ? girando(carregando) : normal);
 // O que a corrente vê (o admin recebe tudo, inclusive o oculto): só grupos e itens visíveis.
 const gruposVisiveis = (G) => G.grupos.filter((g) => g.visivel).map((g) => ({ ...g, itens: g.itens.filter((i) => i.visivel) })).filter((g) => g.itens.length);
 // Item exclusivo da corrente: o servidor só manda para quem está cadastrado nela (e para quem administra).
@@ -106,7 +107,7 @@ function blocoPix(G) {
   if (!G.pix) return '';
   const M = G.meus || [];
   const pendentes = (G.cobrancas || []).filter((c) => c.status === 'pendente');
-  let h = pendentes.map((c) => `<div class="gi-pix">
+  let h = pendentes.map((c) => `<div class="gi-pix" id="gi-pix-${c.id}">
     <div class="gi-pix-h"><b>Pagamento · pedido nº ${c.pedido}</b><b>${R(c.valor)}</b></div>
     ${c.itens?.length ? `<span class="muted">${esc(c.itens.join(', '))}</span>` : ''}
     ${c.link ? `<a class="btn primary" href="${esc(c.link)}" target="_blank" rel="noopener">Pagar pelo link (Pix)</a>` : ''}
@@ -115,18 +116,20 @@ function blocoPix(G) {
       <div class="cp-bts"><button class="btn" data-act="guiapixcopiar" data-id="${c.id}"><span aria-hidden="true">📋</span> Copiar código Pix</button></div>` : ''}
     ${c.vencimento ? `<span class="muted">Vence em ${dia(c.vencimento + 'T12:00:00')}.</span>` : ''}
     <p class="muted" style="margin:0">Depois de pagar, a confirmação chega sozinha do banco (pode levar alguns minutos).</p>
-    <button class="btn small" data-act="guiapixatualizar">↻ Já paguei, atualizar</button></div>`).join('');
-  // O que ainda não está pago nem num link pendente, por pedido.
+    <button class="btn small" data-act="guiapixatualizar">${rot('atualizar', '↻ Já paguei, atualizar', 'Atualizando…')}</button></div>`).join('');
+  // O que ainda não está pago nem num link pendente, por pedido. Linha "pendente" sem link na tela é a reserva
+  // de uma tentativa em que o ASAAS demorou: o botão aparece e o servidor confere no ASAAS antes de gerar outro.
+  const comLink = new Set(pendentes.map((c) => c.pedido));
   const porPedido = new Map();
-  M.filter((l) => !l.pago && l.pix !== 'pendente').forEach((l) => porPedido.set(l.pedido, (porPedido.get(l.pedido) || 0) + l.valor * l.quantidade));
+  M.filter((l) => !l.pago && (l.pix !== 'pendente' || !comLink.has(l.pedido))).forEach((l) => porPedido.set(l.pedido, (porPedido.get(l.pedido) || 0) + l.valor * l.quantidade));
   [...porPedido].filter(([, v]) => v > 0).sort((a, b) => a[0] - b[0]).forEach(([n, v]) => {
     if (ui.pix === n) {
       h += `<form id="f-guia-pix" class="gi-pix" data-pedido="${n}" autocomplete="off">
         <div class="gi-pix-h"><b>Pagar pedido nº ${n}</b><b>${R(v)}</b></div>
         ${campoCpf('gp-cpf')}
-        <div class="row" style="justify-content:flex-end;gap:8px"><button type="button" class="btn" data-act="guiapixcancel">Voltar</button><button class="btn primary" type="submit" ${ui.gerando ? 'disabled' : ''}>${ui.gerando ? 'Gerando…' : 'Gerar link'}</button></div></form>`;
+        <div class="row" style="justify-content:flex-end;gap:8px"><button type="button" class="btn" data-act="guiapixcancel">Voltar</button><button class="btn primary" type="submit" ${ui.gerando ? 'disabled' : ''}>${ui.gerando ? girando('Gerando…') : 'Gerar link'}</button></div></form>`;
     } else {
-      h += `<button class="btn primary gi-pix-bt" data-act="guiapix" data-n="${n}" ${ui.gerando ? 'disabled' : ''}>${ui.gerando ? 'Gerando link…' : `Gerar link de pagamento · pedido nº ${n} · ${R(v)}`}</button>`;
+      h += `<button class="btn primary gi-pix-bt" data-act="guiapix" data-n="${n}" ${ui.gerando ? 'disabled' : ''}>${ui.gerando ? girando('Gerando link…') : `Gerar link de pagamento · pedido nº ${n} · ${R(v)}`}</button>`;
     }
   });
   return h;
@@ -161,7 +164,7 @@ function janelaPedir() {
     ${estado.guias.pix ? `<p class="muted" style="margin:0">Ao confirmar, geramos o link de pagamento Pix (ASAAS). O pedido aparece como pago quando o banco confirmar.</p>
       ${estado.guias.pixPrecisaCpf ? campoCpf('gp-cpf-pedir') : ''}` : ''}
     <p class="muted" style="margin:0">Para cancelar depois, só entrando em contato com o suporte.</p>
-    <div class="row" style="justify-content:flex-end;gap:8px"><button class="btn" data-act="guiapedircancel">Voltar</button><button class="btn primary" data-act="guiapedirok" ${ui.gerando ? 'disabled' : ''}>${ui.gerando ? (estado.guias.pix ? 'Gerando link…' : 'Enviando…') : 'Confirmar pedido'}</button></div>
+    <div class="row" style="justify-content:flex-end;gap:8px"><button class="btn" data-act="guiapedircancel">Voltar</button><button class="btn primary" data-act="guiapedirok" ${ui.gerando ? 'disabled' : ''}>${ui.gerando ? girando(estado.guias.pix ? 'Gerando link…' : 'Enviando…') : 'Confirmar pedido'}</button></div>
   </div></div>`;
 }
 
@@ -366,6 +369,15 @@ export function digitando(t) {
   if (ui.item && t.dataset.guia) ui.item[t.dataset.guia] = t.value;
 }
 
+// Depois de gerar: abre Seus pedidos e sobe (ou desce) a tela até o link mais novo, para a pessoa ver que ele já existe.
+function irParaLink() {
+  const novo = (estado.guias?.cobrancas || []).filter((c) => c.status === 'pendente')
+    .sort((a, b) => String(b.criadoEm).localeCompare(String(a.criadoEm)))[0];
+  if (!novo) return;
+  if (ui.minimizados.delete('meus')) avisar();
+  document.getElementById('gi-pix-' + novo.id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
 async function gerarPix(pedido, cpf) {
   if (ui.gerando) return;
   ui.gerando = true;
@@ -374,6 +386,7 @@ async function gerarPix(pedido, cpf) {
   ui.gerando = false;
   if (ok) { ui.pix = null; ui.cpf = ''; toast('Link de pagamento gerado.'); }
   avisar();
+  if (ok) irParaLink();
 }
 
 export async function enviar(form) {
@@ -423,7 +436,12 @@ export const cliques = {
     if (estado.guias.pixPrecisaCpf) { ui.pix = n; avisar(); } else gerarPix(n);
   },
   guiapixcancel() { ui.pix = null; avisar(); },
-  guiapixatualizar() { carregarGuias(); },
+  async guiapixatualizar() {
+    if (ui.ocupado) return;
+    ui.ocupado = 'atualizar';
+    avisar();
+    try { await carregarGuias(); } finally { ui.ocupado = null; avisar(); }
+  },
   guiapixcopiar(el) {
     const t = document.getElementById('gp-cc-' + el.dataset.id);
     const fb = () => { t.focus(); t.select(); toast('Código selecionado. Copie com o menu do aparelho.'); };
@@ -447,6 +465,7 @@ export const cliques = {
       toast(G.aviso || (G.pix ? 'Pedido feito. Pague pelo link em Seus pedidos.' : 'Pedido feito.'));
     }
     avisar();
+    if (ok && estado.guias.pix) irParaLink();
   },
   async guiacancelar(el) { if (await confirmado('gl:' + el.dataset.id, 'cancelar', { id: el.dataset.id })) toast('Pedido cancelado.'); },
   async guiaencerrar() { if (await confirmado('genc', 'encerrar')) toast('Pedido encerrado.'); },

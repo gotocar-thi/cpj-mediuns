@@ -2019,7 +2019,8 @@ test('iemanjá: transporte — admin cria, puxa a corrente, adiciona alguém, ma
 test('ASAAS: Pedir gera o link de pagamento; só o webhook conferido no ASAAS marca como pago', async () => {
   // API do ASAAS falsa: o servidor roda neste processo, então o fetch para o ASAAS é trocado aqui.
   const fetchReal = globalThis.fetch;
-  const falso = { status: 'PENDING', value: 0, n: 0, pedidos: [], valores: {}, falhar: false };
+  // demorar: cria a cobrança mas responde 503 (como sem resposta); listar: a busca por referência já a encontra.
+  const falso = { status: 'PENDING', value: 0, n: 0, pedidos: [], valores: {}, falhar: false, demorar: false, listar: true, refs: {} };
   globalThis.fetch = async (url, op = {}) => {
     const u = String(url);
     if (!u.startsWith('http://asaas.teste/v3')) return fetchReal(url, op);
@@ -2033,7 +2034,14 @@ test('ASAAS: Pedir gera o link de pagamento; só o webhook conferido no ASAAS ma
       falso.value = b.value;
       const id = 'pay_' + (++falso.n);
       falso.valores[id] = b.value;
-      return json(200, { id, dueDate: b.dueDate, invoiceUrl: 'https://sandbox.asaas.com/i/' + id });
+      const pg = { id, value: b.value, dueDate: b.dueDate, invoiceUrl: 'https://sandbox.asaas.com/i/' + id, externalReference: b.externalReference };
+      falso.refs[b.externalReference] = pg;
+      if (falso.demorar) return json(503, {});
+      return json(200, pg);
+    }
+    if (op.method === 'GET' && caminho.startsWith('/payments?externalReference=')) {
+      const pg = falso.refs[decodeURIComponent(caminho.split('=')[1])];
+      return json(200, { data: falso.listar && pg ? [pg] : [] });
     }
     if (op.method === 'GET' && caminho.endsWith('/pixQrCode')) return json(200, { payload: '00020126PIXTESTE', encodedImage: 'iVBORw0KGgo=' });
     if (op.method === 'GET' && caminho.startsWith('/payments/')) return json(200, { id: caminho.split('/')[2], status: falso.status, value: falso.valores[caminho.split('/')[2]] });
@@ -2144,6 +2152,57 @@ test('ASAAS: Pedir gera o link de pagamento; só o webhook conferido no ASAAS ma
     falso.falhar = false;
     G = (await gu(ADMIN, { op: 'pix', pedido: n })).json;
     assert.deepEqual([tres().pix, falso.value], ['pendente', 37.5]);
+
+    // ASAAS demora (cria a cobrança, mas a resposta não chega): o app acha a cobrança pela referência, sem gerar outra.
+    const criadas = () => falso.n;
+    const pedirUm = async (qtd) => (await gu(ADMIN, { op: 'pedir', itemId: it.id, quantidade: qtd })).json;
+    const daQtd = (qtd) => G.meus.find((l) => l.pedido === n && l.descricao === 'Pix teste · Guia Pix' && l.quantidade === qtd);
+    falso.demorar = true;
+    let antes = criadas();
+    G = await pedirUm(4);
+    assert.equal(G.aviso, undefined, 'achou na hora');
+    assert.equal(daQtd(4).pix, 'pendente');
+    assert.equal(criadas() - antes, 1, 'uma cobrança só no ASAAS');
+    // Ainda não aparece na busca: a reserva fica, e tentar de novo logo em seguida não gera outra.
+    falso.listar = false;
+    antes = criadas();
+    G = await pedirUm(5);
+    assert.match(G.aviso, /demorando/);
+    assert.equal(sql("select count(*) from asaas_cobrancas where status = 'criando'"), '1', 'a reserva não foi apagada');
+    assert.match((await gu(ADMIN, { op: 'pix', pedido: n })).json.erro, /ainda está sendo gerado/);
+    // Webhook de pagamento antes de o app gravar o link: acha a reserva pela referência.
+    const reserva = sql("select id from asaas_cobrancas where status = 'criando'");
+    const pgDemorado = falso.refs[reserva];
+    falso.status = 'RECEIVED';
+    assert.equal(await hook('token-teste', { id: 'evt_ref', event: 'PAYMENT_RECEIVED', payment: { id: pgDemorado.id, value: pgDemorado.value, externalReference: reserva } }), 200);
+    falso.status = 'PENDING';
+    G = (await api('GET', '/api/oferendas?lista=guias', ADMIN)).json;
+    assert.equal(daQtd(5).pago, true, 'pago pela referência');
+    assert.equal(criadas() - antes, 1);
+    // Reserva parada que o ASAAS não criou: depois de 20 s, a próxima tentativa desfaz e gera o link.
+    falso.listar = false;
+    G = await pedirUm(6);
+    assert.match(G.aviso, /demorando/);
+    const parada = sql("select id from asaas_cobrancas where status = 'criando'");
+    delete falso.refs[parada];
+    sql(`update asaas_cobrancas set criado_em = now() - interval '1 minute' where id = '${parada}'`);
+    falso.demorar = false;
+    falso.listar = true;
+    G = (await gu(ADMIN, { op: 'pix', pedido: n })).json;
+    assert.equal(daQtd(6).pix, 'pendente', 'gerou o link depois de conferir');
+    assert.equal(sql("select count(*) from asaas_cobrancas where status = 'criando'"), '0');
+    // Reserva parada que o ASAAS criou: ao abrir a aba, o link aparece (sem gerar outro).
+    falso.demorar = true;
+    falso.listar = false;
+    G = await pedirUm(7);
+    sql("update asaas_cobrancas set criado_em = now() - interval '1 minute' where status = 'criando'");
+    falso.demorar = false;
+    falso.listar = true;
+    antes = criadas();
+    G = (await api('GET', '/api/oferendas?lista=guias', ADMIN)).json;
+    assert.equal(daQtd(7).pix, 'pendente');
+    assert.ok(G.cobrancas.some((x) => x.status === 'pendente' && x.valor === 87.5), 'o link de 7 x 12,50 aparece');
+    assert.equal(criadas() - antes, 0, 'não criou outra cobrança');
 
     await as(ADMIN, { op: 'ativar', ativo: false });
     await gu(ADMIN, { op: 'excluirGrupo', id: g.id });

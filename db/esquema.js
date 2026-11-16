@@ -9,7 +9,7 @@
 // Estrutura: veja db/ESTRUTURA-ESQUEMA.md para o mapa de versões, domínios e
 // quais migrações foram testadas no Postgres.
 
-export const VERSAO = 117;  // v117: excluir tipo de evento (não os quatro de sempre, nem com eventos)
+export const VERSAO = 118;  // v118: link do ASAAS sem repetir quando ele demora (a reserva fica até conferir no ASAAS)
 
 import { PERFIS_PADRAO } from '../shared/permissoes.js';
 
@@ -4714,6 +4714,103 @@ export const MIGRACOES = [
      delete from eventos_tipos where chave = p ->> 'chave';
      if not found then raise exception 'Tipo não encontrado.'; end if;
      return eventos_tipos_estado();
+   end;
+   $$`,
+
+  // ================================================== v118: link do ASAAS sem repetir quando ele demora
+  // Antes, a reserva sem resposta do ASAAS era apagada (na hora ou depois de 10 min, por qualquer pessoa) e a pessoa
+  // gerava outro link, deixando a primeira cobrança solta no ASAAS. Agora a reserva fica até o app achar (ou não) a
+  // cobrança no ASAAS pela referência (api/_lib/asaas.js conferirReservas).
+  // p = { chave } — reservas da pessoa paradas há mais de 20 s (a função da Vercel não passa de 15 s).
+  `create or replace function asaas_reservas_paradas(p jsonb)
+   returns jsonb language sql stable as $$
+     select coalesce(jsonb_agg(jsonb_build_object('id', id, 'pedido', pedido) order by criado_em), '[]'::jsonb) from asaas_cobrancas
+      where chave = p ->> 'chave' and status = 'criando' and criado_em < now() - interval '20 seconds'
+   $$`,
+  `create or replace function asaas_cobranca_reservar(p jsonb)
+   returns jsonb language plpgsql as $$
+   declare
+     v_id uuid;
+     v_valor numeric(10, 2);
+   begin
+     if (select count(*) from asaas_cobrancas where chave = p ->> 'chave' and criado_em > now() - interval '1 hour') >= 20 then
+       raise exception 'Muitos links de pagamento gerados em pouco tempo. Tente de novo mais tarde.';
+     end if;
+     perform 1 from guias_linhas where pedido = (p ->> 'pedido')::int and chave = p ->> 'chave' for update;
+     select coalesce(sum(l.valor * l.quantidade), 0) into v_valor
+       from guias_linhas l left join asaas_cobrancas c on c.id = l.cobranca_id
+      where l.pedido = (p ->> 'pedido')::int and l.chave = p ->> 'chave' and l.pago_em is null
+        and (c.id is null or c.status in ('vencida', 'cancelada', 'estornada'));
+     if v_valor <= 0 then
+       if exists (select 1 from guias_linhas l join asaas_cobrancas c on c.id = l.cobranca_id
+                   where l.pedido = (p ->> 'pedido')::int and l.chave = p ->> 'chave' and l.pago_em is null and c.status = 'criando') then
+         raise exception 'O link deste pedido ainda está sendo gerado pelo ASAAS. Aguarde uns segundos e tente de novo.';
+       end if;
+       if exists (select 1 from guias_linhas l join asaas_cobrancas c on c.id = l.cobranca_id
+                   where l.pedido = (p ->> 'pedido')::int and l.chave = p ->> 'chave' and l.pago_em is null and c.status = 'pendente') then
+         raise exception 'O link de pagamento deste pedido já foi gerado. Use o que está na tela.';
+       end if;
+       raise exception 'Não há nada a pagar neste pedido.';
+     end if;
+     insert into asaas_cobrancas (chave, nome, pedido, valor) values (p ->> 'chave', p ->> 'nome', (p ->> 'pedido')::int, v_valor) returning id into v_id;
+     update guias_linhas l set cobranca_id = v_id
+      where l.pedido = (p ->> 'pedido')::int and l.chave = p ->> 'chave' and l.pago_em is null
+        and (l.cobranca_id is null or exists (select 1 from asaas_cobrancas c where c.id = l.cobranca_id and c.status in ('vencida', 'cancelada', 'estornada')));
+     return jsonb_build_object('id', v_id, 'valor', v_valor);
+   end;
+   $$`,
+  // O webhook também acha a reserva que ainda está 'criando' (pela referência), para um pagamento rápido não se perder.
+  `create or replace function asaas_evento_processar(p jsonb)
+   returns jsonb language plpgsql as $$
+   declare
+     v_c asaas_cobrancas%rowtype;
+     v_res text;
+     v_n int;
+   begin
+     insert into asaas_eventos (id, evento, dados) values (p ->> 'id', p ->> 'evento', coalesce(p -> 'dados', '{}'::jsonb))
+     on conflict (id) do nothing;
+     if not found then return jsonb_build_object('repetido', true); end if;
+     delete from asaas_eventos where recebido_em < now() - interval '180 days';
+     select * into v_c from asaas_cobrancas where asaas_id = p ->> 'paymentId' for update;
+     -- Reserva que ainda não recebeu a resposta do ASAAS (ele demorou): é a mesma cobrança, pela referência.
+     if not found and p ->> 'paymentId' is not null and coalesce(p ->> 'referencia', '') ~ '^[0-9a-f-]{36}$' then
+       update asaas_cobrancas set status = 'pendente', asaas_id = p ->> 'paymentId', link = p -> 'dados' -> 'payment' ->> 'invoiceUrl',
+         vencimento = nullif(p -> 'dados' -> 'payment' ->> 'dueDate', '')::date
+        where id = (p ->> 'referencia')::uuid and status = 'criando';
+       select * into v_c from asaas_cobrancas where asaas_id = p ->> 'paymentId' for update;
+     end if;
+     if not found then
+       v_res := 'ignorado (cobrança que não é do app)';
+     elsif p ->> 'evento' in ('PAYMENT_RECEIVED', 'PAYMENT_CONFIRMED') then
+       if p -> 'conferido' is null then
+         v_res := 'não conferido (sem ASAAS_API_KEY)';
+       elsif coalesce(p -> 'conferido' ->> 'status', '') not in ('RECEIVED', 'CONFIRMED', 'RECEIVED_IN_CASH') then
+         v_res := 'não liberado: no ASAAS está ' || coalesce(p -> 'conferido' ->> 'status', '?');
+       elsif (p -> 'conferido' ->> 'valor')::numeric is distinct from v_c.valor then
+         v_res := 'não liberado: valor diferente (' || coalesce(p -> 'conferido' ->> 'valor', '?') || ')';
+       elsif v_c.status = 'paga' then
+         v_res := 'já estava paga';
+       else
+         update asaas_cobrancas set status = 'paga', pago_em = now(), pix_payload = null, pix_imagem = null where id = v_c.id;
+         update guias_linhas set pago_em = now() where cobranca_id = v_c.id and pago_em is null;
+         get diagnostics v_n = row_count;
+         v_res := case when v_n > 0 then 'paga' else 'paga, mas os itens não estão mais nesta cobrança: conferir' end;
+       end if;
+     elsif p ->> 'evento' = 'PAYMENT_OVERDUE' then
+       update asaas_cobrancas set status = 'vencida', pix_payload = null, pix_imagem = null where id = v_c.id and status = 'pendente';
+       v_res := 'vencida';
+     elsif p ->> 'evento' = 'PAYMENT_DELETED' then
+       update asaas_cobrancas set status = 'cancelada', pix_payload = null, pix_imagem = null where id = v_c.id and status in ('pendente', 'vencida');
+       v_res := 'cancelada';
+     elsif p ->> 'evento' in ('PAYMENT_REFUNDED', 'PAYMENT_CHARGEBACK_REQUESTED') then
+       update asaas_cobrancas set status = 'estornada' where id = v_c.id;
+       update guias_linhas set pago_em = null where cobranca_id = v_c.id;
+       v_res := 'estornada';
+     else
+       v_res := 'só registrado';
+     end if;
+     update asaas_eventos set cobranca_id = v_c.id, resultado = v_res where id = p ->> 'id';
+     return jsonb_build_object('ok', true, 'resultado', v_res);
    end;
    $$`,
 ];

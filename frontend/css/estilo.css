@@ -1793,3 +1793,7 @@ button.iem-tot-n{cursor:pointer}
 .gi-ocupado{cursor:progress}
 .gi-ocupado :is(button,input,select,textarea,label,a.btn){pointer-events:none}
 .gi-ocupado .btn{opacity:.7}
+.gi-spin{display:inline-block;width:1em;height:1em;margin-right:6px;vertical-align:-.15em;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:gi-gira .7s linear infinite}
+@keyframes gi-gira{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion: reduce){.gi-spin{animation-duration:2s}}
+.gi-pix{scroll-margin-top:72px}

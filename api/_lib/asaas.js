@@ -86,23 +86,63 @@ export async function gerarPix(eu, b) {
     cliente = (await asaas('POST', '/customers', { name: eu.nome, cpfCnpj: cpf, externalReference: chave, notificationDisabled: true })).id;
     await db.rpc('asaas_cliente_salvar', { chave, clienteId: cliente });
   }
+  // Reserva que ficou parada de uma tentativa anterior: resolve antes, para não gerar um segundo link.
+  // Se ela era deste pedido e estava no ASAAS, o link já existe: pronto.
+  if ((await conferirReservas(chave, true)).includes(pedido)) return;
   // Reserva as linhas não pagas da pessoa neste pedido (o valor sai do banco, nunca do navegador).
   const c = await db.rpc('asaas_cobranca_reservar', { chave, nome: eu.nome, pedido });
+  let pg;
   try {
-    const pg = await asaas('POST', '/payments', {
+    pg = await asaas('POST', '/payments', {
       customer: cliente, billingType: 'PIX', value: Number(c.valor), dueDate: amanhaBR(),
       description: `CPJ · Compras · pedido nº ${pedido}`, externalReference: c.id,
     });
-    let qr = null;
-    try { qr = await asaas('GET', `/payments/${encodeURIComponent(pg.id)}/pixQrCode`); } catch { /* o QR pode vir depois: a tela mostra o link */ }
-    await db.rpc('asaas_cobranca_criada', {
-      id: c.id, asaasId: pg.id, link: pg.invoiceUrl || null,
-      payload: qr?.payload || null, imagem: qr?.encodedImage || null, vencimento: pg.dueDate || null,
-    });
   } catch (e) {
+    // Sem resposta (ou erro 5xx): o ASAAS pode ter criado a cobrança mesmo assim. Apagar a reserva deixaria a pessoa
+    // gerar um segundo link e a primeira cobrança ficaria solta no ASAAS. Procura agora; se ainda não está lá,
+    // a reserva fica e é conferida de novo na próxima tentativa ou abertura da aba.
+    if (e instanceof HttpError && e.status === 502) {
+      const achada = await buscarPelaReserva(c.id).catch(() => null);
+      if (achada) { await gravarCobranca(c.id, achada); return; }
+      throw new HttpError(502, 'O ASAAS está demorando para responder. Aguarde uns segundos e toque em Gerar link de novo (não vai sair um link repetido).');
+    }
     await db.rpc('asaas_cobranca_desfazer', { id: c.id }).catch(() => {});
     throw e;
   }
+  await gravarCobranca(c.id, pg);
+}
+
+async function gravarCobranca(id, pg) {
+  let qr = null;
+  try { qr = await asaas('GET', `/payments/${encodeURIComponent(pg.id)}/pixQrCode`, null, 4000); } catch { /* o QR pode vir depois: a tela mostra o link */ }
+  await db.rpc('asaas_cobranca_criada', {
+    id, asaasId: pg.id, link: pg.invoiceUrl || null,
+    payload: qr?.payload || null, imagem: qr?.encodedImage || null, vencimento: pg.dueDate || null,
+  });
+}
+
+// A cobrança que o ASAAS criou para a reserva (externalReference = id da reserva), ou null.
+async function buscarPelaReserva(id) {
+  const r = await asaas('GET', `/payments?externalReference=${encodeURIComponent(id)}`, null, 5000);
+  return (r?.data || []).find((x) => x.externalReference === id && !x.deleted) || null;
+}
+
+// Reservas 'criando' da pessoa com mais de 20 s (nenhum pedido em andamento passa de 15 s, o limite da função):
+// achou no ASAAS, grava o link; não achou, desfaz (as linhas ficam livres para gerar o link).
+// estrito: com o ASAAS fora, recusa (gerar agora poderia repetir o link); sem estrito (ao abrir a aba), só deixa para depois.
+// Devolve os pedidos cujo link foi achado no ASAAS.
+export async function conferirReservas(chave, estrito = false) {
+  const achados = [];
+  for (const { id, pedido } of await db.rpc('asaas_reservas_paradas', { chave })) {
+    let achada;
+    try { achada = await buscarPelaReserva(id); } catch (e) {
+      if (estrito) throw new HttpError(502, 'O ASAAS não respondeu para conferir o link anterior. Tente de novo em instantes.');
+      console.error('[asaas] conferir reserva', id, e?.message || e);
+      continue;
+    }
+    if (achada) { await gravarCobranca(id, achada); achados.push(pedido); } else await db.rpc('asaas_cobranca_desfazer', { id });
+  }
+  return achados;
 }
 
 // ---------- webhook ----------
@@ -116,7 +156,8 @@ export async function webhookAsaas(req) {
   const evento = typeof b.event === 'string' ? b.event.trim() : '';
   if (!id || !evento || id.length > 100 || evento.length > 100) throw new HttpError(400, 'Evento inválido.');
   const paymentId = typeof b.payment?.id === 'string' ? b.payment.id : null;
-  const p = { id, evento, dados: b, paymentId };
+  const referencia = typeof b.payment?.externalReference === 'string' ? b.payment.externalReference : null;
+  const p = { id, evento, dados: b, paymentId, referencia };
   // Pagamento: confere direto no ASAAS antes de liberar. Se o ASAAS não responder, devolve erro
   // e o evento não é gravado, para o ASAAS reenviar depois.
   if (paymentId && (evento === 'PAYMENT_RECEIVED' || evento === 'PAYMENT_CONFIRMED') && process.env.ASAAS_API_KEY) {
