@@ -240,8 +240,13 @@ async function cliqueConta(e) {
     const s2 = prompt('Digite a senha de novo, para confirmar:');
     if (s2 === null) return;
     if (s1.trim() !== s2.trim()) { toast('As senhas não conferem. Tente de novo.'); return; }
+    // Para confirmar que é a própria pessoa: o celular digitado tem de bater com o do cadastro (o servidor confere).
+    const cel = prompt('Para confirmar que é você, digite o seu celular cadastrado, com DDD:');
+    if (cel === null) return;
+    const d = cel.replace(/\D/g, '');
+    if (d.length < 10 || d.length > 11) { toast('Celular inválido: coloque o DDD e o número.'); return; }
     try {
-      await criarSenhaCorrente(s1.trim());
+      await criarSenhaCorrente(s1.trim(), d);
       estado.me = { ...estado.me, temSenha: true };
       render();
       toast('Senha criada. Ela será pedida quando você entrar.');

@@ -18,7 +18,7 @@
 import { HttpError } from './http.js';
 import { db } from './db.js';
 import { chamarAsaas } from './asaas.js';
-import { decifrar } from './cpf.js';
+import { decifrar, hashCpf } from './cpf.js';
 import { pode } from '../../shared/permissoes.js';
 
 const CONTAS = { A: 'ASAAS', B: 'ASAAS2' };
@@ -49,12 +49,20 @@ async function buscarNoAsaas(k, porCpf) {
   }
   return cobrancas.map((c) => {
     const cli = clientes.get(c.customer) || {};
-    // Cliente que o app criou na conta A: a referência é a chave da pessoa ('p:<id>').
-    const daChave = /^p:[0-9a-f-]{36}$/.test(cli.externalReference || '') ? cli.externalReference.slice(2) : null;
+    // Cliente que o app criou na conta A: a referência é a chave da pessoa ('p:<id>') ou do aluno ('a:<id>').
+    const ref = String(cli.externalReference || '');
+    const daChave = /^p:[0-9a-f-]{36}$/.test(ref) ? ref.slice(2) : null;
+    const doAluno = /^a:[0-9a-f-]{36}$/.test(ref) ? ref.slice(2) : '';
+    // Hash do CPF do cliente: liga ao aluno pelo CPF dele (alunos_cpf), sem decifrar nada no banco.
+    const cpf = soNumeros(cli.cpfCnpj);
+    let cpfHash = '';
+    if (cpf.length === 11) { try { cpfHash = hashCpf(cpf); } catch { /* sem CPF_CHAVE: não liga por CPF */ } }
     return {
       id: String(c.id),
       referencia: String(c.externalReference || ''),
-      pessoaId: daChave || porCpf.get(soNumeros(cli.cpfCnpj)) || null,
+      alunoId: doAluno,
+      cpfHash,
+      pessoaId: daChave || porCpf.get(cpf) || null,
       nome: String(cli.name || ''),
       telefone: soNumeros(cli.mobilePhone || cli.phone),
       valor: Number(c.value) || 0,

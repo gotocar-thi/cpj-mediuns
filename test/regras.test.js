@@ -390,16 +390,17 @@ test('bloco Eventos da aba Gira: gira dos próximos 30 dias, evento e aviso todo
   assert.deepEqual(eventosDoTopo(evs, hoje).map((e) => e.nome), ['Hoje', 'Amaci da semana', 'Gira do mês', 'Gira daqui a 30', 'Evento longe', 'Aviso longe']);
 });
 
-test('perfil: informações (nascimento e telefones validados)', async () => {
+test('perfil: informações (nascimento, telefones e e-mail validados)', async () => {
   const { normalizarPerfil, lerNascimento, telefoneBR } = await import('../shared/perfil.js');
   assert.equal(lerNascimento('31/10/1990'), '1990-10-31');
   assert.equal(lerNascimento('31/02/1990'), '');
   assert.equal(lerNascimento('31/10/2999'), '', 'no futuro não');
   assert.equal(telefoneBR('11987654321'), '(11) 98765-4321');
   assert.equal(telefoneBR('1134567890'), '(11) 3456-7890');
-  const p = normalizarPerfil({ info: { nome: '  Ana   Maria ', nascimento: '1990-10-31', celular: '(11) 98765-4321', contatoNome: 'Mãe', contatoTelefone: '123', extra: 'x' } });
-  assert.deepEqual(p.info, { nome: 'Ana Maria', nascimento: '1990-10-31', celular: '11987654321', contatoNome: 'Mãe', contatoTelefone: '' });
-  assert.deepEqual(normalizarPerfil(null).info, { nome: '', nascimento: '', celular: '', contatoNome: '', contatoTelefone: '' });
+  const p = normalizarPerfil({ info: { nome: '  Ana   Maria ', nascimento: '1990-10-31', celular: '(11) 98765-4321', email: ' Ana@Exemplo.COM ', contatoNome: 'Mãe', contatoTelefone: '123', extra: 'x' } });
+  assert.deepEqual(p.info, { nome: 'Ana Maria', nascimento: '1990-10-31', celular: '11987654321', email: 'ana@exemplo.com', contatoNome: 'Mãe', contatoTelefone: '' });
+  assert.equal(normalizarPerfil({ info: { email: 'sem-arroba' } }).info.email, '', 'e-mail inválido não fica');
+  assert.deepEqual(normalizarPerfil(null).info, { nome: '', nascimento: '', celular: '', email: '', contatoNome: '', contatoTelefone: '' });
 });
 
 test('função do dia: Extra como Passe (pas) e Passe como Cambone (na)', async () => {

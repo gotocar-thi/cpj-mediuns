@@ -4,7 +4,7 @@
 //     orixas: { frente: { nome, oferenda }, ancestral: {...}, adjunto: {...} },
 //     guias:  { chefe: { linha, oferenda }, frente: { linha, oferenda } },
 //     outros: { 'preto-velho': 'Pai Joaquim', ... },  // nome do guia em cada linha
-//     info:   { nome, nascimento: 'AAAA-MM-DD', celular, contatoNome, contatoTelefone }  // telefones só com os números
+//     info:   { nome (nome completo), nascimento: 'AAAA-MM-DD', celular, email, contatoNome, contatoTelefone }  // telefones só com os números
 //   }
 
 import { ORIXAS, LINHAS, CURIMBA } from './regras.js';
@@ -54,6 +54,11 @@ export function cpfValido(v) {
 }
 // '52998224725' → '529.982.247-25'; mascarado: só os 2 últimos números aparecem.
 export const cpfBR = (d) => String(d || '').replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, '$1.$2.$3-$4');
+// E-mail em minúsculas, ou '' se não parecer um e-mail.
+export const emailValido = (v) => {
+  const e = String(v ?? '').trim().toLowerCase();
+  return e.length <= 120 && /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(e) ? e : '';
+};
 export const cpfMascarado = (d) => (d ? '•••.•••.•••-' + String(d).slice(-2) : '');
 export function telefoneBR(n) {
   const d = soNumeros(n);
@@ -139,6 +144,7 @@ export function normalizarPerfil(p) {
     nome: txt(i.nome, 80),
     nascimento: /^\d{4}-\d{2}-\d{2}$/.test(i.nascimento || '') ? lerNascimento(nascimentoBR(i.nascimento)) : '',
     celular: tel(i.celular),
+    email: emailValido(i.email),
     contatoNome: txt(i.contatoNome, 80),
     contatoTelefone: tel(i.contatoTelefone),
   };

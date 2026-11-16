@@ -9,7 +9,7 @@
 // Estrutura: veja db/ESTRUTURA-ESQUEMA.md para o mapa de versões, domínios e
 // quais migrações foram testadas no Postgres.
 
-export const VERSAO = 122;  // v122: aba Compras mais leve (foto por link próprio, abertura numa ida só ao banco)
+export const VERSAO = 123;  // v123: dados dos alunos (CPF, nome completo, e-mail, celular) e pendências
 
 import { PERFIS_PADRAO } from '../shared/permissoes.js';
 
@@ -5085,5 +5085,110 @@ export const MIGRACOES = [
        'paradas', exists (select 1 from asaas_cobrancas where chave = p ->> 'chave' and status = 'criando' and criado_em < now() - interval '20 seconds'),
        'estado', guias_estado(),
        'minhas', asaas_minhas(p))
+   $$`,
+
+  // ================================================== v123: dados dos alunos (CPF, nome completo, e-mail, celular) e pendências
+  // Nome completo, celular e e-mail ficam no perfil do aluno (info.nome / info.celular / info.email, os mesmos que ele
+  // preenche no Perfil); o CPF fica cifrado em alunos_cpf, como o da corrente, com um hash (HMAC da CPF_CHAVE) para
+  // ligar o aluno às cobranças vencidas do ASAAS sem decifrar: o atraso guarda o hash do CPF do cliente.
+  `create table if not exists alunos_cpf (
+     aluno_id       uuid primary key references alunos (id) on delete cascade,
+     cifrado        text not null,
+     hash           text not null,
+     atualizado_em  timestamptz not null default now(),
+     por            text not null default ''
+   )`,
+  `create index if not exists alunos_cpf_hash on alunos_cpf (hash)`,
+  `alter table asaas2_atrasos add column if not exists cpf_hash text not null default ''`,
+  `alter table asaas2_atrasos add column if not exists aluno_id uuid references alunos (id) on delete set null`,
+  // p = { id, nomeCompleto?, celular?, email? } — só muda o que vier.
+  `create or replace function aluno_dados_salvar(p jsonb)
+   returns jsonb language plpgsql as $$
+   begin
+     update alunos set
+       perfil = coalesce(perfil, '{}'::jsonb) || jsonb_build_object('info', coalesce(perfil -> 'info', '{}'::jsonb)
+                 || case when p ? 'nomeCompleto' then jsonb_build_object('nome', p ->> 'nomeCompleto') else '{}'::jsonb end
+                 || case when p ? 'celular' then jsonb_build_object('celular', p ->> 'celular') else '{}'::jsonb end
+                 || case when p ? 'email' then jsonb_build_object('email', p ->> 'email') else '{}'::jsonb end)
+     where id = (p ->> 'id')::uuid and saida is null;
+     if not found then raise exception 'Aluno não encontrado.'; end if;
+     return jsonb_build_object('ok', true);
+   end;
+   $$`,
+  // p = { id, cifrado, hash, por } — cifrado '' apaga.
+  `create or replace function aluno_cpf_salvar(p jsonb)
+   returns jsonb language plpgsql as $$
+   begin
+     if coalesce(p ->> 'cifrado', '') = '' then
+       delete from alunos_cpf where aluno_id = (p ->> 'id')::uuid;
+     else
+       insert into alunos_cpf (aluno_id, cifrado, hash, por) values ((p ->> 'id')::uuid, p ->> 'cifrado', p ->> 'hash', coalesce(p ->> 'por', ''))
+       on conflict (aluno_id) do update set cifrado = excluded.cifrado, hash = excluded.hash, por = excluded.por, atualizado_em = now();
+     end if;
+     return jsonb_build_object('ok', true);
+   end;
+   $$`,
+  `create or replace function aluno_cpf_ler(p jsonb)
+   returns jsonb language sql stable as $$
+     select to_jsonb(cifrado) from alunos_cpf where aluno_id = (p ->> 'id')::uuid
+   $$`,
+  // Cobranças vencidas que contam (a conta A sem os links trocados, pagos ou cancelados), com a pessoa ou o aluno ligado:
+  // pessoa pelo CPF/cliente do app; aluno pelo cliente do app (a:<id>) ou pelo hash do CPF.
+  `create or replace function atrasos_validos()
+   returns table (conta text, id text, pessoa_id uuid, aluno_id uuid, nome text, telefone text, valor numeric, vencimento date, descricao text, link text)
+   language sql stable as $$
+     select a.conta, a.id, a.pessoa_id,
+            coalesce(a.aluno_id, (select c.aluno_id from alunos_cpf c where a.cpf_hash <> '' and c.hash = a.cpf_hash limit 1)),
+            a.nome, a.telefone, a.valor, a.vencimento, a.descricao, a.link
+       from asaas2_atrasos a
+      where not (a.conta = 'A' and exists (select 1 from asaas_cobrancas c where c.id::text = a.referencia)
+                 and not exists (select 1 from guias_linhas l where l.cobranca_id::text = a.referencia and l.pago_em is null))
+   $$`,
+  `create or replace function atrasos_salvar(p jsonb)
+   returns jsonb language plpgsql as $$
+   declare v_conta text := coalesce(nullif(p ->> 'conta', ''), 'B');
+   begin
+     delete from asaas2_atrasos where conta = v_conta;
+     insert into asaas2_atrasos (conta, id, pessoa_id, aluno_id, nome, telefone, valor, vencimento, descricao, link, referencia, cpf_hash)
+     select v_conta, x ->> 'id', nullif(x ->> 'pessoaId', '')::uuid,
+            (select al.id from alunos al where al.id::text = nullif(x ->> 'alunoId', '')),
+            coalesce(x ->> 'nome', ''), coalesce(x ->> 'telefone', ''),
+            coalesce((x ->> 'valor')::numeric, 0), nullif(x ->> 'vencimento', '')::date, coalesce(x ->> 'descricao', ''), coalesce(x ->> 'link', ''),
+            coalesce(x ->> 'referencia', ''), coalesce(x ->> 'cpfHash', '')
+       from jsonb_array_elements(coalesce(p -> 'itens', '[]'::jsonb)) x
+     on conflict (conta, id) do nothing;
+     insert into sistema (chave, valor) values ('asaas2_atualizado', now()::text)
+     on conflict (chave) do update set valor = excluded.valor;
+     return jsonb_build_object('ok', true);
+   end;
+   $$`,
+  // O bloco de atrasos passa a dar nome também ao aluno ligado (antes aparecia "sem ligação").
+  `create or replace function atrasos_ler(p jsonb default '{}'::jsonb)
+   returns jsonb language sql stable as $$
+     select jsonb_build_object(
+       'atualizadoEm', (select to_char(valor::timestamptz at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') from sistema where chave = 'asaas2_atualizado'),
+       'itens', coalesce((select jsonb_agg(jsonb_build_object(
+           'id', a.id, 'conta', a.conta, 'pessoaId', a.pessoa_id, 'alunoId', al.id, 'ligado', pe.id is not null or al.id is not null,
+           'nome', coalesce(pe.nome, al.nome, a.nome),
+           'telefone', coalesce(nullif(pe.perfil -> 'info' ->> 'celular', ''), nullif(al.perfil -> 'info' ->> 'celular', ''), a.telefone),
+           'valor', a.valor::float8, 'vencimento', a.vencimento, 'descricao', a.descricao, 'link', a.link)
+           order by a.vencimento nulls last, lower(coalesce(pe.nome, al.nome, a.nome)))
+         from atrasos_validos() a
+         left join pessoas pe on pe.id = a.pessoa_id and pe.saida is null
+         left join alunos al on al.id = a.aluno_id and al.saida is null and pe.id is null), '[]'::jsonb))
+   $$`,
+  // Para quem edita Alunos: os dados de cada aluno (o CPF cifrado vai para o servidor mascarar) e as pendências.
+  `create or replace function alunos_extras(p jsonb default '{}'::jsonb)
+   returns jsonb language sql stable as $$
+     select jsonb_build_object(
+       'dados', coalesce((select jsonb_agg(jsonb_build_object('id', al.id, 'nomeCompleto', coalesce(al.perfil -> 'info' ->> 'nome', ''),
+                   'celular', coalesce(al.perfil -> 'info' ->> 'celular', ''), 'email', coalesce(al.perfil -> 'info' ->> 'email', ''), 'cifrado', c.cifrado))
+                 from alunos al left join alunos_cpf c on c.aluno_id = al.id where al.saida is null), '[]'::jsonb),
+       'pendencias', coalesce((select jsonb_agg(jsonb_build_object('alunoId', x.aluno_id, 'itens', x.itens))
+                 from (select a.aluno_id, jsonb_agg(jsonb_build_object('conta', a.conta, 'valor', a.valor::float8, 'vencimento', a.vencimento,
+                         'descricao', a.descricao, 'link', a.link) order by a.vencimento nulls last) as itens
+                         from atrasos_validos() a join alunos al on al.id = a.aluno_id and al.saida is null
+                        where a.pessoa_id is null group by a.aluno_id) x), '[]'::jsonb),
+       'atualizadoEm', (select to_char(valor::timestamptz at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') from sistema where chave = 'asaas2_atualizado'))
    $$`,
 ];

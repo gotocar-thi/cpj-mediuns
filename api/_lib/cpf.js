@@ -6,7 +6,7 @@
 //   POST /api/auth/cpf { pessoaId?, cpf }  grava (cpf '' apaga) → como o GET, sem o número
 // Só a própria pessoa e o admin root; quem é de grupo (alunos, curimba) não tem CPF.
 
-import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto';
+import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes } from 'node:crypto';
 import { HttpError, corpo, validarId } from './http.js';
 import { db } from './db.js';
 import { pode } from '../../shared/permissoes.js';
@@ -19,6 +19,9 @@ function chave() {
   if (k.length < CHAVE_MINIMA) throw new HttpError(503, 'O CPF ainda não está configurado no servidor.');
   return createHash('sha256').update(k).digest();
 }
+
+// Hash do CPF (HMAC com a mesma chave): liga o aluno às cobranças do ASAAS sem decifrar nada no banco.
+export const hashCpf = (cpf) => createHmac('sha256', chave()).update(String(cpf)).digest('hex');
 
 // 'v1.<iv>.<tag>.<cifrado>' em base64url.
 export function cifrar(cpf, pessoaId) {

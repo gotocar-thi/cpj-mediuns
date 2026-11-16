@@ -650,10 +650,15 @@ export async function carregarAlunos() {
   try { estado.alunos = await api('GET', '/pessoas?lista=alunos'); } catch (e) { toast(e.message); estado.alunos = estado.alunos || { turmas: [], alunos: [] }; }
   avisar();
 }
+// CPF inteiro de um aluno (Mostrar, para quem edita Alunos).
+export async function revelarCpfAluno(id) {
+  try { return (await api('POST', '/pessoas', { acao: 'alunoCpf', id })).cpf; } catch (e) { toast(e.message); return ''; }
+}
 export async function acaoAlunos(acao, dados = {}) {
   try {
     const r = await api('POST', '/pessoas', { acao, ...dados });
-    estado.alunos = { turmas: r.turmas, alunos: r.alunos };
+    // Quem edita Alunos recebe também os dados (CPF mascarado, nome completo, e-mail, celular) e as pendências.
+    estado.alunos = { turmas: r.turmas, alunos: r.alunos, dados: r.dados, pendencias: r.pendencias, pendenciasEm: r.pendenciasEm };
     if (Array.isArray(r.pessoas)) estado.pessoas = r.pessoas;
     avisar();
     return r;

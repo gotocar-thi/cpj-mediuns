@@ -22,8 +22,16 @@ const daCorrente = (eu) => !!eu.pessoaId;
 const podeVerItem = (eu, i) => i.visivel && (!i.cpj || daCorrente(eu));
 
 // Sem a aba no perfil, ou com a aba desligada e sem administrar: não entra.
+// Como no Perfil: quem entra pela corrente (acesso cpj) ou como aluno só usa a aba depois de criar a senha
+// (sem ela, o login é só pelo nome e qualquer um pediria em nome de outra pessoa).
+export const semSenha = (eu) => (eu.papel === 'corrente' || eu.grupo === 'alunos') && !eu.temSenha;
+function exigirSenha(eu) {
+  if (semSenha(eu) && !ehAdmin(eu)) throw new HttpError(403, 'Crie a sua senha para usar a aba Compras.');
+}
+
 async function exigirAba(eu) {
   if (!pode(eu, 'guias:pedir') && !ehAdmin(eu)) throw new HttpError(403, 'Seu perfil não tem a aba Compras.');
+  exigirSenha(eu);
   if (!ehAdmin(eu) && !(await db.rpc('guias_publicada'))) throw new HttpError(403, 'A aba Compras não está disponível no momento.');
 }
 
@@ -48,6 +56,7 @@ const comPix = async (tela, eu) => ({ ...tela, ...(await pixDaPessoa(eu)) });
 // ficou sem resposta do ASAAS numa tentativa anterior, para conferir (sem travar a tela se falhar).
 export async function respostaGuias(eu) {
   if (!pode(eu, 'guias:pedir') && !ehAdmin(eu)) throw new HttpError(403, 'Seu perfil não tem a aba Compras.');
+  exigirSenha(eu);
   const chave = chavePessoa(eu);
   let t = await db.rpc('guias_tela', { chave });
   if (!ehAdmin(eu) && !t.publicada) throw new HttpError(403, 'A aba Compras não está disponível no momento.');

@@ -57,9 +57,10 @@ export async function trocarSenha(atual, nova) {
   guardar(r.token);
 }
 
-// Acesso da corrente: cria a própria senha (PIN). A sessão é renovada (as outras são encerradas).
-export async function criarSenhaCorrente(senha) {
-  const r = await chamar('POST', 'criarSenha', { senha }, true);
+// Acesso da corrente (ou aluno): cria a própria senha (PIN); o celular digitado tem de bater com o do cadastro.
+// A sessão é renovada (as outras são encerradas).
+export async function criarSenhaCorrente(senha, celular) {
+  const r = await chamar('POST', 'criarSenha', { senha, celular }, true);
   guardar(r.token);
 }
 

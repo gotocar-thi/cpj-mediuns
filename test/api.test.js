@@ -28,7 +28,13 @@ async function entrarComSenha(nome, pin = '2468') {
   let r = (await api('POST', '/api/auth/entrar', null, { email: 'cpj', senha: nome })).json;
   if (r?.precisaSenha) r = (await api('POST', '/api/auth/entrar', null, { email: 'cpj', senha: nome, pin })).json;
   if (!r?.token) return null;
-  const c = await api('POST', '/api/auth/criarSenha', r.token, { senha: pin });
+  // Criar a senha pede o celular do cadastro: o admin cadastra antes (se a pessoa ainda não tiver).
+  const pessoaId = (await api('GET', '/api/auth/me', r.token)).json.pessoaId;
+  if (pessoaId && !sql(`select coalesce(perfil -> 'info' ->> 'celular', '') from pessoas where id = '${pessoaId}'`)) {
+    await api('POST', '/api/auth/perfil', ADMIN, { pessoaId, info: { celular: '11987654321' } });
+  }
+  const cel = pessoaId ? sql(`select coalesce(perfil -> 'info' ->> 'celular', '') from pessoas where id = '${pessoaId}'`) : '';
+  const c = await api('POST', '/api/auth/criarSenha', r.token, { senha: pin, celular: cel || '11987654321' });
   return c.status === 200 ? c.json.token : r.token;
 }
 
@@ -677,11 +683,18 @@ test('acessos alunos e curimba: nome do cadastro, dados restritos e eventos sem 
   assert.equal((await api('GET', '/api/oferendas?lista=guias', loginAluna.json.token)).status, 403);
   assert.equal((await api('GET', '/api/oferendas?lista=guias', loginCurimba.json.token)).status, 403);
   await api('POST', '/api/oferendas', ADMIN, { acao: 'guias', op: 'publicar', publicada: true });
-  const comprasAluna = await api('GET', '/api/oferendas?lista=guias', loginAluna.json.token);
+  // Como no Perfil: sem senha, o aluno não usa a aba Compras; depois de criar a senha, usa.
+  const semSenhaCompras = await api('GET', '/api/oferendas?lista=guias', loginAluna.json.token);
+  assert.equal(semSenhaCompras.status, 403);
+  assert.match(semSenhaCompras.json.erro, /senha/);
+  assert.equal((await api('POST', '/api/oferendas', loginAluna.json.token, { acao: 'guias', op: 'pedir', itemId: '11111111-1111-1111-1111-111111111111', quantidade: 1 })).status, 403, 'nem pede');
+  await api('POST', '/api/pessoas', ADMIN, { acao: 'aluno', id: aluna.id, celular: '11987654321' });
+  const tokAluna = (await api('POST', '/api/auth/criarSenha', loginAluna.json.token, { senha: '1357', celular: '(11) 98765-4321' })).json.token;
+  const comprasAluna = await api('GET', '/api/oferendas?lista=guias', tokAluna);
   assert.equal(comprasAluna.status, 200, JSON.stringify(comprasAluna.json));
   assert.equal(comprasAluna.json.admin, false);
   assert.equal((await api('GET', '/api/oferendas?lista=guias', loginCurimba.json.token)).status, 200);
-  assert.equal((await api('POST', '/api/oferendas', loginAluna.json.token, { acao: 'guias', op: 'encerrar' })).status, 403, 'aluno não administra');
+  assert.equal((await api('POST', '/api/oferendas', tokAluna, { acao: 'guias', op: 'encerrar' })).status, 403, 'aluno não administra');
   await api('POST', '/api/oferendas', ADMIN, { acao: 'guias', op: 'publicar', publicada: false });
 });
 
@@ -1215,12 +1228,19 @@ test('senha da corrente (PIN): cria uma vez, o login passa a pedir, o root troca
   assert.equal((await api('POST', '/api/auth/criarSenha', t1, { senha: '12' })).status, 400);
   assert.equal((await api('POST', '/api/auth/criarSenha', t1, { senha: 'abcd' })).status, 400);
   assert.equal((await api('POST', '/api/auth/criarSenha', ADMIN, { senha: '1234' })).status, 400, 'só o acesso da corrente');
-  const c = await api('POST', '/api/auth/criarSenha', t1, { senha: '4321' });
+  // Para criar a senha, o celular digitado tem de bater com o do cadastro (Perfil); sem celular no cadastro, não cria.
+  assert.equal((await api('POST', '/api/auth/criarSenha', t1, { senha: '4321' })).status, 400, 'sem celular');
+  assert.match((await api('POST', '/api/auth/criarSenha', t1, { senha: '4321', celular: '11987654321' })).json.erro, /não está no cadastro/);
+  const penha = (await api('GET', '/api/pessoas', ADMIN)).json.find((p) => p.nome === 'Penha Pin').id;
+  await api('POST', '/api/auth/perfil', ADMIN, { pessoaId: penha, info: { celular: '11987654321' } });
+  assert.match((await api('POST', '/api/auth/criarSenha', t1, { senha: '4321', celular: '11912345678' })).json.erro, /não confere/);
+  assert.equal((await api('GET', '/api/auth/me', t1)).json.temSenha, false, 'celular errado não cria');
+  const c = await api('POST', '/api/auth/criarSenha', t1, { senha: '4321', celular: '(11) 8765-4321' });   // sem o 9 também confere
   assert.equal(c.status, 200);
   assert.equal((await api('GET', '/api/auth/me', t1)).status, 401, 'a sessão antiga caiu');
   const t2 = c.json.token;
   assert.equal((await api('GET', '/api/auth/me', t2)).json.temSenha, true);
-  assert.equal((await api('POST', '/api/auth/criarSenha', t2, { senha: '9999' })).status, 400, 'só cria uma vez');
+  assert.equal((await api('POST', '/api/auth/criarSenha', t2, { senha: '9999', celular: '11987654321' })).status, 400, 'só cria uma vez');
   assert.deepEqual((await entrar()).json, { precisaSenha: true, nome: 'Penha Pin' });
   assert.equal((await entrar({ pin: '0000' })).status, 401);
   assert.ok((await entrar({ pin: '4321' })).json.token);
@@ -1489,8 +1509,11 @@ test('perfil: admin ajusta a data de nascimento de outra pessoa (Ajustes)', asyn
   assert.equal((await api('POST', '/api/auth/perfil', ADMIN, { pessoaId: ana, info: { nascimento: '2999-01-01' } })).status, 400);
   assert.equal((await api('POST', '/api/auth/perfil', USER, { pessoaId: ana, info: { nascimento: '1990-10-31' } })).status, 403);
   const r2 = await api('POST', '/api/auth/perfil', ADMIN, { pessoaId: ana, info: { celular: '11987654321', contatoNome: 'Mãe', contatoTelefone: '1134567890' } });
-  assert.deepEqual(r2.json.perfil.info, { nome: '', nascimento: '1990-10-31', celular: '11987654321', contatoNome: 'Mãe', contatoTelefone: '1134567890' }, 'só muda o que veio');
+  assert.deepEqual(r2.json.perfil.info, { nome: '', nascimento: '1990-10-31', celular: '11987654321', email: '', contatoNome: 'Mãe', contatoTelefone: '1134567890' }, 'só muda o que veio');
   assert.equal((await api('POST', '/api/auth/perfil', ADMIN, { pessoaId: ana, info: { celular: '123' } })).status, 400);
+  // E-mail: guardado em minúsculas; inválido é recusado.
+  assert.equal((await api('POST', '/api/auth/perfil', ADMIN, { pessoaId: ana, info: { email: 'Ana@Exemplo.com' } })).json.perfil.info.email, 'ana@exemplo.com');
+  assert.equal((await api('POST', '/api/auth/perfil', ADMIN, { pessoaId: ana, info: { email: 'sem-arroba' } })).status, 400);
   // O resto do perfil não muda.
   const todos = (await api('GET', '/api/auth/perfil', ADMIN)).json.todos;
   assert.equal(todos.find((t) => t.pessoaId === ana).perfil.info.nascimento, '1990-10-31');
@@ -1754,6 +1777,43 @@ test('trava da escala: só quem edita liga; com ela não dá para remanejar; can
   assert.equal((await api('POST', `/api/giras/${d}/remanejar`, ADMIN)).status, 409);
   assert.equal((await api('POST', '/api/giras/' + d, ADMIN, { acao: 'cancelarSorteio' })).json.gira.travada, false);
   await api('DELETE', '/api/giras/' + d, ADMIN);
+});
+
+test('alunos: dados (CPF cifrado, nome completo, e-mail, celular) e pendências ligadas pelo CPF', async () => {
+  const chaveAntes = process.env.CPF_CHAVE;
+  process.env.CPF_CHAVE = 'chave-de-teste-do-cpf-com-32-letras-ou-mais';
+  try {
+    const t09 = (await api('GET', '/api/pessoas?lista=alunos', ADMIN)).json.turmas.find((t) => t.nome === 'Turma 09').id;
+    const al = (b) => api('POST', '/api/pessoas', ADMIN, { acao: 'alunos', turmaId: t09, ...b });
+    assert.equal((await al({ nome: 'Dados Um, Dados Dois', email: 'x@y.com' })).status, 400, 'dados só com um aluno');
+    assert.equal((await al({ nome: 'Dados Um', email: 'sem-arroba' })).status, 400, 'e-mail inválido');
+    assert.equal((await al({ nome: 'Dados Um', cpf: '111.111.111-11' })).status, 400, 'CPF inválido');
+    const r = await al({ nome: 'Dados Um', nomeCompleto: '  Dados  Um da Silva ', cpf: '529.982.247-25', email: 'Dados@Exemplo.com', celular: '(11) 98888-7777' });
+    assert.equal(r.status, 200, JSON.stringify(r.json));
+    const id = r.json.alunos.find((a) => a.nome === 'Dados Um').id;
+    assert.deepEqual(r.json.dados[id], { nomeCompleto: 'Dados Um da Silva', celular: '11988887777', email: 'dados@exemplo.com', temCpf: true, cpf: '•••.•••.•••-25' });
+    assert.ok(!sql(`select cifrado from alunos_cpf where aluno_id = '${id}'`).includes('52998224725'), 'o CPF fica cifrado');
+    assert.equal((await api('POST', '/api/pessoas', ADMIN, { acao: 'alunoCpf', id })).json.cpf, '52998224725');
+    assert.equal((await api('POST', '/api/pessoas', USER, { acao: 'alunoCpf', id })).status, 403, 'só quem edita Alunos');
+    assert.equal((await api('GET', '/api/pessoas?lista=alunos', USER)).status, 403, 'sem a aba Alunos, nada');
+
+    // Pendência: cobrança vencida cujo cliente tem o mesmo CPF (pelo hash) aparece no aluno e no bloco de atrasos.
+    const { createHash, createHmac } = await import('node:crypto');
+    const hash = createHmac('sha256', createHash('sha256').update(process.env.CPF_CHAVE).digest()).update('52998224725').digest('hex');
+    sql(`insert into asaas2_atrasos (conta, id, nome, valor, vencimento, descricao, cpf_hash) values ('B', 'pay_aluno', 'Cliente', 80, '2026-10-05', 'Mensalidade do aluno', '${hash}')`);
+    const lido = (await api('GET', '/api/pessoas?lista=alunos', ADMIN)).json;
+    assert.deepEqual(lido.pendencias[id].map((x) => [x.descricao, x.valor]), [['Mensalidade do aluno', 80]]);
+    assert.equal(sql(`select (atrasos_ler() -> 'itens') @> '[{"id": "pay_aluno", "nome": "Dados Um", "ligado": true}]'`), 't', 'o bloco de atrasos dá o nome do aluno');
+
+    // Editar: troca o e-mail e remove o CPF (a pendência deixa de ligar).
+    const ed = (await api('POST', '/api/pessoas', ADMIN, { acao: 'aluno', id, email: '', cpf: '' })).json;
+    assert.deepEqual([ed.dados[id].email, ed.dados[id].temCpf], ['', false]);
+    assert.equal(ed.pendencias[id], undefined);
+    sql("delete from asaas2_atrasos where id = 'pay_aluno'");
+    await api('POST', '/api/pessoas', ADMIN, { acao: 'excluirAluno', id });
+  } finally {
+    if (chaveAntes === undefined) delete process.env.CPF_CHAVE; else process.env.CPF_CHAVE = chaveAntes;
+  }
 });
 
 test('amaci: Visível para todos; orixás liberados por turma; o aluno vê só os da turma dele', async () => {
@@ -2300,7 +2360,10 @@ test('Compras: item CPJ só para quem está cadastrado na corrente', async () =>
   const gu = (tok, b) => api('POST', '/api/oferendas', tok, { acao: 'guias', ...b });
   const ler = (tok) => api('GET', '/api/oferendas?lista=guias', tok);
   await api('POST', '/api/pessoas', ADMIN, { acao: 'alunos', nome: 'Aluna Das Compras' });
-  const tAluna = (await api('POST', '/api/auth/entrar', null, { email: 'alunos', senha: 'aluna das compras' })).json.token;
+  const tSemSenha = (await api('POST', '/api/auth/entrar', null, { email: 'alunos', senha: 'aluna das compras' })).json.token;
+  const idAlunaCompras = (await api('GET', '/api/pessoas?lista=alunos', ADMIN)).json.alunos.find((a) => a.nome === 'Aluna Das Compras').id;
+  await api('POST', '/api/pessoas', ADMIN, { acao: 'aluno', id: idAlunaCompras, celular: '11987654321' });
+  const tAluna = (await api('POST', '/api/auth/criarSenha', tSemSenha, { senha: '2468', celular: '11987654321' })).json.token;   // a aba Compras pede senha
   let G = (await gu(ADMIN, { op: 'grupo', descricao: 'Grupo CPJ' })).json;
   const g = G.grupos.find((x) => x.descricao === 'Grupo CPJ');
   G = (await gu(ADMIN, { op: 'item', grupoId: g.id, descricao: 'Item de todos', quantidade: 5, valor: 10 })).json;

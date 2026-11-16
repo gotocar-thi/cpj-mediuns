@@ -6,7 +6,8 @@
 //                           Se não for exato → { confirmar: true, candidatos: [nomes parecidos] } (sem token)
 //                           Se a pessoa tem senha (PIN): sem "pin" → { precisaSenha: true, nome }; com "pin" errado → 401
 //   POST /api/auth/senha    { atual, nova }   → { token }  (logado)
-//   POST /api/auth/criarSenha { senha }  acesso da corrente: cria a senha (4 a 8 números) → { token }
+//   POST /api/auth/criarSenha { senha, celular }  corrente ou aluno: cria a senha (4 a 8 números); o celular digitado tem de
+//                           bater com o do cadastro (Perfil) → { token }
 //   GET  /api/auth/me       quem sou eu e o que posso fazer (logado)
 //   GET  /api/auth/inicio   a abertura do app em um pedido só → { me, versao, config, pessoas, giras, eventos, minhaCurimba, oracoes, entidadesApelidos }
 //                           ?atualizar=1 (voltar ao app): só as listas, sem "me"; com &versao= igual à atual, só { versao, semMudanca: true }.
@@ -52,10 +53,11 @@ function validarNovaSenha(s) {
 // Aplica as informações do bloco Perfil; recusa data ou telefone inválidos.
 function comInfo(perfil, funcao, info) {
   const p = normalizarPerfil(perfil);
-  ['nome', 'nascimento', 'celular', 'contatoNome', 'contatoTelefone'].forEach((k) => { if (k in info) p.info[k] = info[k] || ''; });
+  ['nome', 'nascimento', 'celular', 'email', 'contatoNome', 'contatoTelefone'].forEach((k) => { if (k in info) p.info[k] = info[k] || ''; });
   const novo = perfilDaFuncao(p, funcao);
   if (info.nascimento && !novo.info.nascimento) throw new HttpError(400, 'Data de nascimento inválida.');
   if (info.celular && !novo.info.celular) throw new HttpError(400, 'Celular incompleto: coloque o DDD e o número.');
+  if (info.email && !novo.info.email) throw new HttpError(400, 'E-mail inválido.');
   if (info.contatoTelefone && !novo.info.contatoTelefone) throw new HttpError(400, 'Telefone para contato incompleto: coloque o DDD e o número.');
   return novo;
 }
@@ -410,13 +412,25 @@ const acoes = {
   },
 
   // Quem entrou pelo acesso da corrente cria a própria senha (uma vez; depois só o root troca).
+  // Para provar que é a própria pessoa (o login sem senha é só pelo nome), ela digita o celular e ele tem de bater com o
+  // do cadastro (Perfil). Sem celular no cadastro, não cria: a administração cadastra antes. Mesmo DDD e mesmos 8 últimos
+  // números (aceita com ou sem o 9 da frente).
   async criarSenha(req) {
     if (req.method !== 'POST') throw new HttpError(405, 'Método não permitido.');
     const eu = await exigir(req);
     if (eu.papel !== 'corrente' && eu.grupo !== 'alunos') throw new HttpError(400, 'Só o acesso da corrente cria senha aqui. Use Trocar senha.');
-    const senha = String(corpo(req).senha ?? '');
+    const aluno = eu.grupo === 'alunos';
+    const b = corpo(req);
+    const senha = String(b.senha ?? '');
     if (!PIN_VALIDO.test(senha)) throw new HttpError(400, 'A senha precisa ter de 4 a 8 números.');
-    if (eu.grupo === 'alunos') {
+    const digitado = String(b.celular ?? '').replace(/\D/g, '');
+    if (digitado.length < 10 || digitado.length > 11) throw new HttpError(400, 'Digite o seu celular com DDD (10 ou 11 números).');
+    const perfil = aluno ? await db.rpc('aluno_perfil_ler', { alunoId: eu.alunoId }) : (await db.rpc('perfil_ler', { pessoaId: eu.pessoaId })).perfil;
+    const cadastro = normalizarPerfil(perfil).info.celular;
+    if (!cadastro) throw new HttpError(400, 'Seu celular não está no cadastro. Peça para a administração cadastrar e tente de novo.');
+    const confere = (x) => x.slice(0, 2) + x.slice(-8);
+    if (confere(digitado) !== confere(cadastro)) throw new HttpError(400, 'O celular não confere com o do cadastro.');
+    if (aluno) {
       const { pinVersao } = await db.rpc('aluno_pin_definir', { alunoId: eu.alunoId, pinHash: await gerarHash(senha), soSeVazio: true });
       return { token: await emitirTokenGrupo('alunos', eu.alunoId, eu.nome, pinVersao) };
     }

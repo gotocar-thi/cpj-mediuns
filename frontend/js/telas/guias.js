@@ -2,7 +2,7 @@
 // encerra e começa pedidos (numerados), marca ok em cada linha e exporta a lista.
 // Com o Pix ligado pelo root (aba ASAAS), a pessoa paga o que pediu; só o webhook do ASAAS marca como pago.
 
-import { estado, pode, carregarGuias, acaoGuias, avisar } from '../estado.js';
+import { estado, pode, visaoAtiva, carregarGuias, acaoGuias, avisar } from '../estado.js';
 import { esc, toast, baixar, hoje } from '../util.js';
 import { centavos, reais } from '/shared/ervas.js';
 import { gerarImagemLista, compartilharImagem } from '../imagemLista.js';
@@ -455,7 +455,18 @@ function telaFoto() {
     <div class="ft-luz-rodape"><b>${R(i.valor)}</b><span class="muted">${plural(i.quantidade, 'disponível', 'disponíveis')}</span></div></div>`;
 }
 
+// Como no Perfil: quem entra pela corrente (acesso cpj) ou como aluno, sem senha, vê o aviso para criar a senha
+// (com a janela Agora não / Criar senha) e não usa a aba. O servidor também recusa.
+function renderSemSenha() {
+  const aviso = ui.semSenhaFechado ? '' : `<div class="modal-fundo" role="dialog" aria-modal="true" aria-labelledby="gi-ss-t"><div class="modal"><h3 id="gi-ss-t">🔒 Crie uma senha</h3>
+    <p style="margin:0">Para usar a aba Compras, você precisa criar uma senha.</p>
+    <div class="row" style="justify-content:flex-end;gap:8px"><button class="btn" data-act="guiasemsenhafechar">Agora não</button><button class="btn primary" data-act="guiacriarsenha">Criar senha</button></div></div></div>`;
+  return `<section class="panel gi-tela"><div class="card"><div class="grp-h"><h2><span aria-hidden="true">🔒</span> Compras</h2></div><p class="muted" style="margin:0">Para usar a aba Compras, crie a sua senha no botão <b>🔒 Criar senha</b>, no topo da tela.</p></div>${aviso}</section>`;
+}
+
 export function render() {
+  const me = estado.me || {};
+  if ((me.corrente || me.grupo === 'alunos') && !me.temSenha && visaoAtiva() !== 'root') return renderSemSenha();
   if (estado.guias === null) { carregarGuias(); return '<div class="loading">Carregando as compras…</div>'; }
   const G = estado.guias;
   let h = `<section class="panel gi-tela${ui.ocupado ? ' gi-ocupado' : ''}" aria-busy="${!!ui.ocupado}">`;
@@ -562,6 +573,8 @@ export const cliques = {
     avisar();
   },
   guiaquadro(el) { const g = el.dataset.id; ui.painelSel[g] = ui.painelSel[g] === el.dataset.k ? null : el.dataset.k; avisar(); },
+  guiasemsenhafechar() { ui.semSenhaFechado = true; avisar(); },
+  guiacriarsenha() { ui.semSenhaFechado = true; avisar(); document.querySelector('[data-conta="criarsenha"]')?.click(); },
   guiabloco(el) { const k = el.dataset.k; if (ui.blocos.has(k)) ui.blocos.delete(k); else ui.blocos.add(k); avisar(); },
   guiapainel(el) { const id = el.dataset.id; if (ui.painel.has(id)) ui.painel.delete(id); else ui.painel.add(id); avisar(); },
   guiarenomear(el) { ui.grupoRen = el.dataset.id || null; avisar(); },

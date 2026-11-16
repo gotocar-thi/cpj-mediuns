@@ -1258,6 +1258,33 @@ section.panel.pf-tela{gap:14px}
 /* Turma aberta: formulário para pôr alguém na turma (limpeza) ou adicionar alunos */
 .pessoas-tela .limpeza-atribuir,.pessoas-tela .al-add-form{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:end;gap:8px}
 .pessoas-tela .al-add-form .pp-bts{margin:0}
+/* Alunos: formulário de criar/editar com os dados (nome completo, CPF, celular, e-mail) em grade de 2 colunas. */
+.al-form{display:grid;gap:10px;padding:10px;margin:6px 0;border:1px solid var(--accent);border-radius:10px;background:color-mix(in srgb,var(--accent) 5%,var(--surface))}
+.al-form-h b{font-size:1rem}
+.al-dados{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;align-items:start}
+.al-dados .field{margin:0;min-width:0}
+.al-dados .al-full{grid-column:1/-1}
+.al-dados input,.al-dados select{width:100%}
+.al-form-bts{display:flex;justify-content:flex-end;gap:8px}
+.al-cpf-atual{display:flex;flex-wrap:wrap;align-items:center;gap:0 6px;font-weight:400;color:var(--muted);font-size:.8rem;margin-top:2px}
+.al-dados input,.al-dados select{font-size:.95rem;padding:8px 10px}
+.al-cpf-atual .btn.link{padding:0 2px;min-height:0}
+.al-nota{margin:0;font-size:.82rem}
+.al-add-dados{flex-basis:100%;display:grid;gap:6px}
+.al-nc{display:block;font-size:.8rem;font-weight:400}
+/* Pendências de pagamento dos alunos: quadradinhos por turma (vermelho) e a lista de quem deve. */
+.al-pend{display:grid;gap:8px;margin-top:4px;padding-top:10px;border-top:1px solid var(--line)}
+.al-pend-h{display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap}
+.al-pend-h .muted{font-size:.8rem}
+.pf-of-total.fn-pend{--fn:var(--off)}
+.al-pend-lista{border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--surface)}
+.al-pend-a{display:grid;gap:3px;padding:7px 10px;border-left:4px solid var(--off)}
+.al-pend-a+.al-pend-a{border-top:1px solid var(--line)}
+.al-pend-a-h{display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap}
+.al-pend-a-h span{font-size:.88rem;color:var(--muted);white-space:nowrap}
+.al-pend-i{display:flex;justify-content:space-between;gap:8px;font-size:.88rem}
+.al-pend-i>span:last-child{white-space:nowrap;font-variant-numeric:tabular-nums}
+@media (max-width:360px){.al-dados{grid-template-columns:minmax(0,1fr)}}
 @media (max-width:520px){.pessoas-tela .limpeza-atribuir,.pessoas-tela .al-add-form{grid-template-columns:minmax(0,1fr)}}
 /* Alunos: ações da turma numa linha; cada aluno numa caixinha como as pessoas */
 .pessoas-tela .al-acoes{display:flex;flex-wrap:wrap;align-items:center;gap:6px}

@@ -3,8 +3,10 @@
 //                              { acao: 'licenca', pessoaId, inicio, fim, motivo? } · { acao: 'editarLicenca', id, inicio, fim, motivo? }
 //                              { acao: 'removerLicenca', id }  → lista da corrente
 // GET  /api/pessoas?lista=alunos  { turmas, alunos }  (alunos da CPJ: fora da corrente)
+//      quem edita Alunos recebe também { dados: { id: { nomeCompleto, celular, email, temCpf, cpf (mascarado) } }, pendencias: { id: [cobranças vencidas] }, pendenciasEm }
 // GET  /api/pessoas?lista=perfis  { total, chefe, frente, orixa, cabeca, cabecaPessoas }  (Histórico → Estatísticas e bloco do ano da aba Gira: só contagens do Perfil)
-// POST /api/pessoas            { acao: 'alunos', nome: "A, B", turmaId } · { acao: 'aluno', id, nome?, turmaId? }
+// POST /api/pessoas            { acao: 'alunos', nome: "A, B", turmaId, nomeCompleto?, cpf?, email?, celular? (dados só com um nome) }
+//                              · { acao: 'aluno', id, nome?, turmaId?, nomeCompleto?, cpf? ('' apaga), email?, celular? } · { acao: 'alunoCpf', id } → { cpf }
 //                              { acao: 'promoverAlunoCPJ', id } (aluno → Corrente como Cambone)
 //                              { acao: 'excluirAluno', id } · { acao: 'turma', id?, nome } (com id = renomear)
 //                              · { acao: 'excluirTurma', id } (alunos passam para sem turma) → { turmas, alunos }
@@ -23,13 +25,15 @@ import { FUNCAO_KEYS } from '../../shared/regras.js';
 import { contagemPerfis, pessoasPorOrixaCabeca } from '../../shared/perfil.js';
 import { pode } from '../../shared/permissoes.js';
 import { amaci, acaoAmaci } from '../_lib/amaci.js';
+import { dadosAluno, temDados, salvarDadosAluno, comExtras, cpfDoAluno } from '../_lib/alunos.js';
 
-const ACOES_ALUNOS = ['alunos', 'aluno', 'excluirAluno', 'turma', 'excluirTurma', 'promoverAlunoCPJ'];
+const ACOES_ALUNOS = ['alunos', 'aluno', 'alunoCpf', 'excluirAluno', 'turma', 'excluirTurma', 'promoverAlunoCPJ'];
 const ACOES_CURIMBA = ['curimbaAluno', 'curimbaExcluirAluno', 'curimbaAula', 'curimbaExcluirAula', 'curimbaPresenca'];
 const limpar = (s, max) => String(s ?? '').replace(/\s+/g, ' ').trim().slice(0, max + 1);
 const turmaId = (v) => (v ? validarId(v, 'Turma') : '');
 
-async function acaoAlunos(b) {
+async function acaoAlunos(b, eu) {
+  if (b.acao === 'alunoCpf') return cpfDoAluno(b);
   if (b.acao === 'promoverAlunoCPJ') return db.rpc('aluno_transferir_cambone', { id: validarId(b.id, 'Aluno') });
   if (b.acao === 'excluirTurma') return db.rpc('turma_aluno_excluir', { id: validarId(b.id, 'Turma') });
   if (b.acao === 'turma') {
@@ -50,14 +54,25 @@ async function acaoAlunos(b) {
       if (!p.nome || p.nome.length > 80) throw new HttpError(400, 'Nome inválido.');
     }
     if ('turmaId' in b) p.turmaId = turmaId(b.turmaId);
-    return db.rpc('aluno_atualizar', p);
+    const d = dadosAluno(b);   // CPF, nome completo, e-mail e celular (o que vier)
+    let estado = null;
+    if ('nome' in p || 'turmaId' in p) estado = await db.rpc('aluno_atualizar', p);
+    if (temDados(d)) await salvarDadosAluno(p.id, d, eu);
+    return estado && !temDados(d) ? estado : db.rpc('alunos_estado');
   }
   const brutos = Array.isArray(b.nomes) ? b.nomes : String(b.nome || '').split(/[,;\n]+/);
   const nomes = brutos.map((s) => limpar(s, 80)).filter(Boolean);
   if (!nomes.length) throw new HttpError(400, 'Digite pelo menos um nome.');
   if (nomes.length > 200) throw new HttpError(400, 'Máximo de 200 nomes por vez.');
   if (nomes.some((n) => n.length > 80)) throw new HttpError(400, 'Nome muito longo (máximo 80 letras).');
-  return db.rpc('alunos_criar', { nomes, turmaId: turmaId(b.turmaId) });
+  // Dados (CPF, nome completo, e-mail, celular) só quando é um aluno de cada vez.
+  const d = dadosAluno(b);
+  if (temDados(d) && nomes.length > 1) throw new HttpError(400, 'Para cadastrar vários de uma vez, deixe os dados em branco e preencha depois em Editar.');
+  const estado = await db.rpc('alunos_criar', { nomes, turmaId: turmaId(b.turmaId) });
+  if (!temDados(d)) return estado;
+  const novo = estado.alunos.find((a) => a.nome.toLocaleLowerCase('pt-BR') === nomes[0].toLocaleLowerCase('pt-BR'));
+  if (novo) await salvarDadosAluno(novo.id, d, eu);
+  return { ...(await db.rpc('alunos_estado')), criadas: estado.criadas };
 }
 
 function acaoCurimba(b) {
@@ -83,7 +98,7 @@ export default rota({
     if (req.query.lista === 'alunos') {
       const eu = await exigir(req, 'alunos:ver');
       const estado = await db.rpc('alunos_estado');
-      return eu.grupo === 'alunos' ? { ...estado, alunos: estado.alunos.filter((a) => a.id === eu.alunoId) } : estado;
+      return eu.grupo === 'alunos' ? { ...estado, alunos: estado.alunos.filter((a) => a.id === eu.alunoId) } : comExtras(estado, eu);
     }
     if (req.query.lista === 'amaci') return amaci(await exigir(req, 'amaci:ver'));
     if (req.query.lista === 'curimba') {
@@ -110,9 +125,10 @@ export default rota({
     const b = corpo(req);
     if (b.acao === 'amaci') return acaoAmaci(await exigir(req, 'amaci:editar'), b);
     if (ACOES_ALUNOS.includes(b.acao)) {
-      await exigir(req, 'alunos:editar');
+      const eu = await exigir(req, 'alunos:editar');
       if (b.acao === 'promoverAlunoCPJ') await exigir(req, 'pessoas:editar');
-      return acaoAlunos(b);
+      const r = await acaoAlunos(b, eu);
+      return b.acao === 'alunoCpf' ? r : comExtras(r, eu);
     }
     if (ACOES_CURIMBA.includes(b.acao)) {
       await exigir(req, 'curimba:editar');

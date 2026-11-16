@@ -2,7 +2,7 @@
 
 import { FUNCOES, LINHAS_CADASTRO, LINHA_LABEL, LINHA_KEYS, TURMAS_LIMPEZA, CURIMBA, ehCurimba } from '/shared/regras.js';
 import { config } from '/shared/config.js';
-import { estado, prefs, salvarPrefs, pode, pessoasOrd, adicionarPessoas, atualizarPessoa, excluirPessoa, salvarLicenca, editarLicenca, removerLicenca, carregarAlunos, acaoAlunos, acaoUsuarios, avisar } from '../estado.js';
+import { estado, prefs, salvarPrefs, pode, pessoasOrd, adicionarPessoas, atualizarPessoa, excluirPessoa, salvarLicenca, editarLicenca, removerLicenca, carregarAlunos, acaoAlunos, revelarCpfAluno, acaoUsuarios, avisar } from '../estado.js';
 import { esc, toast, hoje } from '../util.js';
 import { PIN_VALIDO } from '/shared/permissoes.js';
 import { cardOferendasPendentes, cliques as cliquesPerfil } from './perfil.js';
@@ -221,6 +221,7 @@ function cardAdicionar(ps) {
       <label class="field" style="flex:0 1 150px">Função<select id="f-func" data-act="funcnova">${fs.map(([k, l]) => `<option value="${k}" ${k === func ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
       <label class="field add-turma" id="f-turma-campo" ${func === ALUNO ? '' : 'hidden'}>Turma<span class="turma-sel"><select id="f-turma" data-act="turmasel">${turmas.map((t) => `<option value="${t.id}" ${t.id === turmaSel ? 'selected' : ''}>${esc(t.nome)}</option>`).join('')}</select><button class="btn" type="button" data-act="novaturma" title="Adicionar turma" aria-label="Adicionar turma">＋</button></span></label>
       <label class="field grow">Nome<input type="text" id="f-nome" placeholder="Um nome, ou vários separados por vírgula" autocomplete="off" maxlength="4000" value="${esc(estado.addRascunho || '')}"></label>
+      <div class="al-add-dados" id="f-dados-campo" ${func === ALUNO ? '' : 'hidden'}><p class="nota al-nota">Dados do aluno: opcionais e só quando é um aluno de cada vez.</p>${camposAluno('fa')}</div>
       <button class="btn primary" type="submit">Adicionar</button></form>`;
   } else if (modo === 'licenca') {
     const R = estado.licRasc || {};
@@ -240,6 +241,76 @@ function cardAdicionar(ps) {
       <p class="nota">A curimba entra nas turmas da limpeza, mas não conta presença nem falta e não entra no sorteio.</p>`;
   }
   return h + `</div>`;
+}
+
+
+// ---------- dados do aluno: nome completo, CPF, celular e e-mail (quem edita Alunos) ----------
+const R$ = (v) => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+const soDig = (v) => String(v ?? '').replace(/\D/g, '');
+const telBR = (n) => {
+  const d = soDig(n);
+  if (d.length < 10) return d;
+  return `(${d.slice(0, 2)}) ${d.slice(2, d.length - 4)}-${d.slice(-4)}`;
+};
+// CPF à mostra (Mostrar, por 30 s): { id, cpf }.
+const cpfBR = (d) => (d.length === 11 ? `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6, 9)}-${d.slice(9)}` : d);
+// Se o servidor recusou (CPF ou e-mail inválido), o redesenho volta com o que foi digitado (estado.alunoRasc).
+function camposAluno(pre, d0 = {}, id = '') {
+  const r = estado.alunoRasc?.pre === pre ? estado.alunoRasc : null;
+  const d = r ? { ...d0, nomeCompleto: r.nc, celular: r.cel, email: r.em } : d0;
+  const tem = !!(id && d.temCpf);
+  const visto = estado.alunoCpfVisto?.id === id ? cpfBR(estado.alunoCpfVisto.cpf) : '';
+  const remover = id && estado.alunoCpfRemover === id;
+  const cpfAtual = tem ? `<span class="al-cpf-atual">${remover ? '<s>' : ''}${esc(visto || d.cpf)}${remover ? '</s> · será removido' : ''}
+      ${remover ? `<button type="button" class="btn link small" data-act="alcpfmanter" data-id="${id}">Manter</button>`
+        : `<button type="button" class="btn link small" data-act="alcpfver" data-id="${id}">${visto ? 'Ocultar' : '👁 Mostrar'}</button><button type="button" class="btn link small" data-act="alcpfremover" data-id="${id}">Remover</button>`}</span>` : '';
+  return `<div class="al-dados">
+    <label class="field al-full">Nome completo<input type="text" id="${pre}-nc" maxlength="80" value="${esc(d.nomeCompleto || '')}" autocomplete="off"></label>
+    <label class="field">CPF<input type="text" id="${pre}-cpf" inputmode="numeric" maxlength="14" autocomplete="off" placeholder="${tem ? 'Novo CPF' : '000.000.000-00'}" value="${esc(r?.cpf || '')}"${remover ? ' disabled' : ''}>${cpfAtual}</label>
+    <label class="field">Celular<input type="tel" id="${pre}-cel" inputmode="tel" maxlength="16" placeholder="(11) 99999-9999" value="${esc(telBR(d.celular || ''))}" autocomplete="off"></label>
+    <label class="field al-full">E-mail<input type="email" id="${pre}-em" maxlength="120" value="${esc(d.email || '')}" autocomplete="off" placeholder="nome@exemplo.com"></label>
+  </div>`;
+}
+// O que mudou nos campos (para criar, tudo o que foi preenchido). CPF: digitado grava; Remover apaga.
+function lerCamposAluno(pre, d = {}, id = '') {
+  const v = (s) => document.getElementById(`${pre}-${s}`)?.value ?? '';
+  const out = {};
+  const nc = v('nc').replace(/\s+/g, ' ').trim();
+  if (nc !== (d.nomeCompleto || '')) out.nomeCompleto = nc;
+  const cel = soDig(v('cel'));
+  if (cel !== (d.celular || '')) out.celular = cel;
+  const em = v('em').trim().toLowerCase();
+  if (em !== (d.email || '')) out.email = em;
+  if (id && estado.alunoCpfRemover === id) out.cpf = '';
+  else if (soDig(v('cpf'))) out.cpf = v('cpf');
+  estado.alunoRasc = { pre, nc: v('nc'), cel: soDig(v('cel')), em: v('em'), cpf: v('cpf') };
+  return out;
+}
+
+// Pendências (cobranças vencidas do ASAAS ligadas ao aluno pelo CPF): um quadradinho por turma com quantas
+// pendências há nela; tocar mostra os alunos pendentes, com o que deve. Vem da última leitura do ASAAS.
+function cardPendenciasAlunos(A, grupos) {
+  if (!A.pendencias) return '';
+  const pend = A.pendencias;
+  const daTurma = (g) => g.lista.filter((a) => pend[a.id]?.length);
+  const qtd = (g) => daTurma(g).reduce((s, a) => s + pend[a.id].length, 0);
+  const aberta = grupos.some((g) => g.id === estado.alunosPendAberta) ? estado.alunosPendAberta : null;
+  const quando = A.pendenciasEm ? new Date(A.pendenciasEm).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }).replace(', ', ' às ') : '';
+  let h = `<div class="al-pend"><div class="al-pend-h"><b>💳 Pendências de pagamento</b><span class="muted">${quando ? `lido em ${quando}` : 'ainda não lido'}</span></div>
+    <div class="pf-of-totais auto">${grupos.filter((g) => g.id !== 'sem' || g.lista.length).map((g) => {
+      const n = qtd(g);
+      return `<button type="button" class="pf-of-total fn-pend${aberta === g.id ? ' selecionado' : ''}" data-act="alunosPend" data-t="${esc(g.id)}" aria-expanded="${aberta === g.id}" aria-label="${esc(g.nome)}: ${n} ${n === 1 ? 'pendência' : 'pendências'}" ${n ? '' : 'disabled'}><b>${n}</b><span>${esc(g.nome)}</span></button>`;
+    }).join('')}</div>`;
+  if (aberta) {
+    const g = grupos.find((x) => x.id === aberta);
+    h += `<div class="al-pend-lista">${daTurma(g).map((a) => {
+      const L = pend[a.id];
+      const total = L.reduce((s, x) => s + Number(x.valor || 0), 0);
+      return `<div class="al-pend-a"><div class="al-pend-a-h"><b>${esc(a.nome)}</b><span>${L.length} ${L.length === 1 ? 'pendência' : 'pendências'} · <b>${R$(total)}</b></span></div>
+        ${L.map((x) => `<div class="al-pend-i"><span>${esc(x.descricao || 'Cobrança')}${x.vencimento ? ` <span class="muted">· venceu ${x.vencimento.split('-').reverse().join('/')}</span>` : ''}</span><span>${R$(x.valor)}</span></div>`).join('')}</div>`;
+    }).join('')}</div>`;
+  }
+  return h + '</div>';
 }
 
 // ---------- alunos da CPJ: um sub-bloco por turma ----------
@@ -273,6 +344,8 @@ function acoesTurma(g, editar, podePromover) {
   return `<div class="al-acoes">${real && !add ? `<button class="btn small" type="button" data-act="abrirAddAlunosTurma" data-id="${g.id}">＋ Adicionar alunos</button>` : ''}${up ? `<button class="btn small al-promover" type="button" data-act="abrirPromover" data-id="${esc(g.id)}" aria-label="Promover alunos de ${esc(g.nome)} para a Corrente CPJ">↑ UP CPJ</button>` : ''}<span class="pp-bts">${wa}${real ? `<button class="btn small pp-ico" data-act="editturma" data-id="${g.id}" aria-label="Editar ${esc(g.nome)}" title="Editar turma"><span aria-hidden="true">✎</span></button><button class="btn small pp-ico pp-del" data-act="excluirask" data-tipo="turma" data-id="${g.id}" aria-label="Remover ${esc(g.nome)}" title="Remover turma"><span aria-hidden="true">🗑️</span></button>` : ''}</span></div>
     ${add ? `<form id="f-alunos-turma" class="al-add-form" data-id="${g.id}" autocomplete="off">
       <label class="field">Nome do aluno (ou vários separados por vírgula)<input type="text" id="alunos-turma-nomes" maxlength="4000" required autocomplete="off"></label>
+      <p class="nota al-nota">Dados abaixo: opcionais e só quando é um aluno de cada vez.</p>
+      ${camposAluno('ta')}
       <span class="pp-bts"><button class="btn small primary pp-bt" type="submit">Adicionar</button><button class="btn small pp-bt" type="button" data-act="cancelarAddAlunosTurma">Cancelar</button></span></form>` : ''}`;
 }
 
@@ -284,12 +357,19 @@ function linhaAluno(a, turmas, editar, escolhendo) {
     return `<label class="pp al-l al-sel"><span class="pp-l1"><input type="checkbox" data-act="promoverSel" data-id="${a.id}" ${marcado ? 'checked' : ''}${estado.alunosPromover.enviando ? ' disabled' : ''}><span class="nm">${esc(a.nome)}</span></span></label>`;
   }
   if (estado.editAluno === a.id) {
-    return `<form id="f-aluno" class="pp pp-editando pp-form al-l" data-id="${a.id}" autocomplete="off">
-      <div class="pp-l1"><input type="text" id="al-nome" value="${esc(a.nome)}" maxlength="80" aria-label="Nome de ${esc(a.nome)}">
-        <span class="pp-bts"><button class="btn small primary pp-bt" type="submit">Salvar</button><button class="btn small pp-bt" type="button" data-act="cancelaluno">Cancelar</button></span></div>
-      <label class="al-turma">Turma <select id="al-turma" aria-label="Turma de ${esc(a.nome)}">${!a.turmaId ? '<option value="" selected>Sem turma</option>' : ''}${turmas.map((t) => `<option value="${t.id}" ${t.id === a.turmaId ? 'selected' : ''}>${esc(t.nome)}</option>`).join('')}</select></label></form>`;
+    const d = estado.alunos?.dados?.[a.id] || {};
+    return `<form id="f-aluno" class="al-form" data-id="${a.id}" autocomplete="off">
+      <div class="al-form-h"><b>Editar aluno</b></div>
+      <div class="al-dados">
+        <label class="field">Nome (acesso)<input type="text" id="al-nome" value="${esc(a.nome)}" maxlength="80" required></label>
+        <label class="field">Turma<select id="al-turma">${!a.turmaId ? '<option value="" selected>Sem turma</option>' : ''}${turmas.map((t) => `<option value="${t.id}" ${t.id === a.turmaId ? 'selected' : ''}>${esc(t.nome)}</option>`).join('')}</select></label>
+      </div>
+      ${camposAluno('al', d, a.id)}
+      <div class="al-form-bts"><button class="btn small" type="button" data-act="cancelaluno">Cancelar</button><button class="btn small primary" type="submit">Salvar</button></div></form>`;
   }
-  return `<div class="pp al-l"><div class="pp-l1"><span class="nm">${esc(a.nome)}</span>
+  const d = estado.alunos?.dados?.[a.id];
+  const np = estado.alunos?.pendencias?.[a.id]?.length || 0;
+  return `<div class="pp al-l"><div class="pp-l1"><span class="nm">${esc(a.nome)}${np ? ` <span class="badge re" title="Pagamentos em atraso">${np} em atraso</span>` : ''}${d?.nomeCompleto && d.nomeCompleto !== a.nome ? `<small class="muted al-nc">${esc(d.nomeCompleto)}</small>` : ''}</span>
     <span class="pp-bts">${pode('usuarios:gerenciar') ? `<button class="btn small pp-bt pp-ico" type="button" data-act="senhaaluno" data-id="${a.id}" data-nome="${esc(a.nome)}" aria-label="Definir senha de ${esc(a.nome)}" title="Definir senha"><span aria-hidden="true">🔑</span></button>` : ''}<button class="btn small pp-bt pp-ico" data-act="editaluno" data-id="${a.id}" aria-label="Editar ${esc(a.nome)}" title="Editar"><span aria-hidden="true">✎</span></button><button class="btn small pp-bt pp-ico pp-del" data-act="excluirask" data-tipo="al" data-id="${a.id}" aria-label="Excluir ${esc(a.nome)}" title="Excluir"><span aria-hidden="true">🗑️</span></button></span></div></div>`;
 }
 
@@ -310,11 +390,12 @@ function cardAlunos() {
   const aberta = grupos.some((g) => g.id === estado.alunosTurmaAberta) ? estado.alunosTurmaAberta : null;
   let h = `${cab}
     <div class="pf-of-totais auto">${grupos.map((g) => `<button type="button" class="pf-of-total fn-alunos${aberta === g.id ? ' selecionado' : ''}" data-act="alunosTurma" data-t="${esc(g.id)}" aria-expanded="${aberta === g.id}" aria-label="${esc(g.nome)}: ${g.lista.length} ${g.lista.length === 1 ? 'aluno' : 'alunos'}${aberta === g.id ? ', recolher lista' : ', expandir lista'}"${g.id === 'sem' && !g.lista.length ? ' disabled' : ''}><b>${g.lista.length}</b><span>${esc(g.nome)}</span></button>`).join('')}</div>`;
-  if (!aberta) return h + '</div>';
+  const pendencias = editar ? cardPendenciasAlunos(A, grupos) : '';
+  if (!aberta) return h + pendencias + '</div>';
   const g = grupos.find((x) => x.id === aberta);
   h += `<div class="lista-aberta">${acoesTurma(g, editar, podePromover)}
       ${g.lista.length ? `<div class="ppl">${g.lista.map((a) => linhaAluno(a, A.turmas, editar, promovendo(g))).join('')}</div>` : '<p class="nota">Nenhum aluno nesta turma.</p>'}</div>`;
-  return h + '</div>';
+  return h + pendencias + '</div>';
 }
 
 // Janela de confirmação para excluir (pessoa, aluno ou licença) ou remover uma turma.
@@ -527,7 +608,20 @@ export const cliques = {
     avisar();
     document.getElementById('al-nome')?.focus();
   },
-  cancelaluno() { estado.editAluno = null; avisar(); },
+  cancelaluno() { estado.editAluno = null; estado.alunoCpfRemover = null; estado.alunoCpfVisto = null; estado.alunoRasc = null; avisar(); },
+  alunosPend(el) { estado.alunosPendAberta = estado.alunosPendAberta === el.dataset.t ? null : el.dataset.t; avisar(); },
+  alcpfremover(el) { estado.alunoCpfRemover = el.dataset.id; estado.alunoCpfVisto = null; avisar(); },
+  alcpfmanter() { estado.alunoCpfRemover = null; avisar(); },
+  // Mostrar: busca o número inteiro e esconde sozinho em 30 s (como no Perfil).
+  async alcpfver(el) {
+    const id = el.dataset.id;
+    if (estado.alunoCpfVisto?.id === id) { estado.alunoCpfVisto = null; avisar(); return; }
+    const cpf = await revelarCpfAluno(id);
+    if (!cpf) return;
+    estado.alunoCpfVisto = { id, cpf };
+    avisar();
+    setTimeout(() => { if (estado.alunoCpfVisto?.id === id) { estado.alunoCpfVisto = null; avisar(); } }, 30000);
+  },
   editturma(el) { estado.editTurma = el.dataset.id; estado.alunosTurmaAberta = el.dataset.id; avisar(); document.getElementById('turma-nome')?.select(); },
   cancelturma() { estado.editTurma = null; avisar(); },
   delaluno(el) { estado.confirm = null; acaoAlunos('excluirAluno', { id: el.dataset.id }); },
@@ -601,6 +695,8 @@ export const mudancas = {
     salvarPrefs();
     const campo = document.getElementById('f-turma-campo');
     if (campo) campo.hidden = t.value !== ALUNO;
+    const dados = document.getElementById('f-dados-campo');
+    if (dados) dados.hidden = t.value !== ALUNO;
   },
   turmasel(t) { estado.turmaSel = t.value; },
   // UP CPJ: marca/desmarca o aluno (o número no Confirmar acompanha).
@@ -672,9 +768,11 @@ export async function enviarFormulario() {
   if (funcao === ALUNO) {
     const turmaId = document.getElementById('f-turma').value;
     estado.turmaSel = turmaId;
-    const r = await acaoAlunos('alunos', { nome: inp.value, turmaId });
+    const r = await acaoAlunos('alunos', { nome: inp.value, turmaId, ...lerCamposAluno('fa') });
     if (!r) return;
     estado.addRascunho = '';
+    estado.alunoRasc = null;
+    avisar();
     const t = r.turmas.find((x) => x.id === turmaId);
     toast(r.criadas ? `${r.criadas} aluno${r.criadas > 1 ? 's' : ''} na ${t ? t.nome : 'turma'}.` : 'Esses alunos já estão cadastrados.');
     const novo = document.getElementById('f-nome');
@@ -698,13 +796,20 @@ export async function salvarAluno(form) {
   const nome = document.getElementById('al-nome').value.replace(/\s+/g, ' ').trim();
   const turmaId = document.getElementById('al-turma').value;
   if (!nome) { toast('Digite o nome.'); return; }
-  const patch = {};
+  const patch = lerCamposAluno('al', estado.alunos?.dados?.[id] || {}, id);
   if (!a || nome !== a.nome) patch.nome = nome;
   if (!a || turmaId !== (a.turmaId || '')) patch.turmaId = turmaId;
-  estado.alunosTurmaAberta = turmaId || 'sem';
-  estado.editAluno = null;
-  if (!Object.keys(patch).length) { avisar(); return; }
-  if (await acaoAlunos('aluno', { id, ...patch })) toast('Aluno alterado.');
+  if (!Object.keys(patch).length) { estado.editAluno = null; estado.alunoCpfRemover = null; estado.alunoRasc = null; avisar(); return; }
+  // Se der erro (CPF ou e-mail inválido), o formulário continua aberto com o que foi digitado.
+  if (await acaoAlunos('aluno', { id, ...patch })) {
+    estado.alunosTurmaAberta = turmaId || 'sem';
+    estado.editAluno = null;
+    estado.alunoCpfRemover = null;
+    estado.alunoCpfVisto = null;
+    estado.alunoRasc = null;
+    toast('Aluno alterado.');
+    avisar();
+  }
 }
 
 // Confirmar do UP CPJ: promove os marcados um por um. Se um falhar (o erro aparece na tela), para ali e
@@ -745,8 +850,9 @@ export async function salvarAlunosTurma(form) {
   const turmaId = form.dataset.id;
   const inp = document.getElementById('alunos-turma-nomes');
   if (!inp?.value.trim()) { toast('Digite pelo menos um nome.'); return; }
-  const r = await acaoAlunos('alunos', { nome: inp.value, turmaId });
+  const r = await acaoAlunos('alunos', { nome: inp.value, turmaId, ...lerCamposAluno('ta') });
   if (!r) return;
+  estado.alunoRasc = null;
   estado.alunosAdicionarTurma = null;
   estado.alunosTurmaAberta = turmaId;
   const turma = r.turmas.find((x) => x.id === turmaId);

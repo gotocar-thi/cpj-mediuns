@@ -2,7 +2,7 @@
 // O admin também acompanha a corrente: quem já respondeu, os guias de todos e as oferendas pendentes.
 
 import { ORIXAS, LINHAS_CADASTRO, LINHA_KEYS } from '/shared/regras.js';
-import { POSICOES_ORIXA, POSICOES_GUIA, GUIAS, NOME_GUIA_MAX, respondeu, lerNascimento, nascimentoBR, telefoneBR, soNumeros, blocosAfinidade, cadastraEspiritual, cpfValido, cpfBR,
+import { POSICOES_ORIXA, POSICOES_GUIA, GUIAS, NOME_GUIA_MAX, respondeu, lerNascimento, nascimentoBR, telefoneBR, soNumeros, emailValido, blocosAfinidade, cadastraEspiritual, cpfValido, cpfBR,
   ANAMNESE_TIPOS, ANAMNESE_PERGUNTA_MAX, ANAMNESE_TEXTO_MAX, ANAMNESE_SIMNAO, ANAMNESE_TIPO_LABEL, anamnesePreenchida, respostasPorPessoa, textoAnamnese, valorAnamnese } from '/shared/perfil.js';
 import { estado, pode, visaoAtiva, avisar, carregarPerfil, mudarPerfil, salvarAfinidade, carregarFoto, salvarFoto, salvarInfoDe, carregarAnamnese, acaoAnamnese, lerCpf, salvarCpf } from '../estado.js';
 import { esc, toast, iniciais, baixar, hoje } from '../util.js';
@@ -150,7 +150,7 @@ function cardInfo(eu) {
   const u = U();
   const editando = !!x && u.infoEdit === x.pessoaId;
   const I = x?.info || {};
-  const atual = { nome: x?.parcial ? x.nome : I.nome, nascimento: nascimentoBR(I.nascimento), celular: telefoneBR(I.celular), contatoNome: I.contatoNome, contatoTelefone: telefoneBR(I.contatoTelefone) };
+  const atual = { nome: x?.parcial ? x.nome : I.nome, nascimento: nascimentoBR(I.nascimento), celular: telefoneBR(I.celular), email: I.email, contatoNome: I.contatoNome, contatoTelefone: telefoneBR(I.contatoTelefone) };
   const campo = (k, rotulo, attrs, dica, cls = '') => `<label class="field pf-info-c${cls}">${rotulo}<input id="pf-i-${k}" data-act="pfinfo" data-k="${k}" ${attrs} ${editando || k === 'nome' ? `placeholder="${esc(dica)}"` : ''} ${editando ? '' : 'disabled'} value="${esc((editando ? u.infoRasc[k] : atual[k]) || '')}"></label>`;
   const sv = estado.perfilSalvo;
   const sel = x?.pessoaId || '';
@@ -168,9 +168,10 @@ function cardInfo(eu) {
   if (!x) return `<div class="card pf-info-card">${cabeca}${escolha}<p class="muted" style="margin:0;font-size:.88rem">Escolha uma pessoa para ver as informações.</p></div>`;
   return `<div class="card pf-info-card">${cabeca}${soAluno() ? '' : escolha}
     <div class="pf-info-sec"><h3>${x.propria ? 'Seus dados' : 'Dados'}</h3><div class="pf-dados"><div class="pf-info pf-info-1">
-      ${campo('nome', 'Nome', 'type="text" maxlength="80" autocomplete="name"', x.nome, ' inteiro')}
+      ${campo('nome', 'Nome completo', 'type="text" maxlength="80" autocomplete="name"', x.nome, ' inteiro')}
       ${x.parcial ? '' : campo('nascimento', 'Data de nascimento', 'type="text" inputmode="numeric" maxlength="10" data-mascara="data" autocomplete="bday"', '31/10/1990')}
       ${x.parcial ? '' : campo('celular', 'Celular', 'type="tel" inputmode="numeric" maxlength="15" data-mascara="tel" autocomplete="tel"', '(11) 91234-5678')}
+      ${x.parcial ? '' : campo('email', 'E-mail', 'type="email" inputmode="email" maxlength="120" autocomplete="email"', 'nome@exemplo.com', ' inteiro')}
     </div>${blocoFoto(x.pessoaId, x.nome, editando)}</div></div>
     ${blocoCpf(x)}
     <div class="pf-info-sec pf-info-contato"><h3><span aria-hidden="true">📞</span> Pessoa para contato</h3><div class="pf-info">
@@ -281,7 +282,9 @@ function lerInfoRasc() {
   if (limpo('nascimento') && !nascimento) { toast('Data de nascimento inválida. Use dia/mês/ano, por exemplo 31/10/1990.'); return null; }
   const [celular, contatoTelefone] = [soNumeros(limpo('celular')), soNumeros(limpo('contatoTelefone'))];
   if ((celular && celular.length < 10) || (contatoTelefone && contatoTelefone.length < 10)) { toast('Telefone incompleto: coloque o DDD e o número.'); return null; }
-  return { nome: limpo('nome'), nascimento, celular, contatoNome: limpo('contatoNome'), contatoTelefone };
+  const email = emailValido(limpo('email'));
+  if (limpo('email') && !email) { toast('E-mail inválido. Confira, por exemplo nome@exemplo.com.'); return null; }
+  return { nome: limpo('nome'), nascimento, celular, email, contatoNome: limpo('contatoNome'), contatoTelefone };
 }
 const fecharEdicaoInfo = () => Object.assign(U(), { infoEdit: null, infoRasc: null, infoFoto: undefined, infoConf: false });
 
@@ -702,7 +705,7 @@ export const cliques = {
     const x = pessoaDoBloco(estado.perfil.eu);
     if (!podeEditarInfo(x)) return;
     const I = x.info;
-    Object.assign(U(), { infoEdit: x.pessoaId, infoFoto: undefined, infoRasc: { nome: I.nome || '', nascimento: nascimentoBR(I.nascimento) || '', celular: telefoneBR(I.celular) || '', contatoNome: I.contatoNome || '', contatoTelefone: telefoneBR(I.contatoTelefone) || '' } });
+    Object.assign(U(), { infoEdit: x.pessoaId, infoFoto: undefined, infoRasc: { nome: I.nome || '', nascimento: nascimentoBR(I.nascimento) || '', celular: telefoneBR(I.celular) || '', email: I.email || '', contatoNome: I.contatoNome || '', contatoTelefone: telefoneBR(I.contatoTelefone) || '' } });
     avisar();
   },
   pfinfocancelar() { fecharEdicaoInfo(); avisar(); },
