@@ -63,3 +63,30 @@ export function mascaraTel(el) {
 
 // Iniciais do nome (até duas), para o lugar da foto de quem ainda não tem.
 export const iniciais = (nome) => String(nome || '').split(/\s+/).filter((w) => /^\p{L}/u.test(w)).slice(0, 2).map((w) => w[0].toUpperCase()).join('');
+
+// Formulários marcados com data-rascunho (ex.: cadastro e edição na aba Pessoas): o que a pessoa digitou e ainda não
+// salvou sobrevive ao redesenho (ao voltar para o app, a atualização do servidor redesenha a tela). Guarda só os campos
+// mudados (valor diferente do que veio na tela) e devolve se o formulário e o campo continuam lá, com o valor de antes.
+const valorPadrao = (el) => (el.tagName === 'SELECT' ? ([...el.options].find((o) => o.defaultSelected) || el.options[0])?.value ?? '' : el.defaultValue);
+export function guardarRascunhos(main) {
+  const r = [];
+  main.querySelectorAll('form[data-rascunho][id]').forEach((f) => {
+    const campos = [];
+    f.querySelectorAll('input[id], select[id], textarea[id]').forEach((el) => {
+      if (el.type === 'checkbox' || el.type === 'radio' || el.type === 'file') return;
+      if (el.value !== valorPadrao(el)) campos.push([el.id, el.value, valorPadrao(el)]);
+    });
+    if (campos.length) r.push([f.id, f.dataset.id || '', campos]);
+  });
+  return r;
+}
+export function devolverRascunhos(main, r) {
+  for (const [fid, did, campos] of r) {
+    const f = main.querySelector('#' + CSS.escape(fid));
+    if (!f || (f.dataset.id || '') !== did) continue;   // outro registro em edição: não mistura
+    for (const [id, valor, antes] of campos) {
+      const el = f.querySelector('#' + CSS.escape(id));
+      if (el && !el.disabled && el.value === antes) el.value = valor;
+    }
+  }
+}

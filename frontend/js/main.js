@@ -3,7 +3,7 @@
 import { estadoDoApp, logado, entrar, instalar, sair, trocarSenha, criarSenhaCorrente } from './auth.js';
 import { quandoSessaoExpirar } from './api.js';
 import { estado, prefs, salvarPrefs, pode, visaoAtiva, aoMudar, avisar, carregarTudo, atualizarDoServidor, salvarPerfilAgora, mudarVisaoRoot, veErvas, veOferendas, veGuias, veAmaci, temPendencia } from './estado.js';
-import { esc, toast, mascaraTel } from './util.js';
+import { esc, toast, mascaraTel, guardarRascunhos, devolverRascunhos } from './util.js';
 import { iniciarAtualizacao } from './atualizacao.js';
 import { ehAcessoGrupo, PIN_VALIDO } from '/shared/permissoes.js';
 import { FOTOS_ATIVA } from '/shared/fotos.js';
@@ -129,7 +129,9 @@ function render() {
   const fid = a && a.tagName !== 'SELECT' && a.id;
   let ss = null, se = null;
   try { if (fid && a.selectionStart != null) { ss = a.selectionStart; se = a.selectionEnd; } } catch { /* input sem seleção */ }
+  const rascunhos = guardarRascunhos(main);
   main.innerHTML = html;
+  devolverRascunhos(main, rascunhos);
   if (fid) {
     let el = document.getElementById(fid);
     // Campo de data em uso: mantém o mesmo elemento (no celular, trocar o elemento

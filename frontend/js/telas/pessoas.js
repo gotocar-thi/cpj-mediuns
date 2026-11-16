@@ -89,7 +89,7 @@ function cardTurmas(todas, editar) {
           ? linhaPessoa(p, { funcao: false, simples: true })
           : `<div class="pp"><div class="pp-l1"><span class="nm">${esc(p.nome)}</span><span class="badge pp-limp">🧹 Turma ${p.limpeza || '—'}</span></div></div>`).join('')}</div>`
           : '<p class="nota">Ninguém nesta turma.</p>'}
-        ${editar && turmaAtiva ? disponiveis.length ? `<form id="f-limpeza-atribuir" class="limpeza-atribuir" data-t="${turmaAtiva.chave}">
+        ${editar && turmaAtiva ? disponiveis.length ? `<form id="f-limpeza-atribuir" data-rascunho class="limpeza-atribuir" data-t="${turmaAtiva.chave}">
           <label class="field">Adicionar pessoa nesta turma<select id="limpeza-pessoa" required><option value="">— escolha uma pessoa —</option>${disponiveis.map((p) => `<option value="${p.id}">${esc(p.nome)}${ehCurimba(p) ? ' · Curimba' : ` · ${esc(FUNCOES.find((f) => f.k === p.funcao)?.label || p.funcao)}`}</option>`).join('')}</select></label>
           <button class="btn primary" type="submit">＋ Adicionar</button></form>`
           : '<p class="nota">Não há pessoas sem turma de limpeza para adicionar.</p>' : ''}</div>`;
@@ -145,7 +145,7 @@ function editorLinhas(p, c) {
 function linhaPessoa(p, { funcao = true, acoes = true, simples = false } = {}) {
   if (simples) {
     if (estado.limpezaPessoaEditando === p.id) {
-      return `<div class="pp pp-editando"><form id="f-limpeza-pessoa-ed" class="pp-form limpeza-pessoa-ed" data-id="${p.id}" autocomplete="off">
+      return `<div class="pp pp-editando"><form id="f-limpeza-pessoa-ed" data-rascunho class="pp-form limpeza-pessoa-ed" data-id="${p.id}" autocomplete="off">
         <div class="pp-l1"><span class="nm">${esc(p.nome)}</span></div>
         <label class="field">Turma da limpeza<select id="limpeza-turma-ed" required><option value="">— escolha a turma —</option>${TURMAS_LIMPEZA.map((t) => `<option value="${t}" ${Number(p.limpeza) === t ? 'selected' : ''}>Turma ${t}</option>`).join('')}</select></label>
         <span class="pp-bts"><button class="btn small primary pp-bt" type="submit">Salvar</button><button class="btn small pp-bt" type="button" data-act="cancelLimpezaPessoa">Cancelar</button></span></form></div>`;
@@ -164,7 +164,7 @@ function linhaPessoa(p, { funcao = true, acoes = true, simples = false } = {}) {
       ${!simples && p.funcao === 'medium' && p.experiente ? '<div class="pp-l3"><span class="badge new">+ médium de passe</span></div>' : ''}
       ${!simples && camposDe(p).length ? `<div class="pp-res">${resumoLinhas(p)}</div>` : ''}</div>`;
   }
-  return `<div class="pp pp-editando"><form id="f-ren" class="pp-form" data-id="${p.id}" data-simples="${simples ? '1' : '0'}" autocomplete="off">
+  return `<div class="pp pp-editando"><form id="f-ren" data-rascunho class="pp-form" data-id="${p.id}" data-simples="${simples ? '1' : '0'}" autocomplete="off">
       <div class="pp-l1"><input type="text" id="ren-in" value="${esc(p.nome)}" maxlength="80" autocomplete="off" aria-label="Nome de ${esc(p.nome)}">
         <span class="pp-bts"><button class="btn small primary pp-bt" type="submit">Salvar</button><button class="btn small pp-bt" type="button" data-act="cancelren">Cancelar</button></span></div>
       <div class="pp-l2">${funcao && !simples ? `<select id="ren-func" aria-label="Função de ${esc(p.nome)}">${FUNCOES.map((o) => `<option value="${o.k}" ${o.k === p.funcao ? 'selected' : ''}>${o.label}</option>`).join('')}</select>` : ''}
@@ -217,7 +217,7 @@ function cardAdicionar(ps) {
     const func = fs.some(([k]) => k === prefs.lastFunc) ? prefs.lastFunc : fs[0][0];
     const turmas = estado.alunos?.turmas || [];
     const turmaSel = turmas.some((t) => t.id === estado.turmaSel) ? estado.turmaSel : turmas[turmas.length - 1]?.id || '';
-    h += `<form id="f-add" class="row">
+    h += `<form id="f-add" data-rascunho class="row">
       <label class="field" style="flex:0 1 150px">Função<select id="f-func" data-act="funcnova">${fs.map(([k, l]) => `<option value="${k}" ${k === func ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
       <label class="field add-turma" id="f-turma-campo" ${func === ALUNO ? '' : 'hidden'}>Turma<span class="turma-sel"><select id="f-turma" data-act="turmasel">${turmas.map((t) => `<option value="${t.id}" ${t.id === turmaSel ? 'selected' : ''}>${esc(t.nome)}</option>`).join('')}</select><button class="btn" type="button" data-act="novaturma" title="Adicionar turma" aria-label="Adicionar turma">＋</button></span></label>
       <label class="field grow">Nome<input type="text" id="f-nome" placeholder="Um nome, ou vários separados por vírgula" autocomplete="off" maxlength="4000" value="${esc(estado.addRascunho || '')}"></label>
@@ -226,7 +226,7 @@ function cardAdicionar(ps) {
   } else if (modo === 'licenca') {
     const R = estado.licRasc || {};
     const sel = estado.licPessoa || '';
-    h += `<form id="f-lic" class="lic-form" autocomplete="off">
+    h += `<form id="f-lic" data-rascunho class="lic-form" autocomplete="off">
       <label class="field">Pessoa<select id="lic-p" data-act="licpessoa"><option value="">— escolha —</option>${ps.map((p) => `<option value="${p.id}" ${p.id === sel ? 'selected' : ''}>${esc(p.nome)}</option>`).join('')}</select></label>
       <div class="lic-datas-f"><label class="field">Início<input type="date" id="lic-i" value="${esc(R.i ?? hoje())}"></label>
       <label class="field">Fim<input type="date" id="lic-f" value="${esc(R.f || '')}"></label></div>
@@ -235,7 +235,7 @@ function cardAdicionar(ps) {
       ${historicoLicencas(ps.find((p) => p.id === sel))}
       <p class="nota">Quem estiver de licença fica fora do sorteio e aparece como “de licença” na gira. A licença sai da lista sozinha depois da data final.</p>`;
   } else {
-    h += `<form id="f-curimba" class="row" autocomplete="off">
+    h += `<form id="f-curimba" data-rascunho class="row" autocomplete="off">
       <label class="field grow">Nome<input type="text" id="cur-nome" placeholder="Um nome, ou vários separados por vírgula" maxlength="4000"></label>
       <button class="btn primary" type="submit">Adicionar</button></form>
       <p class="nota">A curimba entra nas turmas da limpeza, mas não conta presença nem falta e não entra no sorteio.</p>`;
@@ -334,7 +334,7 @@ function acoesTurma(g, editar, podePromover) {
       <div class="pp-bts"><button class="btn small pp-bt" type="button" data-act="cancelarPromover"${enviando ? ' disabled' : ''}>Cancelar</button><button class="btn small primary pp-bt" type="button" data-act="confirmarPromover"${ids.length && !enviando ? '' : ' disabled'}>${enviando ? 'Promovendo…' : `Confirmar${ids.length ? ` (${ids.length})` : ''}`}</button></div></div>`;
   }
   if (real && estado.editTurma === g.id) {
-    return `<form id="f-turma-ed" class="al-turma-ed" data-id="${g.id}" autocomplete="off"><input type="text" id="turma-nome" value="${esc(g.nome)}" maxlength="40" aria-label="Nome da turma">
+    return `<form id="f-turma-ed" data-rascunho class="al-turma-ed" data-id="${g.id}" autocomplete="off"><input type="text" id="turma-nome" value="${esc(g.nome)}" maxlength="40" aria-label="Nome da turma">
       <span class="pp-bts"><button class="btn small primary pp-bt" type="submit">Salvar</button><button class="btn small pp-bt" type="button" data-act="cancelturma">Cancelar</button></span></form>`;
   }
   const add = real && estado.alunosAdicionarTurma === g.id;
@@ -342,7 +342,7 @@ function acoesTurma(g, editar, podePromover) {
   const wa = g.lista.length ? `<a class="btn small pp-ico wa-bt al-wa" href="https://wa.me/?text=${encodeURIComponent(textoTurma(g))}" target="_blank" rel="noopener" aria-label="Compartilhar a lista de ${esc(g.nome)} no WhatsApp" title="Compartilhar no WhatsApp"><span class="wa-ico" aria-hidden="true">${ICONE_WHATS}</span></a>` : '';
   if (!real && !up && !wa) return '';
   return `<div class="al-acoes">${real && !add ? `<button class="btn small" type="button" data-act="abrirAddAlunosTurma" data-id="${g.id}">＋ Adicionar alunos</button>` : ''}${up ? `<button class="btn small al-promover" type="button" data-act="abrirPromover" data-id="${esc(g.id)}" aria-label="Promover alunos de ${esc(g.nome)} para a Corrente CPJ">↑ UP CPJ</button>` : ''}<span class="pp-bts">${wa}${real ? `<button class="btn small pp-ico" data-act="editturma" data-id="${g.id}" aria-label="Editar ${esc(g.nome)}" title="Editar turma"><span aria-hidden="true">✎</span></button><button class="btn small pp-ico pp-del" data-act="excluirask" data-tipo="turma" data-id="${g.id}" aria-label="Remover ${esc(g.nome)}" title="Remover turma"><span aria-hidden="true">🗑️</span></button>` : ''}</span></div>
-    ${add ? `<form id="f-alunos-turma" class="al-add-form" data-id="${g.id}" autocomplete="off">
+    ${add ? `<form id="f-alunos-turma" data-rascunho class="al-add-form" data-id="${g.id}" autocomplete="off">
       <label class="field">Nome do aluno (ou vários separados por vírgula)<input type="text" id="alunos-turma-nomes" maxlength="4000" required autocomplete="off"></label>
       <p class="nota al-nota">Dados abaixo: opcionais e só quando é um aluno de cada vez.</p>
       ${camposAluno('ta')}
@@ -358,7 +358,7 @@ function linhaAluno(a, turmas, editar, escolhendo) {
   }
   if (estado.editAluno === a.id) {
     const d = estado.alunos?.dados?.[a.id] || {};
-    return `<form id="f-aluno" class="al-form" data-id="${a.id}" autocomplete="off">
+    return `<form id="f-aluno" data-rascunho class="al-form" data-id="${a.id}" autocomplete="off">
       <div class="al-form-h"><b>Editar aluno</b></div>
       <div class="al-dados">
         <label class="field">Nome (acesso)<input type="text" id="al-nome" value="${esc(a.nome)}" maxlength="80" required></label>
@@ -772,6 +772,7 @@ export async function enviarFormulario() {
     if (!r) return;
     estado.addRascunho = '';
     estado.alunoRasc = null;
+    document.getElementById('f-add')?.reset();   // salvou: o redesenho não devolve o que foi digitado
     avisar();
     const t = r.turmas.find((x) => x.id === turmaId);
     toast(r.criadas ? `${r.criadas} aluno${r.criadas > 1 ? 's' : ''} na ${t ? t.nome : 'turma'}.` : 'Esses alunos já estão cadastrados.');
