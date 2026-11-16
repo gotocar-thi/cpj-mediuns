@@ -1676,6 +1676,27 @@ button.iem-tot-n{cursor:pointer}
 .gp-val{white-space:nowrap;font-variant-numeric:tabular-nums}
 .btn.link.gp-x{color:var(--off);padding:2px 6px}
 .hist-compra .gp-pessoas{margin:0}
+/* Painel de pedidos por grupo: cada grupo num bloco que abre e fecha; quem já pagou tudo vai para o fim, mais apagado. */
+.gp-grupos{display:grid;gap:10px}
+.gp-grupo{border:1px solid var(--line);border-radius:12px;background:var(--bg);overflow:hidden}
+.gp-grupo-h{padding:12px;min-height:48px}
+.gp-grupo-h h3{margin:0;font-size:1.02rem;flex:1 1 auto;overflow-wrap:anywhere}
+.gp-grupo-h .count{display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:flex-end;text-align:right}
+.gp-grupo-c{padding:0 12px 12px;border-top:1px solid var(--line);padding-top:12px}
+.gp-grupo-c .gp-pessoa{background:var(--surface)}
+.gp-pessoa.pago{opacity:.75}
+.gp-pessoa-v{display:inline-flex;align-items:center;gap:6px;flex:none}
+.gp-pessoa-v b{white-space:nowrap;font-variant-numeric:tabular-nums}
+.gx-sel{gap:8px;flex-wrap:wrap}
+.gx-sel .field{flex:1 1 140px;min-width:0}
+/* Aba ASAAS: sub-blocos (grupo nas cobranças, valor no retorno) que abrem e fecham. */
+.as-subs{display:grid;gap:8px}
+.as-sub{border:1px solid var(--line);border-radius:10px;background:var(--bg);overflow:hidden}
+.as-sub-h{display:flex;justify-content:space-between;align-items:center;gap:8px;width:100%;min-height:44px;padding:8px 12px;background:none;border:0;color:var(--ink);font:inherit;text-align:left;cursor:pointer}
+.as-sub-h b{overflow-wrap:anywhere}
+.as-sub-x{display:inline-flex;align-items:center;gap:6px;color:var(--muted);font-size:.85rem;white-space:nowrap}
+.as-sub-x .seta{color:var(--accent);font-size:1rem}
+.as-sub-c{padding:0 12px 10px;border-top:1px solid var(--line)}
 .gi-foto.zoom{cursor:zoom-in}
 
 /* Cadastro do item da oferenda: prévia do que a corrente vai ver */

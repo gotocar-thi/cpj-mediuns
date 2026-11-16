@@ -1872,7 +1872,7 @@ test('pedidos de guias: aba escondida até publicar; grupos, itens, pedir baixa 
   assert.equal(it.valor, 25.5);
   G = (await gu(ADMIN, { op: 'item', grupoId: g.id, descricao: 'Guia oculta', quantidade: 5, valor: 10, visivel: false })).json;
   const oculto = G.grupos.find((x) => x.id === g.id).itens.find((i) => i.descricao === 'Guia oculta');
-  assert.equal(G.aberto, 1, 'o pedido nº 1 já começa aberto');
+  assert.equal(G.grupos.find((x) => x.id === g.id).aberto, 1, 'o primeiro grupo fica com o pedido nº 1, que já começa aberto');
   assert.equal((await gu(ADMIN, { op: 'publicar', publicada: true })).json.publicada, true);
   assert.equal((await api('GET', '/api/auth/me', USER)).json.guiasPublicada, true);
 
@@ -1893,15 +1893,25 @@ test('pedidos de guias: aba escondida até publicar; grupos, itens, pedir baixa 
   const linha = G.pedidos[0].linhas[0];
   G = (await gu(ADMIN, { op: 'ok', id: linha.id, ok: true })).json;
   assert.equal(G.pedidos[0].linhas[0].ok, true);
-  assert.equal((await gu(ADMIN, { op: 'novo' })).status, 400, 'já há um pedido aberto');
-  G = (await gu(ADMIN, { op: 'encerrar' })).json;
-  assert.equal(G.aberto, null);
-  assert.equal((await gu(ADMIN, { op: 'encerrar' })).status, 400);
+  assert.equal((await gu(ADMIN, { op: 'novo' })).status, 400, 'sem grupo');
+  assert.equal((await gu(ADMIN, { op: 'novo', grupoId: g.id })).status, 400, 'o grupo já tem pedido aberto');
+  // Outro grupo tem pedido próprio: encerrar um não mexe no outro.
+  G = (await gu(ADMIN, { op: 'grupo', descricao: 'Velas da casa' })).json;
+  const g2 = G.grupos.find((x) => x.descricao === 'Velas da casa');
+  assert.equal(g2.aberto, 2, 'grupo novo nasce com o próximo número');
+  G = (await gu(ADMIN, { op: 'encerrar', grupoId: g.id })).json;
+  assert.equal(G.grupos.find((x) => x.id === g.id).aberto, null);
+  assert.equal(G.grupos.find((x) => x.id === g2.id).aberto, 2, 'o outro grupo continua aberto');
+  assert.ok(G.pedidos.find((p) => p.numero === 1).encerradoEm, 'o pedido nº 1 encerra quando o único grupo dele encerra');
+  assert.deepEqual(G.pedidos.find((p) => p.numero === 1).linhas.map((l) => l.grupoId), [g.id], 'a linha leva o grupo');
+  assert.equal((await gu(ADMIN, { op: 'encerrar', grupoId: g.id })).status, 400);
+  assert.match((await gu(USER, { op: 'pedir', itemId: it.id, quantidade: 1 })).json.erro, /Guias de Oxóssi estão fechados/);
   G = (await gu(ADMIN, { op: 'cancelar', id: linha.id })).json;
   assert.equal(G.grupos.find((x) => x.id === g.id).itens.find((i) => i.id === it.id).quantidade, 3, 'cancelar devolve ao estoque');
-  G = (await gu(ADMIN, { op: 'novo' })).json;
-  assert.equal(G.aberto, 2);
-  assert.deepEqual(G.pedidos.map((p) => p.numero), [2, 1]);
+  G = (await gu(ADMIN, { op: 'novo', grupoId: g.id })).json;
+  assert.equal(G.grupos.find((x) => x.id === g.id).aberto, 3);
+  assert.deepEqual(G.pedidos.map((p) => p.numero), [3, 2, 1]);
+  await gu(ADMIN, { op: 'excluirGrupo', id: g2.id });
 
   await gu(ADMIN, { op: 'grupo', id: g.id, visivel: false });
   assert.equal((await ler(USER)).json.grupos.some((x) => x.id === g.id), false, 'grupo oculto some para a corrente');
@@ -2079,8 +2089,8 @@ test('ASAAS: Pedir gera o link de pagamento; só o webhook conferido no ASAAS ma
     const g = G.grupos.find((x) => x.descricao === 'Pix teste');
     G = (await gu(ADMIN, { op: 'item', grupoId: g.id, descricao: 'Guia Pix', quantidade: 10, valor: '12,50' })).json;
     const it = G.grupos.find((x) => x.id === g.id).itens[0];
-    if (!G.aberto) G = (await gu(ADMIN, { op: 'novo' })).json;
-    const n = G.aberto;
+    const n = G.grupos.find((x) => x.id === g.id).aberto;
+    assert.ok(n, 'o grupo novo já nasce com pedido aberto');
     G = (await gu(ADMIN, { op: 'pedir', itemId: it.id, quantidade: 2 })).json;
     assert.equal(G.pix, false, 'Pix desligado não aparece');
     assert.equal((await gu(ADMIN, { op: 'pix', pedido: n, cpf: '52998224725' })).status, 403);
@@ -2289,7 +2299,7 @@ test('Compras: item CPJ só para quem está cadastrado na corrente', async () =>
   assert.equal(itens.find((i) => i.id === cpj.id).cpj, true);
   assert.equal((await gu(USER, { op: 'item', id: cpj.id, cpj: false })).status, 403, 'só quem administra liga e desliga');
   await gu(ADMIN, { op: 'publicar', publicada: true });
-  if ((await ler(ADMIN)).json.aberto === null) await gu(ADMIN, { op: 'novo' });
+  if (!(await ler(ADMIN)).json.grupos.find((x) => x.id === g.id).aberto) await gu(ADMIN, { op: 'novo', grupoId: g.id });
   try {
     const nomes = async (tok) => ((await ler(tok)).json.grupos.find((x) => x.id === g.id)?.itens || []).map((i) => i.descricao);
     assert.deepEqual(await nomes(USER), ['Item de todos', 'Item da corrente'], 'corrente vê o item CPJ');

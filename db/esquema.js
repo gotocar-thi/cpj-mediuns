@@ -9,7 +9,7 @@
 // Estrutura: veja db/ESTRUTURA-ESQUEMA.md para o mapa de versões, domínios e
 // quais migrações foram testadas no Postgres.
 
-export const VERSAO = 118;  // v118: link do ASAAS sem repetir quando ele demora (a reserva fica até conferir no ASAAS)
+export const VERSAO = 119;  // v119: Compras com pedido próprio por grupo
 
 import { PERFIS_PADRAO } from '../shared/permissoes.js';
 
@@ -4812,5 +4812,183 @@ export const MIGRACOES = [
      update asaas_eventos set cobranca_id = v_c.id, resultado = v_res where id = p ->> 'id';
      return jsonb_build_object('ok', true, 'resultado', v_res);
    end;
+   $$`,
+
+  // ================================================== v119: Compras com pedido próprio por grupo
+  // Cada grupo tem o seu pedido aberto, com Encerrar e Novo pedido próprios. O número continua único (Guias nº 8, Velas nº 9).
+  // guias_pedido_grupos diz quais grupos cada pedido atende e se o grupo já encerrou nele; o pedido encerra quando
+  // todos os grupos dele encerram. O pedido que estava aberto na troca atende todos os grupos (nenhum número muda).
+  `alter table guias_linhas add column if not exists grupo_id uuid references guias_grupos(id) on delete set null`,
+  `update guias_linhas l set grupo_id = i.grupo_id from guias_itens i where i.id = l.item_id and l.grupo_id is null`,
+  // Linha cujo item saiu: o grupo pelo começo da descrição ("Grupo · Item").
+  `update guias_linhas l set grupo_id = g.id from guias_grupos g where l.grupo_id is null and l.descricao like g.descricao || ' · %'`,
+  `create table if not exists guias_pedido_grupos (
+     pedido        int not null references guias_pedidos(numero) on delete cascade,
+     grupo_id      uuid not null references guias_grupos(id) on delete cascade,
+     criado_em     timestamptz not null default now(),
+     encerrado_em  timestamptz,
+     primary key (pedido, grupo_id)
+   )`,
+  `create index if not exists guias_pedido_grupos_grupo on guias_pedido_grupos (grupo_id) where encerrado_em is null`,
+  // Uma vez só: os pedidos antigos ficam com os grupos que tiveram linhas; o aberto, com todos os grupos.
+  `do $$ begin
+     if not exists (select 1 from sistema where chave = 'v119_pedidos_por_grupo') then
+       insert into guias_pedido_grupos (pedido, grupo_id, criado_em, encerrado_em)
+       select distinct l.pedido, l.grupo_id, pe.criado_em, pe.encerrado_em
+         from guias_linhas l join guias_pedidos pe on pe.numero = l.pedido where l.grupo_id is not null
+       on conflict do nothing;
+       insert into guias_pedido_grupos (pedido, grupo_id, criado_em)
+       select pe.numero, g.id, pe.criado_em from guias_pedidos pe cross join guias_grupos g where pe.encerrado_em is null
+       on conflict do nothing;
+       insert into sistema (chave, valor) values ('v119_pedidos_por_grupo', now()::text);
+     end if;
+   end $$`,
+  // O pedido aberto de um grupo (ou null).
+  `create or replace function guia_pedido_do_grupo(p_grupo uuid)
+   returns int language sql stable as $$
+     select pedido from guias_pedido_grupos where grupo_id = p_grupo and encerrado_em is null order by pedido desc limit 1
+   $$`,
+  // Abre um pedido para o grupo: aproveita o pedido aberto que ainda não atende nenhum grupo (o nº 1 da instalação),
+  // senão cria o próximo número.
+  `create or replace function guia_pedido_abrir(p_grupo uuid)
+   returns int language plpgsql as $$
+   declare v int;
+   begin
+     select numero into v from guias_pedidos pe
+      where pe.encerrado_em is null and not exists (select 1 from guias_pedido_grupos pg where pg.pedido = pe.numero)
+        and not exists (select 1 from guias_linhas l where l.pedido = pe.numero)
+      order by numero limit 1;
+     if v is null then
+       insert into guias_pedidos (numero) select coalesce(max(numero), 0) + 1 from guias_pedidos returning numero into v;
+     end if;
+     insert into guias_pedido_grupos (pedido, grupo_id) values (v, p_grupo);
+     return v;
+   end;
+   $$`,
+  `create or replace function guias_estado(p jsonb default '{}'::jsonb)
+   returns jsonb language sql stable as $$
+     select jsonb_build_object(
+       'publicada', guias_publicada(),
+       'grupos', (select coalesce(jsonb_agg(jsonb_build_object('id', g.id, 'descricao', g.descricao, 'visivel', g.visivel,
+           'aberto', guia_pedido_do_grupo(g.id),
+           'itens', (select coalesce(jsonb_agg(jsonb_build_object('id', i.id, 'descricao', i.descricao, 'foto', i.foto, 'quantidade', i.quantidade,
+                       'valor', i.valor, 'visivel', i.visivel, 'cpj', i.cpj) order by i.criado_em), '[]'::jsonb)
+                     from guias_itens i where i.grupo_id = g.id)) order by g.criado_em), '[]'::jsonb)
+                  from guias_grupos g),
+       'pedidos', (select coalesce(jsonb_agg(jsonb_build_object('numero', pe.numero, 'criadoEm', pe.criado_em, 'encerradoEm', pe.encerrado_em,
+           'grupos', (select coalesce(jsonb_agg(jsonb_build_object('grupoId', pg.grupo_id, 'criadoEm', pg.criado_em, 'encerradoEm', pg.encerrado_em)), '[]'::jsonb)
+                      from guias_pedido_grupos pg where pg.pedido = pe.numero),
+           'linhas', (select coalesce(jsonb_agg(jsonb_build_object('id', l.id, 'itemId', l.item_id, 'grupoId', l.grupo_id, 'descricao', l.descricao, 'valor', l.valor,
+                       'quantidade', l.quantidade, 'chave', l.chave, 'nome', l.nome, 'ok', l.ok, 'criadoEm', l.criado_em,
+                       'pago', l.pago_em is not null,
+                       'pix', case when l.pago_em is not null then null when c.status = 'criando' then 'pendente' else c.status end) order by lower(l.nome), l.criado_em), '[]'::jsonb)
+                      from guias_linhas l left join asaas_cobrancas c on c.id = l.cobranca_id where l.pedido = pe.numero)) order by pe.numero desc), '[]'::jsonb)
+                   from guias_pedidos pe))
+   $$`,
+  // Pedir: entra no pedido aberto do grupo do item. Devolve também o número do pedido (para gerar o Pix dele).
+  `create or replace function guia_pedir(p jsonb)
+   returns jsonb language plpgsql as $$
+   declare
+     v_pedido int;
+     v_item guias_itens%rowtype;
+     v_grupo text;
+     v_qtd int := (p ->> 'quantidade')::int;
+     v_linha uuid;
+   begin
+     select i.* into v_item from guias_itens i join guias_grupos g on g.id = i.grupo_id
+      where i.id = (p ->> 'itemId')::uuid and i.visivel and g.visivel for update of i;
+     if not found then raise exception 'Este item não está disponível.'; end if;
+     select descricao into v_grupo from guias_grupos where id = v_item.grupo_id;
+     v_pedido := guia_pedido_do_grupo(v_item.grupo_id);
+     if v_pedido is null then raise exception 'Os pedidos de % estão fechados no momento.', v_grupo; end if;
+     if v_item.quantidade < 1 then raise exception 'Este item esgotou.'; end if;
+     if v_qtd < 1 or v_qtd > v_item.quantidade then raise exception 'Só restam % deste item.', v_item.quantidade; end if;
+     update guias_itens set quantidade = quantidade - v_qtd where id = v_item.id;
+     select id into v_linha from guias_linhas
+      where pedido = v_pedido and item_id = v_item.id and chave = p ->> 'chave' and valor = v_item.valor
+        and cobranca_id is null and pago_em is null limit 1;
+     if v_linha is not null then
+       update guias_linhas set quantidade = quantidade + v_qtd, nome = p ->> 'nome', ok = false where id = v_linha;
+     else
+       insert into guias_linhas (pedido, item_id, grupo_id, descricao, valor, quantidade, chave, nome)
+       values (v_pedido, v_item.id, v_item.grupo_id, v_grupo || ' · ' || v_item.descricao, v_item.valor, v_qtd, p ->> 'chave', p ->> 'nome');
+     end if;
+     return guias_estado() || jsonb_build_object('pedidoFeito', v_pedido);
+   end;
+   $$`,
+  // p = { grupoId } — encerra o pedido aberto do grupo; o pedido encerra quando não sobra grupo aberto nele.
+  `create or replace function guia_pedido_encerrar(p jsonb default '{}'::jsonb)
+   returns jsonb language plpgsql as $$
+   declare v int;
+   begin
+     update guias_pedido_grupos set encerrado_em = now()
+      where grupo_id = (p ->> 'grupoId')::uuid and encerrado_em is null returning pedido into v;
+     if v is null then raise exception 'Não há pedido aberto neste grupo.'; end if;
+     update guias_pedidos set encerrado_em = now()
+      where numero = v and encerrado_em is null and not exists (select 1 from guias_pedido_grupos where pedido = v and encerrado_em is null);
+     return guias_estado();
+   end;
+   $$`,
+  // p = { grupoId } — abre o próximo pedido do grupo (o anterior tem de estar encerrado).
+  `create or replace function guia_pedido_novo(p jsonb default '{}'::jsonb)
+   returns jsonb language plpgsql as $$
+   declare v int;
+   begin
+     if not exists (select 1 from guias_grupos where id = (p ->> 'grupoId')::uuid) then raise exception 'Grupo não encontrado.'; end if;
+     v := guia_pedido_do_grupo((p ->> 'grupoId')::uuid);
+     if v is not null then raise exception 'O pedido nº % deste grupo ainda está aberto. Encerre antes de começar outro.', v; end if;
+     perform guia_pedido_abrir((p ->> 'grupoId')::uuid);
+     return guias_estado();
+   end;
+   $$`,
+  // Grupo novo já nasce com o seu pedido aberto.
+  `create or replace function guia_grupo_salvar(p jsonb)
+   returns jsonb language plpgsql as $$
+   declare v_id uuid := nullif(p ->> 'id', '')::uuid;
+   begin
+     if v_id is null then
+       insert into guias_grupos (descricao, visivel) values (p ->> 'descricao', coalesce((p ->> 'visivel')::boolean, true)) returning id into v_id;
+       perform guia_pedido_abrir(v_id);
+     else
+       update guias_grupos set
+         descricao = case when p ? 'descricao' then p ->> 'descricao' else descricao end,
+         visivel = case when p ? 'visivel' then (p ->> 'visivel')::boolean else visivel end
+       where id = v_id;
+       if not found then raise exception 'Grupo não encontrado.'; end if;
+     end if;
+     return guias_estado();
+   end;
+   $$`,
+  // Excluir o grupo: as linhas ficam (sem grupo) e o pedido que ficou sem grupo aberto encerra.
+  `create or replace function guia_grupo_excluir(p jsonb)
+   returns jsonb language plpgsql as $$
+   begin
+     delete from guias_grupos where id = (p ->> 'id')::uuid;
+     update guias_pedidos pe set encerrado_em = now()
+      where pe.encerrado_em is null
+        and exists (select 1 from guias_linhas l where l.pedido = pe.numero)
+        and not exists (select 1 from guias_pedido_grupos pg where pg.pedido = pe.numero and pg.encerrado_em is null);
+     return guias_estado();
+   end;
+   $$`,
+  // Aba ASAAS: o grupo de cada cobrança (pelas linhas) e, no retorno do webhook, o que foi comprado
+  // (itens da cobrança) e a descrição que o ASAAS mandou, para saber do que se trata.
+  `create or replace function asaas_estado(p jsonb default '{}'::jsonb)
+   returns jsonb language sql stable as $$
+     select jsonb_build_object(
+       'ativo', asaas_ativo(),
+       'cobrancas', coalesce((select jsonb_agg(x.j order by x.criado_em desc) from (
+           select c.criado_em, jsonb_build_object('id', c.id, 'nome', c.nome, 'pedido', c.pedido, 'valor', c.valor, 'status', c.status,
+                    'asaasId', c.asaas_id, 'link', c.link, 'vencimento', c.vencimento, 'criadoEm', c.criado_em, 'pagoEm', c.pago_em,
+                    'grupos', (select coalesce(jsonb_agg(distinct g.descricao), '[]'::jsonb) from guias_linhas l join guias_grupos g on g.id = l.grupo_id where l.cobranca_id = c.id),
+                    'itens', (select coalesce(jsonb_agg(l.quantidade || 'x ' || l.descricao order by l.criado_em), '[]'::jsonb) from guias_linhas l where l.cobranca_id = c.id)) as j
+             from asaas_cobrancas c where c.status <> 'criando' order by c.criado_em desc limit 100) x), '[]'::jsonb),
+       'eventos', coalesce((select jsonb_agg(x.j order by x.recebido_em desc) from (
+           select e.recebido_em, jsonb_build_object('id', e.id, 'evento', e.evento, 'recebidoEm', e.recebido_em, 'resultado', e.resultado,
+                    'paymentId', e.dados -> 'payment' ->> 'id', 'valor', e.dados -> 'payment' ->> 'value',
+                    'status', e.dados -> 'payment' ->> 'status', 'descricao', e.dados -> 'payment' ->> 'description',
+                    'nome', c.nome, 'pedido', c.pedido,
+                    'itens', (select coalesce(jsonb_agg(l.quantidade || 'x ' || l.descricao order by l.criado_em), '[]'::jsonb) from guias_linhas l where l.cobranca_id = c.id)) as j
+             from asaas_eventos e left join asaas_cobrancas c on c.id = e.cobranca_id order by e.recebido_em desc limit 50) x), '[]'::jsonb))
    $$`,
 ];

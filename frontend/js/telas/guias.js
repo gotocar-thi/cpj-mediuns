@@ -15,13 +15,14 @@ const plural = (n, s, p) => `${n} ${n === 1 ? s : p}`;
 // Estado só desta tela (volta ao padrão ao trocar de aba, como o estado.guias).
 const ui = {
   abertos: new Set(),       // grupos expandidos (admin)
-  feitos: new Set(),        // pedidos encerrados expandidos
+  feitos: new Set(),        // pedidos encerrados expandidos ('número:grupo')
+  painel: new Set(),        // grupos abertos no Painel de pedidos (começam minimizados)
   minimizados: new Set(),   // blocos que a pessoa minimizou: id do grupo de itens ou 'meus' (Seus pedidos)
   grupoRen: null,           // id do grupo com o ✎ aberto
   item: null,               // formulário de item: { grupoId, id?, descricao, quantidade, valor, visivel, cpj, foto?: b64 | null }
   qtd: {},                  // quantidade escolhida por item (antes de Pedir)
   pedir: null,              // janela de confirmação: { itemId, quantidade }
-  exportar: null,           // número do pedido escolhido para exportar
+  exportar: null,           // pedido escolhido para exportar ('número:grupo')
   img: null,                // imagem gerada: { chave, blob, url, nome }
   zoom: null,               // id do item com a foto aberta em tela cheia
   pix: null,                // pedido com o campo de CPF aberto (primeiro Pix da pessoa)
@@ -30,7 +31,7 @@ const ui = {
   ocupado: null,            // ação enviada ao servidor e ainda sem resposta (trava o duplo clique)
 };
 export function limpar() {
-  ui.abertos.clear(); ui.feitos.clear(); ui.minimizados.clear();
+  ui.abertos.clear(); ui.feitos.clear(); ui.minimizados.clear(); ui.painel.clear();
   Object.assign(ui, { grupoRen: null, item: null, qtd: {}, pedir: null, exportar: null, zoom: null, pix: null, gerando: false, cpf: '', ocupado: null });
   if (ui.img) URL.revokeObjectURL(ui.img.url);
   ui.img = null;
@@ -69,16 +70,18 @@ function fotoItem(i, cls = 'gi-foto', zoom = false) {
 
 function cardItens(G) {
   const grupos = gruposVisiveis(G);
-  const fechado = !G.aberto;
-  let h = fechado ? '<div class="card"><p class="gi-aviso">Os pedidos estão fechados no momento.</p></div>' : '';
+  // Cada grupo tem o seu pedido: o que está fechado mostra o aviso e não deixa pedir.
+  const tudoFechado = grupos.length && grupos.every((g) => !g.aberto);
+  let h = tudoFechado ? '<div class="card"><p class="gi-aviso">Os pedidos estão fechados no momento.</p></div>' : '';
   if (!grupos.length) return h + '<div class="card"><p class="muted" style="margin:0">Nenhum item à venda no momento.</p></div>';
   // Cada bloco pode ser minimizado (começa aberto); minimizado, mostra quantos itens tem.
   return h + grupos.map((g) => {
+    const fechado = !g.aberto;
     const min = ui.minimizados.has(g.id);
     const cab = `<button class="grp-h dobra" data-act="guiaminimizar" data-id="${g.id}" aria-expanded="${!min}"><h2>${esc(g.descricao)}</h2>
       <span class="count">${min ? plural(g.itens.length, 'item', 'itens') + ' ' : ''}<span class="seta" aria-hidden="true">${min ? '▸' : '▾'}</span></span></button>`;
     if (min) return `<div class="card">${cab}</div>`;
-    return `<div class="card">${cab}<div class="gi-lista">
+    return `<div class="card">${cab}${fechado && !tudoFechado ? '<p class="gi-aviso">Os pedidos deste grupo estão fechados no momento.</p>' : ''}<div class="gi-lista">
     ${g.itens.map((i) => {
       const max = Math.min(i.quantidade, 20);
       const q = Math.min(ui.qtd[i.id] || 1, Math.max(max, 1));
@@ -223,53 +226,102 @@ function cardGrupos(G) {
     ${G.grupos.length ? `<div class="gg-lista">${G.grupos.map(grupoAdmin).join('')}</div>` : '<p class="muted" style="margin:0">Nenhum grupo cadastrado ainda.</p>'}</div>`;
 }
 
+// ---------- pedidos por grupo ----------
+// Cada grupo tem o seu pedido. Um pedido pode atender mais de um grupo (o que estava aberto antes dessa mudança):
+// cada par pedido + grupo vira uma "rodada", com as linhas daquele grupo. Linhas sem grupo (grupo excluído) ficam em "Outros".
+function rodadas(G) {
+  const nomeGrupo = Object.fromEntries(G.grupos.map((g) => [g.id, g.descricao]));
+  const R = [];
+  G.pedidos.forEach((p) => {
+    const ids = new Set();
+    (p.grupos || []).forEach((pg) => {
+      ids.add(pg.grupoId);
+      R.push({ chave: `${p.numero}:${pg.grupoId}`, numero: p.numero, grupoId: pg.grupoId, nome: nomeGrupo[pg.grupoId] || 'Outros',
+        criadoEm: pg.criadoEm || p.criadoEm, encerradoEm: pg.encerradoEm, linhas: p.linhas.filter((l) => l.grupoId === pg.grupoId) });
+    });
+    const soltas = p.linhas.filter((l) => !ids.has(l.grupoId));
+    if (soltas.length) R.push({ chave: `${p.numero}:`, numero: p.numero, grupoId: null, nome: 'Outros', criadoEm: p.criadoEm, encerradoEm: p.encerradoEm || p.criadoEm, linhas: soltas });
+  });
+  return R;
+}
+const proximoNumero = (G) => Math.max(0, ...G.pedidos.map((p) => p.numero)) + 1;
+
+// Situação da pessoa no pedido: primeiro quem precisa de atenção (sem link, link vencido/cancelado),
+// depois quem está aguardando o pagamento e, no fim da fila, quem já pagou tudo.
+function situacao(x) {
+  if (x.linhas.every((l) => l.pago)) return { ordem: 2, selo: '<span class="badge pleno">Pago</span>' };
+  if (x.linhas.some((l) => !l.pago && l.pix !== 'pendente')) return { ordem: 0, selo: '' };
+  return { ordem: 1, selo: '<span class="badge new">Aguardando</span>' };
+}
+const porSituacao = (linhas) => porPessoa(linhas).map((x) => ({ ...x, sit: situacao(x) }))
+  .sort((a, b) => a.sit.ordem - b.sit.ordem || a.nome.localeCompare(b.nome, 'pt-BR'));
+
 // Linhas de um pedido por pessoa, com a caixinha de ok e o cancelar.
 function listaPedido(linhas) {
   if (!linhas.length) return '<p class="muted" style="margin:0">Nenhum pedido feito ainda.</p>';
-  return `<div class="gp-pessoas">${porPessoa(linhas).map((p) => `<div class="gp-pessoa">
-    <div class="gp-pessoa-h"><b>${esc(p.nome)}</b><b>${R(p.total)}</b></div>
+  const pessoas = porSituacao(linhas);
+  return `<div class="gp-pessoas">${pessoas.map((p) => `<div class="gp-pessoa${p.sit.ordem === 2 ? ' pago' : ''}">
+    <div class="gp-pessoa-h"><b>${esc(p.nome)}</b><span class="gp-pessoa-v">${p.sit.selo}<b>${R(p.total)}</b></span></div>
     <ul class="gp-linhas">${p.linhas.map((l) => `<li class="${l.ok ? 'ok' : ''}">
       <label class="gp-ok"><input type="checkbox" data-act="guiaok" data-id="${l.id}" ${l.ok ? 'checked' : ''} aria-label="Ok: ${esc(p.nome)}, ${esc(l.descricao)}"></label>
       <span class="gp-desc"><b>${l.quantidade}x</b> ${esc(l.descricao)}${selo(l)}</span><span class="gp-val">${R(l.valor * l.quantidade)}</span>
       ${estado.confirm === 'gl:' + l.id ? `<button class="btn small danger" data-act="guiacancelar" data-id="${l.id}">${rot('cancelar', 'Cancelar?', 'Cancelando…')}</button>` : `<button class="btn small link gp-x" data-act="askdel" data-k="gl:${l.id}" aria-label="Cancelar este pedido">✕</button>`}
     </li>`).join('')}</ul></div>`).join('')}</div>
-    <div class="meu-tot"><span>${plural(porPessoa(linhas).length, 'pessoa', 'pessoas')} · ${plural(itensDe(linhas), 'item', 'itens')}</span><b>${R(totalDe(linhas))}</b></div>`;
+    <div class="meu-tot"><span>${plural(pessoas.length, 'pessoa', 'pessoas')} · ${plural(itensDe(linhas), 'item', 'itens')}</span><b>${R(totalDe(linhas))}</b></div>`;
 }
 
+// Painel de pedidos: um bloco por grupo, começando minimizado. Minimizado, mostra o pedido aberto,
+// quantas pessoas e quanto falta pagar. Aberto: Encerrar / Novo pedido do grupo e a lista por pessoa.
 function cardPainel(G) {
-  const atual = G.pedidos.find((p) => !p.encerradoEm);
-  const ultimo = G.pedidos[0];
-  let h = '<div class="card adm"><div class="grp-h"><h2>Painel de pedidos</h2></div>';
-  if (atual) {
-    h += `<div class="gp-status"><span><span class="badge new">Aberto</span> <b>Pedido nº ${atual.numero}</b> <span class="muted">desde ${dia(atual.criadoEm)}</span></span>
-      ${estado.confirm === 'genc' ? `<button class="btn small danger" data-act="guiaencerrar">${rot('encerrar', 'Confirmar encerramento', 'Encerrando…')}</button>` : `<button class="btn small danger" data-act="askdel" data-k="genc">Encerrar pedido</button>`}</div>`;
-    if (estado.confirm === 'genc') h += '<p class="muted gg-aviso">Depois de encerrar, ninguém pede mais neste número. Para receber pedidos de novo, toque em Novo pedido.</p>';
-    h += listaPedido(atual.linhas);
-  } else {
-    h += `<div class="gp-status"><span class="muted">Nenhum pedido aberto${ultimo ? ` · último: nº ${ultimo.numero}, encerrado em ${dia(ultimo.encerradoEm)}` : ''}.</span>
-      ${estado.confirm === 'gnovo' ? `<button class="btn small primary" data-act="guianovo">${rot('novo', `Confirmar novo pedido nº ${(ultimo?.numero || 0) + 1}`, 'Abrindo…')}</button>` : `<button class="btn small primary" data-act="askdel" data-k="gnovo">Novo pedido nº ${(ultimo?.numero || 0) + 1}</button>`}</div>`;
-    if (estado.confirm === 'gnovo') h += '<p class="muted gg-aviso">O pedido novo passa a receber os pedidos de todos. O número não volta atrás.</p>';
-  }
-  return h + '</div>';
+  if (!G.grupos.length) return '';
+  const R0 = rodadas(G);
+  const prox = proximoNumero(G);
+  const blocos = G.grupos.map((g) => {
+    const r = R0.find((x) => x.grupoId === g.id && x.numero === g.aberto && !x.encerradoEm);
+    const aberto = ui.painel.has(g.id);
+    const pessoas = r ? porPessoa(r.linhas).length : 0;
+    const falta = r ? r.linhas.filter((l) => !l.pago).reduce((a, l) => a + l.valor * l.quantidade, 0) : 0;
+    const resumo = r ? `Nº ${r.numero} · ${plural(pessoas, 'pessoa', 'pessoas')}${falta ? ` · falta ${R(falta)}` : ''}` : 'Fechado';
+    const cab = `<button class="grp-h dobra gp-grupo-h" data-act="guiapainel" data-id="${g.id}" aria-expanded="${aberto}"><h3>${esc(g.descricao)}</h3>
+      <span class="count">${r ? '<span class="badge new">Aberto</span> ' : ''}${resumo} <span class="seta" aria-hidden="true">${aberto ? '▾' : '▸'}</span></span></button>`;
+    if (!aberto) return `<div class="gp-grupo">${cab}</div>`;
+    let h = `<div class="gp-grupo">${cab}<div class="gp-grupo-c">`;
+    if (r) {
+      const k = 'genc:' + g.id;
+      h += `<div class="gp-status"><span><b>Pedido nº ${r.numero}</b> <span class="muted">desde ${dia(r.criadoEm)}</span></span>
+        ${estado.confirm === k ? `<button class="btn small danger" data-act="guiaencerrar" data-id="${g.id}">${rot('encerrar', 'Confirmar encerramento', 'Encerrando…')}</button>` : `<button class="btn small danger" data-act="askdel" data-k="${k}">Encerrar pedido</button>`}</div>`;
+      if (estado.confirm === k) h += `<p class="muted gg-aviso">Depois de encerrar, ninguém pede mais itens de ${esc(g.descricao)} neste número. Os outros grupos continuam como estão.</p>`;
+      h += listaPedido(r.linhas);
+    } else {
+      const ultimo = R0.find((x) => x.grupoId === g.id && x.encerradoEm);
+      const k = 'gnovo:' + g.id;
+      h += `<div class="gp-status"><span class="muted">Nenhum pedido aberto${ultimo ? ` · último: nº ${ultimo.numero}, encerrado em ${dia(ultimo.encerradoEm)}` : ''}.</span>
+        ${estado.confirm === k ? `<button class="btn small primary" data-act="guianovo" data-id="${g.id}">${rot('novo', `Confirmar novo pedido nº ${prox}`, 'Abrindo…')}</button>` : `<button class="btn small primary" data-act="askdel" data-k="${k}">Novo pedido nº ${prox}</button>`}</div>`;
+      if (estado.confirm === k) h += `<p class="muted gg-aviso">O pedido novo passa a receber os pedidos de ${esc(g.descricao)}. O número não volta atrás.</p>`;
+    }
+    return h + '</div></div>';
+  }).join('');
+  return `<div class="card adm"><div class="grp-h"><h2>Painel de pedidos</h2><span class="count">${plural(G.grupos.length, 'grupo', 'grupos')}</span></div><div class="gp-grupos">${blocos}</div></div>`;
 }
 
+// Pedidos encerrados: por grupo e número, do mais recente para o mais antigo; cada um começa minimizado.
 function cardFeitos(G) {
-  const feitos = G.pedidos.filter((p) => p.encerradoEm);
+  const feitos = rodadas(G).filter((r) => r.encerradoEm && r.linhas.length);
   let h = `<div class="card adm"><div class="grp-h"><h2>Pedidos encerrados</h2><span class="count">${feitos.length}</span></div>`;
   if (!feitos.length) return h + '<p class="muted" style="margin:0">Nenhum pedido encerrado ainda.</p></div>';
   return h + feitos.map((p) => {
-    const aberto = ui.feitos.has(p.numero);
+    const aberto = ui.feitos.has(p.chave);
     const nOk = p.linhas.filter((l) => l.ok).length;
-    return `<div class="hist-compra"><button class="hc-topo" data-act="guiafeito" data-n="${p.numero}" aria-expanded="${aberto}">
-      <span class="hc-tit">Pedido nº ${p.numero}</span><span class="hc-tot">${R(totalDe(p.linhas))} <span class="seta" aria-hidden="true">${aberto ? '▾' : '▸'}</span></span>
+    return `<div class="hist-compra"><button class="hc-topo" data-act="guiafeito" data-n="${p.chave}" aria-expanded="${aberto}">
+      <span class="hc-tit">${esc(p.nome)} · Pedido nº ${p.numero}</span><span class="hc-tot">${R(totalDe(p.linhas))} <span class="seta" aria-hidden="true">${aberto ? '▾' : '▸'}</span></span>
       <span class="muted hc-sub">encerrado em ${dia(p.encerradoEm)} · ${plural(porPessoa(p.linhas).length, 'pessoa', 'pessoas')} · ${nOk}/${p.linhas.length} ok</span></button>
       ${aberto ? listaPedido(p.linhas) : ''}</div>`;
   }).join('') + '</div>';
 }
 
-// Texto e imagem de um pedido para o WhatsApp.
+// Texto e imagem de um pedido de um grupo para o WhatsApp.
 function textoPedido(p) {
-  const L = [`*Compras · Pedido nº ${p.numero}*`, p.encerradoEm ? `Encerrado em ${dia(p.encerradoEm)}` : 'Pedido aberto', ''];
+  const L = [`*Compras · ${p.nome} · Pedido nº ${p.numero}*`, p.encerradoEm ? `Encerrado em ${dia(p.encerradoEm)}` : 'Pedido aberto', ''];
   porPessoa(p.linhas).forEach((x) => {
     L.push(`*${x.nome}* · ${R(x.total)}`);
     x.linhas.forEach((l) => L.push(`• ${l.quantidade}x ${l.descricao} · ${R(l.valor * l.quantidade)}`));
@@ -279,26 +331,37 @@ function textoPedido(p) {
   return L.join('\n');
 }
 const dadosImagem = (p) => ({
-  rotulo: 'Compras', titulo: `Pedido nº ${p.numero}`, subtitulo: p.encerradoEm ? `Encerrado em ${dia(p.encerradoEm)}` : 'Pedido aberto',
+  rotulo: `Compras · ${p.nome}`, titulo: `Pedido nº ${p.numero}`, subtitulo: p.encerradoEm ? `Encerrado em ${dia(p.encerradoEm)}` : 'Pedido aberto',
   linhas: porPessoa(p.linhas).map((x) => ({ texto: x.nome, valor: R(x.total), sub: x.linhas.map((l) => `${l.quantidade}x ${l.descricao}`).join(', ') })),
   rodape: `Total: ${R(totalDe(p.linhas))}`,
 });
 
+// Exportar: escolhe o grupo e, dentro dele, o pedido (o aberto primeiro).
+const rodadasExportar = (G) => rodadas(G).filter((r) => !r.encerradoEm || r.linhas.length);
+function exportarEscolhido(G) {
+  const L = rodadasExportar(G);
+  return L.find((r) => r.chave === ui.exportar) || L[0] || null;
+}
 function cardExportar(G) {
-  if (!G.pedidos.length) return '';
-  const n = G.pedidos.some((p) => p.numero === ui.exportar) ? ui.exportar : G.pedidos[0].numero;
-  const p = G.pedidos.find((x) => x.numero === n);
+  const p = exportarEscolhido(G);
+  if (!p) return '';
+  const L = rodadasExportar(G);
+  const grupos = [...new Map(L.map((r) => [String(r.grupoId), r.nome])).entries()];
+  const doGrupo = L.filter((r) => String(r.grupoId) === String(p.grupoId));
   const txt = textoPedido(p);
   const img = ui.img && ui.img.chave === txt ? ui.img : null;
   return `<div class="card adm"><div class="grp-h"><h2>Exportar pedido</h2></div>
-    <label class="field">Pedido<select data-act="guiaexportar">${G.pedidos.map((x) => `<option value="${x.numero}" ${x.numero === n ? 'selected' : ''}>Nº ${x.numero} · ${x.encerradoEm ? 'encerrado em ' + dia(x.encerradoEm) : 'aberto'} · ${plural(porPessoa(x.linhas).length, 'pessoa', 'pessoas')}</option>`).join('')}</select></label>
-    ${p.linhas.length ? `<div class="grp exp"><textarea id="gx-txt" readonly aria-label="Pedido nº ${n}">${esc(txt)}</textarea>
+    <div class="row gx-sel">
+      <label class="field">Grupo<select data-act="guiaexpgrupo">${grupos.map(([id, nome]) => `<option value="${esc(id)}" ${id === String(p.grupoId) ? 'selected' : ''}>${esc(nome)}</option>`).join('')}</select></label>
+      <label class="field">Pedido<select data-act="guiaexportar">${doGrupo.map((x) => `<option value="${esc(x.chave)}" ${x.chave === p.chave ? 'selected' : ''}>Nº ${x.numero} · ${x.encerradoEm ? 'encerrado em ' + dia(x.encerradoEm) : 'aberto'} · ${plural(porPessoa(x.linhas).length, 'pessoa', 'pessoas')}</option>`).join('')}</select></label>
+    </div>
+    ${p.linhas.length ? `<div class="grp exp"><textarea id="gx-txt" readonly aria-label="${esc(p.nome)}, pedido nº ${p.numero}">${esc(txt)}</textarea>
       <div class="cp-bts">
         <button class="btn primary" data-act="guiacopiar"><span aria-hidden="true">📋</span> Copiar</button>
         <a class="btn" href="https://wa.me/?text=${encodeURIComponent(txt)}" target="_blank" rel="noopener"><span aria-hidden="true">💬</span> WhatsApp</a>
         <button class="btn" data-act="guiaimg"><span aria-hidden="true">🖼️</span> ${img ? 'Atualizar imagem' : 'Imagem'}</button>
       </div>
-      ${img ? `<img class="prev" src="${img.url}" alt="Imagem do pedido nº ${n}">
+      ${img ? `<img class="prev" src="${img.url}" alt="Imagem do pedido nº ${p.numero}">
         <div class="cp-bts"><button class="btn primary" data-act="guiashare"><span aria-hidden="true">📤</span> Compartilhar</button><button class="btn" data-act="guiasalvarimg"><span aria-hidden="true">💾</span> Salvar imagem</button></div>` : ''}
     </div>` : '<p class="muted" style="margin:0">Este pedido não tem nenhuma linha.</p>'}</div>`;
 }
@@ -412,7 +475,8 @@ const valorCampo = (v) => Number(v).toFixed(2).replace('.', ',');
 export const cliques = {
   guiadobrar(el) { const id = el.dataset.id; if (ui.abertos.has(id)) ui.abertos.delete(id); else ui.abertos.add(id); avisar(); },
   guiaminimizar(el) { const id = el.dataset.id; if (ui.minimizados.has(id)) ui.minimizados.delete(id); else ui.minimizados.add(id); avisar(); },
-  guiafeito(el) { const n = Number(el.dataset.n); if (ui.feitos.has(n)) ui.feitos.delete(n); else ui.feitos.add(n); avisar(); },
+  guiafeito(el) { const n = el.dataset.n; if (ui.feitos.has(n)) ui.feitos.delete(n); else ui.feitos.add(n); avisar(); },
+  guiapainel(el) { const id = el.dataset.id; if (ui.painel.has(id)) ui.painel.delete(id); else ui.painel.add(id); avisar(); },
   guiarenomear(el) { ui.grupoRen = el.dataset.id || null; avisar(); },
   async guiaexcluirgrupo(el) { if (await confirmado('gg:' + el.dataset.id, 'excluirGrupo', { id: el.dataset.id })) { ui.abertos.delete(el.dataset.id); toast('Grupo excluído.'); } },
   guianovoitem(el) { ui.item = { grupoId: el.dataset.id, descricao: '', quantidade: '', valor: '', visivel: true, cpj: false }; avisar(); },
@@ -468,8 +532,8 @@ export const cliques = {
     if (ok && estado.guias.pix) irParaLink();
   },
   async guiacancelar(el) { if (await confirmado('gl:' + el.dataset.id, 'cancelar', { id: el.dataset.id })) toast('Pedido cancelado.'); },
-  async guiaencerrar() { if (await confirmado('genc', 'encerrar')) toast('Pedido encerrado.'); },
-  async guianovo() { if (await confirmado('gnovo', 'novo')) toast('Novo pedido aberto.'); },
+  async guiaencerrar(el) { if (await confirmado('genc:' + el.dataset.id, 'encerrar', { grupoId: el.dataset.id })) toast('Pedido do grupo encerrado.'); },
+  async guianovo(el) { if (await confirmado('gnovo:' + el.dataset.id, 'novo', { grupoId: el.dataset.id })) toast('Novo pedido aberto para o grupo.'); },
   guiacopiar() {
     const txt = document.getElementById('gx-txt')?.value || '';
     const fb = () => { const t = document.getElementById('gx-txt'); t.focus(); t.select(); toast('Lista selecionada. Copie com o menu do aparelho.'); };
@@ -477,7 +541,8 @@ export const cliques = {
   },
   async guiaimg() {
     const G = estado.guias;
-    const p = G.pedidos.find((x) => x.numero === ui.exportar) || G.pedidos[0];
+    const p = exportarEscolhido(G);
+    if (!p) return;
     try {
       const blob = await gerarImagemLista(dadosImagem(p));
       if (ui.img) URL.revokeObjectURL(ui.img.url);
@@ -497,7 +562,9 @@ export const mudancas = {
   guiaitemcpjform(t) { if (ui.item) ui.item.cpj = t.checked; },
   async guiaok(t) { if (!(await fazer('ok', { id: t.dataset.id, ok: t.checked }))) t.checked = !t.checked; },
   guiaqtd(t) { ui.qtd[t.dataset.id] = Number(t.value); },
-  guiaexportar(t) { ui.exportar = Number(t.value); avisar(); },
+  guiaexportar(t) { ui.exportar = t.value; avisar(); },
+  // Trocar o grupo leva ao pedido mais recente dele (o aberto, se houver).
+  guiaexpgrupo(t) { const r = rodadasExportar(estado.guias).find((x) => String(x.grupoId) === t.value); ui.exportar = r ? r.chave : null; avisar(); },
   async guiafoto(t) {
     const arq = t.files && t.files[0];
     t.value = '';

@@ -1,9 +1,11 @@
 // Aba Compras (rota: GET /api/oferendas?lista=guias · POST /api/oferendas { acao: 'guias', op, ... }).
-//   todos:  pedir { itemId, quantidade }  — no pedido aberto, sem passar do disponível
+//   todos:  pedir { itemId, quantidade }  — no pedido aberto do grupo do item, sem passar do disponível
 //           (com o Pix ligado, pedir { ..., cpf? } já gera o link de pagamento; pix { pedido, cpf? } tenta de novo — veja api/_lib/asaas.js)
 //   admin:  publicar { publicada } · grupo { id?, descricao?, visivel? } · excluirGrupo { id }
 //           item { id?, grupoId, descricao?, foto? (base64 JPEG | null tira), quantidade?, valor?, visivel?, cpj? } · excluirItem { id }
-//           cancelar { id } (a quantidade volta para o item) · ok { id, ok } · encerrar · novo (próximo número)
+//           cancelar { id } (a quantidade volta para o item) · ok { id, ok } · encerrar { grupoId } · novo { grupoId } (próximo número)
+// Cada grupo tem o seu pedido (grupos[].aberto = número do pedido aberto ou null). pedidos[].grupos diz quais grupos
+// o pedido atende e quando cada um encerrou; as linhas trazem o grupoId.
 // Quem não administra vê só os grupos e itens visíveis e as próprias linhas (meus), nunca os pedidos dos outros.
 // Item CPJ (cpj): só quem está cadastrado na corrente vê e pede; os outros nem recebem o item.
 
@@ -29,13 +31,12 @@ function paraTela(estado, eu) {
   const chave = chavePessoa(eu);
   const num = (v) => Number(v);
   const pedidos = estado.pedidos.map((p) => ({ ...p, linhas: p.linhas.map((l) => ({ ...l, valor: num(l.valor) })) }));
-  const aberto = pedidos.find((p) => !p.encerradoEm)?.numero ?? null;
   const meus = pedidos.flatMap((p) => p.linhas.filter((l) => l.chave === chave)
     .map(({ id, descricao, valor, quantidade, pago, pix }) => ({ id, pedido: p.numero, descricao, valor, quantidade, pago, pix })));
   const grupos = estado.grupos.map((g) => ({ ...g, itens: g.itens.map((i) => ({ ...i, valor: num(i.valor) })) }));
-  if (ehAdmin(eu)) return { admin: true, publicada: estado.publicada, aberto, grupos, pedidos, meus };
+  if (ehAdmin(eu)) return { admin: true, publicada: estado.publicada, grupos, pedidos, meus };
   return {
-    admin: false, aberto, meus,
+    admin: false, meus,
     grupos: grupos.filter((g) => g.visivel).map((g) => ({ ...g, itens: g.itens.filter((i) => podeVerItem(eu, i)) })).filter((g) => g.itens.length),
   };
 }
@@ -92,7 +93,7 @@ export async function acaoGuias(eu, b) {
     let aviso;
     if (pix) {
       try {
-        await gerarPix(eu, { pedido: estado.pedidos.find((x) => !x.encerradoEm).numero, cpf: b.cpf });
+        await gerarPix(eu, { pedido: estado.pedidoFeito, cpf: b.cpf });
         estado = await db.rpc('guias_estado');
       } catch (e) {
         if (!(e instanceof HttpError)) console.error('[asaas] pedir', e);
@@ -145,10 +146,10 @@ export async function acaoGuias(eu, b) {
       estado = await db.rpc('guia_linha_ok', { id: validarId(b.id, 'Pedido'), ok: booleano(b.ok, 'está ok') });
       break;
     case 'encerrar':
-      estado = await db.rpc('guia_pedido_encerrar');
+      estado = await db.rpc('guia_pedido_encerrar', { grupoId: validarId(b.grupoId, 'Grupo') });
       break;
     case 'novo':
-      estado = await db.rpc('guia_pedido_novo');
+      estado = await db.rpc('guia_pedido_novo', { grupoId: validarId(b.grupoId, 'Grupo') });
       break;
     default:
       throw new HttpError(400, 'Ação inválida.');
