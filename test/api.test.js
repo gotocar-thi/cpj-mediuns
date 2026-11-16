@@ -1783,6 +1783,7 @@ test('amaci: Visível para todos; orixás liberados por turma; o aluno vê só o
   assert.deepEqual(doAluno.orixas.map((o) => o.k), ['oxala', 'loguna']);
   assert.equal(doAluno.turmaNome, 'Turma 09');
   assert.equal(doAluno.turmas, undefined, 'o aluno não recebe as turmas');
+  assert.deepEqual(Object.keys(doAluno.orixas[0]).sort(), ['ervas', 'fatores', 'k', 'orientacao', 'pontos', 'velas'], 'só os blocos do padrão (e o recado)');
   assert.equal((await am(USER)).json.orixas.length, 14, 'a corrente vê os 14');
   // Orientação: até 10 linhas; vazia apaga.
   assert.equal((await acao(ADMIN, { op: 'orientacao', orixa: 'oxala', texto: Array(11).fill('x').join('\n') })).status, 400);

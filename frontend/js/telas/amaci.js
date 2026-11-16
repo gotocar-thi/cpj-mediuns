@@ -1,6 +1,6 @@
-// Tela "Amaci": a pessoa escolhe um orixá e vê pontos riscados, velas, banho de ervas, exemplo de oferenda e a orientação.
+// Tela "Amaci": a pessoa escolhe um orixá e vê, sempre nesta ordem, o nome, os recados, ervas, velas, ponto riscado e fatores.
 // O seletor só traz os orixás liberados para a turma de quem está logado (o servidor já manda só esses)
-// e abre no último liberado. Quem administra liga "Visível para todos", libera os orixás por turma e escreve a orientação.
+// e abre no último liberado. Quem administra liga "Visível para todos", libera os orixás por turma e escreve os recados.
 
 import { estado, pode, carregarAmaci, acaoAmaci, avisar } from '../estado.js';
 import { esc, toast } from '../util.js';
@@ -13,7 +13,7 @@ const ui = {
   sel: '',              // orixá escolhido ('' = o último liberado)
   config: false,        // bloco ⚙️ Configuração do admin aberto (começa minimizado)
   turmas: new Set(),    // turmas abertas no bloco do admin
-  editando: null,       // orientação em edição: { orixa, texto }
+  editando: null,       // recado em edição: { orixa, texto }
 };
 export function limpar() {
   ui.sel = '';
@@ -58,30 +58,33 @@ function seletor(A, sel) {
   return `<div class="am-sel" role="tablist" aria-label="Escolher orixá">${A.orixas.map((o) => `<button role="tab" class="am-sel-b" data-act="amsel" data-k="${o.k}" aria-selected="${o.k === sel}">${esc(NOME[o.k].curto)}</button>`).join('')}</div>`;
 }
 
-// Sem desenho nem firmeza na apostila, o bloco não aparece.
+// Bloco de conteúdo: ícone na frente do título e o texto da apostila. Sem conteúdo, o bloco não aparece.
+const bloco = (cls, icone, titulo, corpo) => `<section class="card am-bloco ${cls}"><div class="am-bloco-h"><span class="am-ico" aria-hidden="true">${icone}</span><h3>${titulo}</h3></div>${corpo}</section>`;
+
 function blocoPontos(o) {
-  if (!o.pontos.length && !o.firmeza?.length) return '';
-  const imgs = o.pontos.length
-    ? `<div class="am-pontos${o.pontos.length > 1 ? ' varios' : ''}">${o.pontos.map((p) => `<figure class="am-ponto"><img src="/img/amaci/${esc(p.img)}" alt="${esc(p.legenda)}" loading="lazy">${p.legenda ? `<figcaption>${esc(p.legenda)}</figcaption>` : ''}</figure>`).join('')}</div>`
-    : '';
-  return `<div class="card am-bloco"><h3><span aria-hidden="true">✴️</span> Pontos riscados</h3>${imgs}${o.firmeza?.length ? `<div class="am-sub"><span class="eyebrow">Firmezas possíveis para serem feitas em casa</span>${lista(o.firmeza)}</div>` : ''}</div>`;
+  if (!o.pontos.length) return '';
+  return bloco('am-c-ponto', '✴️', 'Ponto Riscado', `<div class="am-pontos${o.pontos.length > 1 ? ' varios' : ''}">${o.pontos.map((p) => `<figure class="am-ponto"><img src="/img/amaci/${esc(p.img)}" alt="${esc(p.legenda || 'Ponto riscado')}" loading="lazy">${p.legenda ? `<figcaption>${esc(p.legenda)}</figcaption>` : ''}</figure>`).join('')}</div>`);
 }
 
-function blocoOferenda(of) {
-  return `<div class="card am-bloco"><h3><span aria-hidden="true">🧺</span> Informações</h3>
-    <div class="am-sub"><span class="eyebrow">Elementos</span>${lista(of.itens)}</div>
-    <div class="am-sub"><span class="eyebrow">Pratos</span>${lista(of.pratos)}</div>
-    <div class="am-sub"><span class="eyebrow">Onde e quando</span>${lista(of.onde)}</div>
-  </div>`;
+// Fatores: o nome do fator em negrito (o que vem antes de ":" ou " – "), o resto como está na apostila.
+const fator = (t) => {
+  const m = t.match(/^(.+?)(: | – )(.+)$/);
+  return `<li>${m ? `<b>${esc(m[1])}</b>${esc(m[2])}${esc(m[3])}` : `<b>${esc(t)}</b>`}</li>`;
+};
+function blocoFatores(o) {
+  if (!o.fatores?.length) return '';
+  return bloco('am-c-fator', '✨', 'Fatores', `<ul class="am-fatores">${o.fatores.map(fator).join('')}</ul>`);
 }
 
+// Recados: texto livre de quem administra a aba, um por orixá (no banco é a "orientação"). Sem texto, não aparece.
+const ICONE_CASA = '<span class="am-ico am-ico-casa" aria-hidden="true"><img src="/img/terreiro.png" alt=""></span>';
 function blocoOrientacao(o) {
   const ed = ui.editando?.orixa === o.k ? ui.editando : null;
   if (ed) {
     const n = linhas(ed.texto);
     return `<form class="card am-bloco am-ori" id="f-amaci-ori" data-k="${o.k}" autocomplete="off">
-      <h3><span aria-hidden="true">📝</span> Orientação</h3>
-      <textarea id="am-ori" rows="${ORIENTACAO_VISIVEIS}" maxlength="${ORIENTACAO_LETRAS}" placeholder="Escreva a orientação para ${esc(NOME[o.k].nome)}.">${esc(ed.texto)}</textarea>
+      <div class="am-bloco-h">${ICONE_CASA}<h3>Recados</h3></div>
+      <textarea id="am-ori" rows="${ORIENTACAO_VISIVEIS}" maxlength="${ORIENTACAO_LETRAS}" placeholder="Escreva o recado para ${esc(NOME[o.k].nome)}.">${esc(ed.texto)}</textarea>
       <span class="muted am-conta">Cabem até ${ORIENTACAO_LINHAS} linhas (${ORIENTACAO_LETRAS} letras) · <span id="am-ori-n">${n}/${ORIENTACAO_LINHAS} linhas</span></span>
       <div class="row" style="justify-content:flex-end;gap:8px"><button type="button" class="btn" data-act="amoricancel">Cancelar</button><button class="btn primary" type="submit">Salvar</button></div>
     </form>`;
@@ -89,15 +92,15 @@ function blocoOrientacao(o) {
   // Sem texto, o bloco não aparece; quem administra vê para poder escrever.
   if (!o.orientacao && !admin()) return '';
   const bt = admin() ? `<button class="btn link small" data-act="amoried">✎ ${o.orientacao ? 'Editar' : 'Escrever'}</button>` : '';
-  return `<div class="card am-bloco am-ori"><div class="grp-h"><h3><span aria-hidden="true">📝</span> Orientação</h3>${bt}</div>
-    ${o.orientacao ? `<p class="am-ori-txt">${esc(o.orientacao)}</p>` : '<p class="muted" style="margin:0">Sem orientação: o bloco fica escondido para a corrente e os alunos.</p>'}</div>`;
+  return `<div class="card am-bloco am-ori"><div class="am-bloco-h">${ICONE_CASA}<h3>Recados</h3>${bt}</div>
+    ${o.orientacao ? `<p class="am-ori-txt">${esc(o.orientacao)}</p>` : '<p class="muted" style="margin:0">Sem recado: o bloco fica escondido para a corrente e os alunos.</p>'}</div>`;
 }
 
 export function render() {
   if (estado.amaci === null) { carregarAmaci(); return '<div class="loading">Carregando o amaci…</div>'; }
   const A = estado.amaci;
   if (A.erro) return `<div class="card"><p class="erro">${esc(A.erro)}</p><button class="btn" data-act="amrecarregar">Tentar de novo</button></div>`;
-  let h = '<section class="panel">';
+  let h = '<section class="panel am-tela">';
   if (admin()) h += cardAdmin(A);
   if (!A.orixas.length) {
     const turma = A.turmaNome ? `da ${esc(A.turmaNome)}` : 'da sua turma';
@@ -108,19 +111,19 @@ export function render() {
   const o = A.orixas.find((x) => x.k === sel);
   const info = NOME[sel];
   h += `<div class="card am-topo">
-    <div><span class="eyebrow">${esc(info.trono)}</span><h2>Amaci de ${esc(info.nome)}</h2>${A.turmaNome ? `<span class="muted am-turma-nome">${esc(A.turmaNome)} · ${libs.length} de ${ORIXAS.length} orixás liberados</span>` : ''}</div>
     ${seletor(A, sel)}
+    <div class="am-nome"><span class="am-ico am-ico-g" aria-hidden="true">🙏</span><div><span class="eyebrow">Amaci · ${esc(info.trono)}</span><h2>${esc(info.nome)}</h2>${A.turmaNome ? `<span class="muted am-turma-nome">${esc(A.turmaNome)} · ${libs.length} de ${ORIXAS.length} orixás liberados</span>` : ''}</div></div>
   </div>`;
   h += blocoOrientacao(o);
-  h += `<div class="card am-bloco"><h3><span aria-hidden="true">🕯️</span> Velas</h3>${lista(o.velas)}</div>`;
-  h += `<div class="card am-bloco"><h3><span aria-hidden="true">🌿</span> Banho de ervas</h3>${lista(o.ervas)}</div>`;
+  if (o.ervas.length) h += bloco('am-c-erva', '🌿', 'Ervas', lista(o.ervas));
+  if (o.velas.length) h += bloco('am-c-vela', '🕯️', 'Velas', lista(o.velas));
   h += blocoPontos(o);
-  h += blocoOferenda(o.oferenda);
+  h += blocoFatores(o);
   return h + '<p class="muted am-fonte">Fonte: Apostila Orixás da Casa do Pai João.</p></section>';
 }
 
 // ---------- eventos ----------
-// Orientação: não deixa passar de 10 linhas e guarda o texto para um redesenho não apagar.
+// Recado: não deixa passar de 10 linhas e guarda o texto para um redesenho não apagar.
 export function digitando(t) {
   const ls = t.value.split('\n');
   if (ls.length > ORIENTACAO_LINHAS) t.value = ls.slice(0, ORIENTACAO_LINHAS).join('\n');
@@ -135,7 +138,7 @@ export async function enviar(form) {
   if (await acaoAmaci('orientacao', { orixa: k, texto })) {
     ui.editando = null;
     avisar();
-    toast('Orientação salva.');
+    toast('Recado salvo.');
   }
 }
 

@@ -1754,18 +1754,34 @@ button.iem-tot-n{cursor:pointer}
 .am-sel{display:flex;flex-wrap:wrap;gap:6px}
 .am-sel-b{border:1px solid var(--line);background:var(--bg);color:var(--ink);border-radius:20px;padding:6px 12px;min-height:36px;font:600 .88rem var(--f-body);cursor:pointer}
 .am-sel-b[aria-selected="true"]{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
-.am-bloco{gap:10px}
-.am-bloco h3{display:flex;align-items:center;gap:8px}
-.am-lista{margin:0;padding-left:20px;display:grid;gap:6px}
-.am-lista li{overflow-wrap:anywhere}
+/* Amaci: cada bloco com a sua cor (faixa à esquerda e fundo do ícone) e o título separado do texto por uma linha. */
+.am-tela{gap:16px}
+.am-bloco{gap:12px;border-left:4px solid var(--am-cor,var(--line))}
+.am-c-erva{--am-cor:var(--ok)}
+.am-c-vela{--am-cor:var(--gold)}
+.am-c-ponto{--am-cor:var(--accent)}
+.am-c-fator{--am-cor:var(--orange)}
+.am-bloco-h{display:flex;align-items:center;gap:10px;padding-bottom:10px;border-bottom:1px solid var(--line)}
+.am-bloco-h h3{margin:0;font-size:1.1rem;flex:1 1 auto}
+.am-ico{flex:none;display:inline-grid;place-items:center;width:36px;height:36px;border-radius:10px;font-size:1.15rem;line-height:1;background:color-mix(in srgb,var(--am-cor,var(--accent)) 16%,transparent)}
+.am-lista{margin:0;padding-left:20px;display:grid;gap:8px;font-size:1rem;line-height:1.55}
+.am-lista li{overflow-wrap:anywhere;padding-left:2px}
+.am-lista li::marker{color:var(--am-cor,var(--muted))}
+.am-fatores{list-style:none;margin:0;padding:0;display:flex;flex-wrap:wrap;gap:8px}
+.am-fatores li{border-radius:12px;padding:7px 12px;line-height:1.45;font-size:.97rem;overflow-wrap:anywhere;background:color-mix(in srgb,var(--am-cor) 9%,var(--bg));border:1px solid color-mix(in srgb,var(--am-cor) 28%,var(--line))}
+.am-nome{display:flex;align-items:center;gap:12px}
+.am-nome h2{margin:2px 0 0;font-size:1.5rem}
+.am-ico-g{--am-cor:var(--gold);width:48px;height:48px;font-size:1.5rem;border-radius:14px}
+/* Recados: o logo da casa (preto) num quadrado branco, para aparecer também no tema escuro. */
+.am-ico-casa{background:#fff;border:1px solid var(--line);padding:3px;box-sizing:border-box}
+.am-ico-casa img{width:100%;height:100%;object-fit:contain}
+.am-ori{--am-cor:var(--gold)}
 .am-lista .am-lista{margin-top:4px;gap:3px;list-style:circle}
-.am-sub{display:grid;gap:4px}
 .am-pontos{display:grid;grid-template-columns:minmax(0,1fr);gap:10px}
 .am-pontos.varios{grid-template-columns:repeat(2,minmax(0,1fr))}
 .am-ponto{margin:0;display:grid;gap:6px;justify-items:center}
 .am-ponto img{width:100%;max-width:320px;aspect-ratio:1;object-fit:contain;background:#f4efe6;border-radius:10px;padding:10px;box-sizing:border-box}
 .am-ponto figcaption{font-size:.82rem;color:var(--muted);text-align:center}
-.am-nota{margin:0;font-size:.92rem}
 /* Orientação: 5 linhas visíveis (lendo e escrevendo); o resto, até 10, rola dentro do bloco */
 .am-ori-txt{margin:0;white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.4;max-height:7em;overflow-y:auto}
 .am-ori textarea{min-height:0;height:calc(7em + 20px);font-family:var(--f-body);font-size:1rem;line-height:1.4;resize:none;overflow-y:auto}

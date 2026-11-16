@@ -2,7 +2,7 @@
 // Interruptor "Visível para todos" (começa desligado): desligado, só quem administra a aba vê; o servidor recusa os outros.
 // O admin libera, por turma de alunos, quais orixás ela vê (cada turma está numa etapa do curso).
 // O aluno recebe só os orixás liberados para a turma dele; quem não é aluno (corrente, admins) vê os 14.
-// A orientação (texto livre do admin) é uma por orixá, igual para todas as turmas.
+// O recado (texto livre do admin; no banco, "orientação") é um por orixá, igual para todas as turmas.
 import { validarId, HttpError } from './http.js';
 import { db } from './db.js';
 import { pode } from '../../shared/permissoes.js';
@@ -18,7 +18,7 @@ export function liberadosPara(eu, turmas) {
   return t ? ordenarOrixas(t.orixas) : [];
 }
 
-// → { publicada, liberados, turmaNome?, orixas: [{ k, pontos, nota, velas, ervas, oferenda, orientacao }], admin?, turmas? }
+// → { publicada, liberados, turmaNome?, orixas: [{ k, ervas, velas, pontos, fatores, orientacao }], admin?, turmas? }
 export async function amaci(eu, dados) {
   const d = dados || (await db.rpc('amaci_estado'));
   const admin = ehAdmin(eu);
@@ -46,7 +46,7 @@ export async function acaoAmaci(eu, b) {
   if (b.op === 'orientacao') {
     if (!ORIXA_KEYS.includes(b.orixa)) throw new HttpError(400, 'Orixá inválido.');
     const texto = limparOrientacao(b.texto);
-    if (texto === null) throw new HttpError(400, `A orientação pode ter até ${ORIENTACAO_LINHAS} linhas (${ORIENTACAO_LETRAS} letras).`);
+    if (texto === null) throw new HttpError(400, `O recado pode ter até ${ORIENTACAO_LINHAS} linhas (${ORIENTACAO_LETRAS} letras).`);
     return amaci(eu, await db.rpc('amaci_orientacao', { orixa: b.orixa, texto }));
   }
   throw new HttpError(400, 'Ação inválida.');
