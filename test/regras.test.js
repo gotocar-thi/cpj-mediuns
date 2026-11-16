@@ -562,6 +562,12 @@ test('vídeos: código do YouTube sai de qualquer formato de link', async () => 
   for (const u of ['https://vimeo.com/123', 'https://evil.com/watch?v=dQw4w9WgXcQ', 'https://youtu.be/curto', '', null]) assert.equal(idDoYoutube(u), null, String(u));
 });
 
+test('perfis: perfil com todas as abas marcadas recebe todas as permissões (nenhuma aba fica de fora da ordem fixa)', () => {
+  const tudo = Object.fromEntries(PERFIS_PADRAO[0].abas ? Object.keys(PERFIS_PADRAO[0].abas).map((k) => [k, { ver: true, editar: true }]) : []);
+  const perms = permissoesDe('qualquer', tudo);
+  for (const p of PERMISSOES_ROOT.filter((x) => x !== 'usuarios:gerenciar')) assert.ok(perms.includes(p), p);
+});
+
 test('aba ASAAS: o root vê e edita; o Admin financeiro só olha; os outros perfis não têm', () => {
   assert.ok(PERMISSOES_ROOT.includes('asaas:ver') && PERMISSOES_ROOT.includes('asaas:editar'));
   for (const p of PERFIS_PADRAO.filter((x) => x.chave !== 'root')) {

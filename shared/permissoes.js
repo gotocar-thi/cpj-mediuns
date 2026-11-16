@@ -23,6 +23,9 @@ export const ABAS = [
   { k: 'eventos', nome: 'Orações (moderar)', ver: 'Nada a mais (todos já pedem oração e acendem vela).', editar: 'Excluir o pedido de oração de qualquer pessoa.' },
 ];
 export const ABA_KEYS = ABAS.map((a) => a.k);
+// Ordem fixa das permissões na lista de cada perfil (a das abas antes da tabela seguir o menu): mudar a ordem
+// das linhas na tela não muda a lista que vai para o app nem quebra quem compara a lista.
+const ORDEM_PERMISSOES = ['gira', 'pessoas', 'alunos', 'hist', 'ervas', 'oferendas', 'guias', 'eventos', 'perfil', 'curimba', 'videos', 'amaci', 'fotos', 'asaas'];
 
 const MAPA = {
   gira: { ver: ['giras:ler'], editar: ['giras:editar', 'giras:sortear'] },
@@ -61,7 +64,7 @@ export function permissoesDe(papel, abas) {
   if (papel === 'root') return PERMISSOES_ROOT;
   const a = normalizarAbas(abas);
   const r = [...BASE];
-  for (const k of ABA_KEYS) {
+  for (const k of ORDEM_PERMISSOES) {
     if (a[k].ver) r.push(...MAPA[k].ver);
     if (a[k].editar) r.push(...MAPA[k].editar);
   }
