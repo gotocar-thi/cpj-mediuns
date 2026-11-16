@@ -1715,6 +1715,16 @@ section.panel.gi-tela{gap:12px}
 .gp-sit-ok{background:var(--ok-soft);color:var(--ok)}.gp-sit-pend{background:var(--warn-soft);color:var(--warn)}
 .gp-sit-atr{background:var(--off-soft);color:var(--off)}.gp-sit-canc{background:var(--bg);color:var(--muted);border:1px solid var(--line)}
 .gp-todos{justify-self:start;margin:-4px 0 0;padding-left:2px}
+/* Painel: um bloco por item do grupo, com os quadradinhos Pago e Pendente; a lista abre embaixo do item. */
+.gp-itens{display:grid;gap:8px}
+.gp-item{display:grid;gap:6px;border:1px solid var(--line);border-radius:10px;background:var(--surface);padding:8px}
+.gp-item-t{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.gp-item-t b{overflow-wrap:break-word;min-width:0}
+.gp-item-t .muted{font-size:.85rem;white-space:nowrap}
+.pf-of-totais.gp-item-q{grid-template-columns:repeat(2,minmax(0,1fr))}
+.gp-item-q .pf-of-total{background:var(--bg);padding:6px 4px 5px}
+.gp-item-q .pf-of-total span{font-size:.66rem}
+.gp-item .gp-lista{margin:0}
 .gp-pessoa-v{display:inline-flex;align-items:center;gap:6px;flex:none}
 .gp-pessoa-v b{white-space:nowrap;font-variant-numeric:tabular-nums}
 .gx-sel{gap:8px;flex-wrap:wrap}

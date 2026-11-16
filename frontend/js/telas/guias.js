@@ -22,7 +22,8 @@ const ui = {
   feitos: new Set(),        // pedidos encerrados expandidos ('número:grupo')
   painel: new Set(),        // grupos abertos no Painel de pedidos (começam minimizados)
   blocos: new Set(),        // blocos de admin abertos ('grupos', 'exportar'); começam minimizados
-  painelSel: {},            // grupo → quadradinho de situação aberto no Painel (filtra a lista)
+  painelSel: {},            // grupo → 'todos' quando a lista completa por pessoa está aberta no Painel
+  itemSel: {},              // grupo → { item, k: 'paga' | 'pend' }: o quadradinho de item aberto no Painel
   minimizados: new Set(),   // blocos que a pessoa minimizou: id do grupo de itens ou 'meus' (Seus pedidos)
   grupoRen: null,           // id do grupo com o ✎ aberto
   item: null,               // formulário de item: { grupoId, id?, descricao, quantidade, valor, visivel, cpj, foto?: b64 | null }
@@ -37,7 +38,7 @@ const ui = {
   ocupado: null,            // ação enviada ao servidor e ainda sem resposta (trava o duplo clique)
 };
 export function limpar() {
-  ui.abertos.clear(); ui.feitos.clear(); ui.minimizados.clear(); ui.painel.clear(); ui.painelSel = {}; ui.blocos.clear();
+  ui.abertos.clear(); ui.feitos.clear(); ui.minimizados.clear(); ui.painel.clear(); ui.painelSel = {}; ui.blocos.clear(); ui.itemSel = {};
   Object.assign(ui, { grupoRen: null, item: null, qtd: {}, pedir: null, exportar: null, zoom: null, pix: null, gerando: false, cpf: '', ocupado: null });
   if (ui.img) URL.revokeObjectURL(ui.img.url);
   ui.img = null;
@@ -301,19 +302,44 @@ function listaPedido(linhas, grupo = '') {
     <div class="meu-tot"><span>${plural(pessoas.length, 'pessoa', 'pessoas')} · ${plural(itensDe(linhas), 'item', 'itens')}</span><b>${R(totalDe(linhas))}</b></div>`;
 }
 
-// Quadradinhos de situação das linhas do pedido (o mesmo desenho dos da aba ASAAS): verde pago, amarelo pendente
-// (link aguardando), cinza cancelado (link cancelado ou estornado), vermelho atrasado (link vencido) e, se houver,
-// "sem link" (pedido feito com o Pix desligado ou sem link gerado). A lista começa minimizada: tocar num quadradinho
-// abre só aquela situação, "Ver todos" abre a lista inteira; tocar de novo recolhe.
-const QUADROS_PEDIDO = [['paga', 'Pago', 'as-q-ok'], ['pendente', 'Pendente', 'as-q-pend'], ['cancelada', 'Cancelado', 'as-q-canc'], ['vencida', 'Atrasado', 'as-q-atr'], ['semlink', 'Sem link', 'as-q-canc']];
-function quadrosPedido(g, linhas) {
-  const sel = ui.painelSel[g.id];
-  const qs = QUADROS_PEDIDO.filter(([k]) => k !== 'semlink' || linhas.some((l) => sitLinha(l) === 'semlink'));
-  return `<div class="pf-of-totais as-quadros${qs.length > 4 ? ' cinco' : ''}">${qs.map(([k, rot, cls]) => {
-    const n = linhas.filter((l) => sitLinha(l) === k).length;
-    return `<button type="button" class="pf-of-total ${cls}${sel === k ? ' selecionado' : ''}" data-act="guiaquadro" data-id="${g.id}" data-k="${k}" aria-expanded="${sel === k}" aria-label="${esc(g.descricao)}: ${n} ${rot.toLowerCase()}" ${n ? '' : 'disabled'}><b>${n}</b><span>${rot}</span></button>`;
-  }).join('')}</div>
-    <button type="button" class="btn link small gp-todos" data-act="guiaquadro" data-id="${g.id}" data-k="todos" aria-expanded="${sel === 'todos'}">${sel === 'todos' ? '▾ Recolher a lista' : `▸ Ver todos (${porPessoa(linhas).length} ${porPessoa(linhas).length === 1 ? 'pessoa' : 'pessoas'})`}</button>`;
+// Visão por item (a descrição do item do grupo): quanto foi pedido de cada um e por quem. Cada item começa minimizado
+// e mostra a quantidade total, quantas pessoas e o valor; aberto, cada pessoa com a quantidade e a situação.
+// Ordem: o item mais pedido primeiro.
+function porItem(linhas, grupo) {
+  const semGrupo = (d) => (grupo && d.startsWith(grupo + ' · ') ? d.slice(grupo.length + 3) : d);
+  const m = new Map();
+  linhas.forEach((l) => {
+    const nome = semGrupo(l.descricao);
+    const k = nome.toLocaleLowerCase('pt-BR');
+    if (!m.has(k)) m.set(k, { nome, linhas: [], qtd: 0, total: 0 });
+    const x = m.get(k);
+    x.linhas.push(l);
+    x.qtd += l.quantidade;
+    x.total += l.valor * l.quantidade;
+  });
+  return [...m.values()].sort((a, b) => b.qtd - a.qtd || a.nome.localeCompare(b.nome, 'pt-BR'));
+}
+// Painel do grupo: um bloco por item, cada um com dois quadradinhos — Pago (verde) e Pendente (amarelo; tudo o que
+// ainda não foi pago: link aguardando, atrasado, cancelado ou sem link), com quantas unidades. Tocar num deles abre,
+// embaixo do item, a lista normal (por pessoa, com a situação de cada uma); tocar de novo fecha. Um aberto por grupo.
+function itensDoPedido(g, linhas) {
+  const aberto = ui.itemSel[g.id];
+  const itens = porItem(linhas, g.descricao);
+  return `<div class="gp-itens">${itens.map((it) => {
+    const pagas = it.linhas.filter((l) => l.pago);
+    const pend = it.linhas.filter((l) => !l.pago);
+    const un = (L) => L.reduce((a, l) => a + l.quantidade, 0);
+    const quadro = (k, rot, cls, L) => {
+      const sel = aberto?.item === it.nome && aberto.k === k;
+      return `<button type="button" class="pf-of-total ${cls}${sel ? ' selecionado' : ''}" data-act="guiaitemsit" data-g="${g.id}" data-item="${esc(it.nome)}" data-k="${k}" aria-expanded="${sel}" aria-label="${esc(it.nome)}: ${un(L)} ${rot.toLowerCase()}" ${L.length ? '' : 'disabled'}><b>${un(L)}</b><span>${rot} · ${R(totalDe(L))}</span></button>`;
+    };
+    const lista = aberto?.item === it.nome ? (aberto.k === 'paga' ? pagas : pend) : null;
+    return `<div class="gp-item">
+      <div class="gp-item-t"><b>${esc(it.nome)}</b><span class="muted">${it.qtd}x · ${R(it.total)}</span></div>
+      <div class="pf-of-totais gp-item-q">${quadro('paga', 'Pago', 'as-q-ok', pagas)}${quadro('pend', 'Pendente', 'as-q-pend', pend)}</div>
+      ${lista?.length ? listaPedido(lista, g.descricao) : ''}
+    </div>`;
+  }).join('')}</div>`;
 }
 
 // Painel de pedidos: um bloco por grupo, começando minimizado. Minimizado, mostra o pedido aberto,
@@ -340,8 +366,10 @@ function cardPainel(G) {
       const sel = ui.painelSel[g.id];
       if (!r.linhas.length) h += listaPedido([]);
       else {
-        h += quadrosPedido(g, r.linhas);
-        if (sel) h += listaPedido(sel === 'todos' ? r.linhas : r.linhas.filter((l) => sitLinha(l) === sel), g.descricao);
+        h += itensDoPedido(g, r.linhas);
+        h += `<button type="button" class="btn link small gp-todos" data-act="guiaquadro" data-id="${g.id}" data-k="todos" aria-expanded="${sel === 'todos'}">${sel === 'todos' ? '▾ Recolher a lista por pessoa' : `▸ Lista completa por pessoa (${porPessoa(r.linhas).length})`}</button>`;
+        if (sel === 'todos') h += listaPedido(r.linhas, g.descricao);
+        h += `<div class="meu-tot"><span>${plural(porPessoa(r.linhas).length, 'pessoa', 'pessoas')} · ${plural(itensDe(r.linhas), 'unidade', 'unidades')}</span><b>${R(totalDe(r.linhas))}</b></div>`;
       }
     } else {
       const ultimo = R0.find((x) => x.grupoId === g.id && x.encerradoEm);
@@ -527,6 +555,12 @@ export const cliques = {
   guiadobrar(el) { const id = el.dataset.id; if (ui.abertos.has(id)) ui.abertos.delete(id); else ui.abertos.add(id); avisar(); },
   guiaminimizar(el) { const id = el.dataset.id; if (ui.minimizados.has(id)) ui.minimizados.delete(id); else ui.minimizados.add(id); avisar(); },
   guiafeito(el) { const n = el.dataset.n; if (ui.feitos.has(n)) ui.feitos.delete(n); else ui.feitos.add(n); avisar(); },
+  guiaitemsit(el) {
+    const { g, item, k } = el.dataset;
+    const a = ui.itemSel[g];
+    ui.itemSel[g] = a && a.item === item && a.k === k ? null : { item, k };
+    avisar();
+  },
   guiaquadro(el) { const g = el.dataset.id; ui.painelSel[g] = ui.painelSel[g] === el.dataset.k ? null : el.dataset.k; avisar(); },
   guiabloco(el) { const k = el.dataset.k; if (ui.blocos.has(k)) ui.blocos.delete(k); else ui.blocos.add(k); avisar(); },
   guiapainel(el) { const id = el.dataset.id; if (ui.painel.has(id)) ui.painel.delete(id); else ui.painel.add(id); avisar(); },
