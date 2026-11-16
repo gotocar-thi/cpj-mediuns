@@ -47,6 +47,12 @@ export async function entrar(email, senha, digitado, pin) {
   return {};
 }
 
+// Criar cadastro na tela de login (entra como aluno sem turma) e já fica logado.
+export async function cadastrar(dados) {
+  const r = await chamar('POST', 'cadastrar', dados);
+  guardar(r.token);
+}
+
 export async function instalar(dados) {
   const r = await chamar('POST', 'instalar', dados);
   guardar(r.token);

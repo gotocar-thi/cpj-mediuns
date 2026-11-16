@@ -17,10 +17,40 @@ export function render(erro, email = '', candidatos = null) {
     <h2>Entrar</h2>
     ${erro ? `<div class="erro" role="alert">${esc(erro)}</div>` : ''}
     <form id="f-login">
-      <label class="field">E-mail ou Palavra-chave<input type="text" inputmode="email" id="l-email" autocomplete="username" autocapitalize="none" spellcheck="false" required value="${esc(email)}"></label>
+      <label class="field">E-mail, celular ou palavra-passe<input type="text" inputmode="email" id="l-email" autocomplete="username" autocapitalize="none" spellcheck="false" required value="${esc(email)}"></label>
       <label class="field"><span id="l-senha-rotulo">Senha</span><input type="password" id="l-senha" autocomplete="current-password" required></label>
       <button class="btn primary" type="submit" id="l-btn">Entrar</button>
     </form>
+    <button class="btn link" data-conta="esqueci">Esqueci a senha</button>
+    <button class="btn" data-conta="cadastro">Criar cadastro</button>
+  </div>`;
+}
+
+// Sem envio de e-mail ou SMS por enquanto: quem esqueceu pede para a administração.
+export function renderEsqueci() {
+  return `${LOGO}<div class="card login">
+    <h2>Esqueci a senha</h2>
+    <p class="muted" style="margin:0;font-size:.92rem">Por enquanto, a senha é redefinida pela administração da casa. Fale com ela pelo WhatsApp; depois é só entrar e criar a senha nova.</p>
+    <button class="btn link" data-conta="voltarlogin">Voltar</button>
+  </div>`;
+}
+
+// Cadastro feito pela própria pessoa: entra como aluno sem turma (a administração põe no lugar certo depois).
+export function renderCadastro(erro) {
+  return `${LOGO}<div class="card login">
+    <h2>Criar cadastro</h2>
+    <p class="muted" style="margin:0;font-size:.92rem">Você entra como aluno. Depois a administração coloca você na turma ou na corrente.</p>
+    ${erro ? `<div class="erro" role="alert">${esc(erro)}</div>` : ''}
+    <form id="f-cadastro">
+      <label class="field">Nome e sobrenome<input type="text" id="c-nome" required minlength="3" maxlength="80" autocomplete="name"></label>
+      <label class="field">Celular com DDD<input type="tel" id="c-celular" data-mascara="tel" required inputmode="tel" autocomplete="tel-national" placeholder="(11) 91234-5678"></label>
+      <label class="field">E-mail<input type="email" id="c-email" required maxlength="120" autocomplete="email" autocapitalize="none" spellcheck="false"></label>
+      <label class="field">CPF<input type="text" id="c-cpf" required inputmode="numeric" maxlength="14" autocomplete="off" placeholder="000.000.000-00"></label>
+      <label class="field">Senha<input type="password" id="c-senha" required inputmode="numeric" pattern="[0-9]{4,8}" minlength="4" maxlength="8" autocomplete="new-password" placeholder="4 a 8 números"></label>
+      <label class="field">Repita a senha<input type="password" id="c-senha2" required inputmode="numeric" pattern="[0-9]{4,8}" minlength="4" maxlength="8" autocomplete="new-password"></label>
+      <button class="btn primary" type="submit" id="c-btn">Criar cadastro e entrar</button>
+    </form>
+    <button class="btn link" data-conta="voltarlogin">Já tenho cadastro · voltar</button>
   </div>`;
 }
 

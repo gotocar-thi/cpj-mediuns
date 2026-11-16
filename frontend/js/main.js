@@ -1,6 +1,6 @@
 // Ponto de entrada do frontend: login, abas, renderização e eventos.
 
-import { estadoDoApp, logado, entrar, instalar, sair, trocarSenha, criarSenhaCorrente } from './auth.js';
+import { estadoDoApp, logado, entrar, cadastrar, instalar, sair, trocarSenha, criarSenhaCorrente } from './auth.js';
 import { quandoSessaoExpirar } from './api.js';
 import { estado, prefs, salvarPrefs, pode, visaoAtiva, aoMudar, avisar, carregarTudo, atualizarDoServidor, salvarPerfilAgora, mudarVisaoRoot, veErvas, veOferendas, veGuias, veAmaci, temPendencia } from './estado.js';
 import { esc, toast, mascaraTel, guardarRascunhos, devolverRascunhos } from './util.js';
@@ -57,6 +57,8 @@ let emailLogin = '';
 let candidatosLogin = null;   // acesso da corrente: nomes parecidos para a pessoa confirmar
 let digitadoLogin = '';       // o nome como a pessoa digitou (para juntar o que ela preencheu antes)
 let pinLogin = null;          // acesso da corrente: a pessoa tem senha → { nome } (pede a senha)
+let telaLogin = '';           // '' (entrar) · 'cadastro' (Criar cadastro) · 'esqueci' (Esqueci a senha)
+let cadastroDigitado = null;  // o que a pessoa digitou no Criar cadastro (volta depois de um erro)
 let instalado = true;
 let ultimoDesenho = '';    // aba + HTML do último desenho (a aba Vídeos não redesenha se nada mudou)
 let arrastoAnamnese = null;
@@ -91,8 +93,15 @@ function render() {
     tabs.hidden = true;
     renderConta();
     if (!logado()) {
-      main.innerHTML = instalado ? (pinLogin ? login.renderPin(erroLogin, pinLogin.nome) : login.render(erroLogin, emailLogin, candidatosLogin)) : login.renderInstalacao(erroLogin);
-      if (instalado && !pinLogin && ehAcessoGrupo(emailLogin)) login.ajustarCampoSenha(true);
+      main.innerHTML = !instalado ? login.renderInstalacao(erroLogin)
+        : pinLogin ? login.renderPin(erroLogin, pinLogin.nome)
+        : telaLogin === 'cadastro' ? login.renderCadastro(erroLogin)
+        : telaLogin === 'esqueci' ? login.renderEsqueci()
+        : login.render(erroLogin, emailLogin, candidatosLogin);
+      if (instalado && !pinLogin && !telaLogin && ehAcessoGrupo(emailLogin)) login.ajustarCampoSenha(true);
+      if (telaLogin === 'cadastro' && cadastroDigitado) {
+        for (const [id, v] of Object.entries(cadastroDigitado)) { const el = document.getElementById(id); if (el) el.value = v; }
+      }
       if (pinLogin) document.getElementById('l-pin')?.focus();
     }
     return;
@@ -270,7 +279,9 @@ main.addEventListener('click', async (e) => {
   if (e.target.closest('[data-conta="recarregar-pagina"]')) { location.reload(); return; }
   // Calendário da aba Gira: abre o seletor de data também no computador.
   if (e.target.dataset.act === 'irdata' || e.target.dataset.act === 'iemdata') { try { e.target.showPicker(); } catch { /* o toque já abre */ } return; }
-  if (e.target.closest('[data-conta="voltarlogin"]')) { pinLogin = null; erroLogin = ''; render(); return; }
+  if (e.target.closest('[data-conta="voltarlogin"]')) { pinLogin = null; telaLogin = ''; cadastroDigitado = null; erroLogin = ''; render(); return; }
+  if (e.target.closest('[data-conta="cadastro"]')) { telaLogin = 'cadastro'; erroLogin = ''; render(); window.scrollTo(0, 0); return; }
+  if (e.target.closest('[data-conta="esqueci"]')) { telaLogin = 'esqueci'; erroLogin = ''; render(); return; }
   // Acesso da corrente: a pessoa confirma qual nome cadastrado é o dela.
   const eu = e.target.closest('[data-soueu]');
   if (eu) {
@@ -435,6 +446,20 @@ main.addEventListener('submit', async (e) => {
       pinLogin = null;
       await iniciar();
     } catch (err) { erroLogin = err.message; render(); }
+  } else if (id === 'f-cadastro') {
+    const v = (x) => document.getElementById(x).value;
+    cadastroDigitado = Object.fromEntries(['c-nome', 'c-celular', 'c-email', 'c-cpf'].map((x) => [x, v(x)]));
+    if (v('c-senha') !== v('c-senha2')) { erroLogin = 'As senhas não conferem.'; render(); return; }
+    const btn = document.getElementById('c-btn');
+    btn.disabled = true;
+    btn.textContent = 'Criando…';
+    try {
+      await cadastrar({ nome: v('c-nome').trim(), celular: v('c-celular'), email: v('c-email').trim(), cpf: v('c-cpf'), senha: v('c-senha') });
+      erroLogin = '';
+      telaLogin = '';
+      cadastroDigitado = null;
+      await iniciar();
+    } catch (err) { erroLogin = err.message; render(); window.scrollTo(0, 0); }
   } else if (id === 'f-instalar') {
     const v = (x) => document.getElementById(x).value;
     if (v('i-senha') !== v('i-senha2')) { erroLogin = 'As senhas não conferem.'; render(); return; }

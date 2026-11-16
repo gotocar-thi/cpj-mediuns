@@ -2,6 +2,8 @@
 //   GET  /api/auth/estado   { instalado }  — o app já tem um admin?
 //   POST /api/auth/instalar { codigo, nome, email, senha }  — cria o primeiro admin
 //   POST /api/auth/entrar   { email, senha }  → { token, usuario }
+//                           "email" pode ser e-mail ou celular: usuário, corrente ou aluno com a senha que criou (3 erros bloqueiam 15 min)
+//   POST /api/auth/cadastrar { nome, celular, email, cpf, senha }  autocadastro: entra como aluno sem turma → { token, usuario }
 //                           acesso da corrente: a "senha" é o nome; precisa estar na lista de pessoas.
 //                           Se não for exato → { confirmar: true, candidatos: [nomes parecidos] } (sem token)
 //                           Se a pessoa tem senha (PIN): sem "pin" → { precisaSenha: true, nome }; com "pin" errado → 401
@@ -29,7 +31,9 @@ import { abaIemanja } from '../_lib/iemanja.js';
 import { ocultarSorteios } from '../_lib/escala.js';
 import { oracoes } from '../_lib/oracoes.js';
 import { eventosDe } from '../_lib/eventos.js';
-import { rotaCpf } from '../_lib/cpf.js';
+import { rotaCpf, cifrar, hashCpf } from '../_lib/cpf.js';
+import { dadosAluno } from '../_lib/alunos.js';
+import { randomUUID } from 'node:crypto';
 import { temAbaPublica } from '../../shared/oferendas.js';
 import { gerarHash, conferirSenha, emitirToken, emitirTokenCorrente, emitirTokenGrupo, iguaisSeguro, SENHA_MINIMA } from '../_lib/senhas.js';
 import { permissoesDe, ehAcessoCorrente, grupoAcesso, pode, PIN_VALIDO, PERMISSOES_GRUPO } from '../../shared/permissoes.js';
@@ -91,13 +95,68 @@ async function perfilAluno(req, eu) {
 async function conferirPin(b, info, chaveFalha, nome) {
   if (!info.pinHash) return null;
   if (b.pin === undefined || b.pin === null || b.pin === '') return { precisaSenha: true, nome };
-  if (info.bloqueadoAte) throw new HttpError(429, 'Muitas tentativas erradas. Espere alguns minutos e tente de novo.');
+  if (info.bloqueadoAte) throw new HttpError(429, BLOQUEADO);
   if (!(await conferirSenha(String(b.pin), info.pinHash))) {
-    await db.rpc('login_falha', { email: chaveFalha });
-    throw new HttpError(401, 'Senha incorreta.');
+    const { restantes } = await db.rpc('login_falha', { email: chaveFalha });
+    throw senhaErrada('Senha incorreta.', restantes);
   }
   await db.rpc('login_ok', { email: chaveFalha });
   return null;
+}
+
+const BLOQUEADO = 'Senha errada 3 vezes: o acesso ficou bloqueado por 15 minutos. Se esqueceu a senha, fale com a administração.';
+const senhaErrada = (msg, restantes) => (restantes > 0
+  ? new HttpError(401, `${msg} ${restantes === 1 ? 'Resta 1 tentativa' : `Restam ${restantes} tentativas`} antes de bloquear por 15 minutos.`)
+  : new HttpError(429, BLOQUEADO));
+
+// O que foi digitado no primeiro campo do login: e-mail, celular (com DDD; aceita +55) ou nada disso.
+function contatoDoLogin(texto) {
+  const t = String(texto || '').trim();
+  if (t.includes('@')) return { email: t.toLowerCase() };
+  if (!/^[\d\s().+-]+$/.test(t)) return null;
+  let d = t.replace(/\D/g, '');
+  if (d.length >= 12 && d.startsWith('55')) d = d.slice(2);
+  return d.length === 10 || d.length === 11 ? { celular: d.slice(0, 2) + d.slice(-8) } : null;
+}
+
+// Entrar com e-mail ou celular e a senha que a pessoa criou: usuário (e-mail e senha), pessoa da corrente ou aluno
+// (e-mail ou celular do Perfil e a senha de 4 a 8 números). O mesmo contato pode estar em mais de um cadastro: vale o
+// primeiro cuja senha confere (usuário, depois corrente, depois aluno). Errar conta para todos eles (3 vezes bloqueia).
+async function entrarPorContato(contato, senha) {
+  const lista = await db.rpc('login_candidatos', contato);
+  if (!lista.length) {
+    throw new HttpError(404, contato.email
+      ? 'Não encontrei cadastro com esse e-mail. Confira ou toque em Criar cadastro.'
+      : 'Não encontrei cadastro com esse celular. Confira o DDD e o número ou toque em Criar cadastro.');
+  }
+  if (lista.some((c) => c.bloqueado)) throw new HttpError(429, BLOQUEADO);
+  const comSenha = lista.filter((c) => c.hash);
+  if (!comSenha.length) {
+    throw new HttpError(403, 'Você ainda não criou a sua senha. Entre com a palavra-passe e o seu nome e toque em 🔒 Criar senha no Perfil.');
+  }
+  let certo = null;
+  for (const c of comSenha) {
+    // Corrente e aluno só têm senha de 4 a 8 números: nem confere o resto.
+    if (c.tipo !== 'usuario' && !PIN_VALIDO.test(senha)) continue;
+    if (await conferirSenha(senha, c.hash)) { certo = c; break; }
+  }
+  if (!certo) {
+    const r = await Promise.all(comSenha.map((c) => db.rpc('login_falha', { email: c.chave })));
+    throw senhaErrada(`${contato.email ? 'E-mail' : 'Celular'} ou senha incorretos.`, Math.min(...r.map((x) => x.restantes)));
+  }
+  await Promise.all(comSenha.map((c) => db.rpc('login_ok', { email: c.chave })));
+  if (certo.tipo === 'usuario') {
+    const usuario = await db.rpc('usuario_obter', { id: certo.id });
+    return { token: await emitirToken(usuario), usuario: publico(usuario) };
+  }
+  if (certo.tipo === 'corrente') {
+    const s = await db.rpc('corrente_sessao', { pessoaId: certo.id });
+    const usuario = { id: null, nome: certo.nome, email: '', papel: 'corrente', papelNome: s.papelNome, pessoaId: certo.id, abas: s.abas };
+    return { token: await emitirTokenCorrente(certo.nome, certo.id, s.pinVersao), usuario: publico(usuario) };
+  }
+  const usuario = { id: null, nome: certo.nome, email: '', papel: 'alunos', papelNome: 'Aluno', grupo: 'alunos', pessoaId: null,
+    permissoes: PERMISSOES_GRUPO.alunos || [] };
+  return { token: await emitirTokenGrupo('alunos', certo.id, certo.nome, certo.versao), usuario: publico(usuario) };
 }
 
 // extras: o que decide as abas, quando já veio junto na abertura (inicio_dados); sem ele, busca aqui (/auth/me).
@@ -397,18 +456,36 @@ const acoes = {
       if (candidatos.length) return { confirmar: true, candidatos };
       throw new HttpError(404, 'Não encontrei esse nome na corrente. Digite como está no cadastro ou fale com um admin.');
     }
-    const email = String(b.email || '').trim().toLowerCase();
     const senha = String(b.senha || '');
-    if (!email || !senha) throw new HttpError(400, 'Informe e-mail e senha.');
-    const info = await db.rpc('usuario_para_login', { email });
-    if (info.bloqueadoAte) throw new HttpError(429, 'Muitas tentativas erradas. Espere alguns minutos e tente de novo.');
-    const ok = await conferirSenha(senha, info.senhaHash);
-    if (!ok || !info.usuario) {
-      await db.rpc('login_falha', { email });
-      throw new HttpError(401, 'E-mail ou senha incorretos.');
-    }
-    await db.rpc('login_ok', { email });
-    return { token: await emitirToken(info.usuario), usuario: publico(info.usuario) };
+    if (!String(b.email || '').trim() || !senha) throw new HttpError(400, 'Informe o e-mail ou celular e a senha.');
+    if (senha.length > 200) throw new HttpError(400, 'Senha longa demais.');
+    const contato = contatoDoLogin(b.email);
+    if (!contato) throw new HttpError(400, 'Digite o e-mail, o celular com DDD ou a palavra-passe.');
+    return entrarPorContato(contato, senha);
+  },
+
+  // Criar cadastro (tela de login, sem estar logado): a pessoa entra como aluno sem turma e já sai logada;
+  // a administração depois põe na turma ou na corrente. Nome, celular, e-mail, CPF e a senha (4 a 8 números).
+  async cadastrar(req) {
+    if (req.method !== 'POST') throw new HttpError(405, 'Método não permitido.');
+    const b = corpo(req);
+    const nome = String(b.nome ?? '').replace(/\s+/g, ' ').trim();
+    if (nome.length < 3 || nome.length > 80) throw new HttpError(400, 'Digite o seu nome (de 3 a 80 letras).');
+    if (!/\s/.test(nome)) throw new HttpError(400, 'Digite nome e sobrenome.');
+    const d = dadosAluno({ celular: b.celular, email: b.email, cpf: b.cpf });
+    if (!d.celular) throw new HttpError(400, 'Digite o seu celular com DDD.');
+    if (!d.email) throw new HttpError(400, 'Digite o seu e-mail.');
+    if (!d.cpf) throw new HttpError(400, 'Digite o seu CPF.');
+    const senha = String(b.senha ?? '');
+    if (!PIN_VALIDO.test(senha)) throw new HttpError(400, 'A senha precisa ter de 4 a 8 números.');
+    const cpfHash = hashCpf(d.cpf); // sem a CPF_CHAVE no servidor, recusa antes de gravar qualquer coisa
+    const a = await db.rpc('aluno_autocadastro', {
+      id: randomUUID(), nome, celular: d.celular, email: d.email, pinHash: await gerarHash(senha), cpfHash,
+    });
+    await db.rpc('aluno_cpf_salvar', { id: a.id, cifrado: cifrar(d.cpf, a.id), hash: cpfHash, por: 'autocadastro' });
+    const usuario = { id: null, nome: a.nome, email: '', papel: 'alunos', papelNome: 'Aluno', grupo: 'alunos', pessoaId: null,
+      permissoes: PERMISSOES_GRUPO.alunos || [] };
+    return { token: await emitirTokenGrupo('alunos', a.id, a.nome, a.pinVersao), usuario: publico(usuario) };
   },
 
   // Quem entrou pelo acesso da corrente cria a própria senha (uma vez; depois só o root troca).

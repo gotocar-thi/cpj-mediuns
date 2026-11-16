@@ -9,7 +9,7 @@
 // Estrutura: veja db/ESTRUTURA-ESQUEMA.md para o mapa de versões, domínios e
 // quais migrações foram testadas no Postgres.
 
-export const VERSAO = 123;  // v123: dados dos alunos (CPF, nome completo, e-mail, celular) e pendências
+export const VERSAO = 124;  // v124: login por e-mail ou celular, 3 tentativas e autocadastro como aluno
 
 import { PERFIS_PADRAO } from '../shared/permissoes.js';
 
@@ -5190,5 +5190,102 @@ export const MIGRACOES = [
                          from atrasos_validos() a join alunos al on al.id = a.aluno_id and al.saida is null
                         where a.pessoa_id is null group by a.aluno_id) x), '[]'::jsonb),
        'atualizadoEm', (select to_char(valor::timestamptz at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') from sistema where chave = 'asaas2_atualizado'))
+   $$`,
+
+  // ================================================== v124: login por e-mail ou celular, 3 tentativas e autocadastro como aluno
+  // Celular comparado por DDD + 8 últimos números (com ou sem o 9 da frente), como no Criar senha.
+  `create or replace function celular_chave(t text)
+   returns text language sql immutable as $$
+     select case when length(d) between 10 and 11 then left(d, 2) || right(d, 8) else '' end
+       from (select regexp_replace(coalesce(t, ''), '[^0-9]', '', 'g') as d) x
+   $$`,
+  // Quem pode entrar com este e-mail ou celular: usuário (só e-mail), pessoa da corrente e aluno (pelo Perfil).
+  // Uso interno do login: leva o hash da senha. p = { email } ou { celular } (já como celular_chave).
+  `create or replace function login_candidatos(p jsonb)
+   returns jsonb language sql stable as $$
+     with k as (select lower(btrim(coalesce(p ->> 'email', ''))) as email, coalesce(p ->> 'celular', '') as cel),
+     c as (
+       select 1 as ordem, 'usuario' as tipo, u.id, u.nome, u.senha_hash as hash, 0 as versao, u.email as chave
+         from usuarios u, k where k.email <> '' and u.email = k.email
+       union all
+       select 2, 'corrente', pe.id, pe.nome, pe.pin_hash, pe.pin_versao, 'pin:' || pe.id::text
+         from pessoas pe, k where pe.saida is null
+          and ((k.email <> '' and lower(btrim(pe.perfil -> 'info' ->> 'email')) = k.email)
+            or (k.cel <> '' and celular_chave(pe.perfil -> 'info' ->> 'celular') = k.cel))
+       union all
+       select 3, 'aluno', al.id, al.nome, al.pin_hash, al.pin_versao, 'pina:' || al.id::text
+         from alunos al, k where al.saida is null
+          and ((k.email <> '' and lower(btrim(al.perfil -> 'info' ->> 'email')) = k.email)
+            or (k.cel <> '' and celular_chave(al.perfil -> 'info' ->> 'celular') = k.cel))
+     )
+     select coalesce(jsonb_agg(jsonb_build_object('tipo', c.tipo, 'id', c.id, 'nome', c.nome, 'hash', c.hash, 'versao', c.versao,
+              'chave', c.chave, 'bloqueado', exists (select 1 from login_falhas f where f.email = c.chave and f.bloqueado_ate > now()))
+              order by c.ordem, lower(c.nome)), '[]'::jsonb)
+       from c
+   $$`,
+  // 3 senhas erradas seguidas (num intervalo de 15 minutos) bloqueiam por 15 minutos. Devolve quantas restam.
+  `alter table login_falhas add column if not exists ultima_em timestamptz`,
+  `create or replace function login_falha(p jsonb)
+   returns jsonb language plpgsql as $$
+   declare v_email text := lower(btrim(p ->> 'email')); v_t int;
+   begin
+     insert into login_falhas (email, tentativas, ultima_em) values (v_email, 1, now())
+     on conflict (email) do update set
+       tentativas = case when login_falhas.ultima_em is null or login_falhas.ultima_em < now() - interval '15 minutes' then 1
+                         else login_falhas.tentativas + 1 end,
+       ultima_em = now()
+     returning tentativas into v_t;
+     if v_t >= 3 then
+       update login_falhas set tentativas = 0, bloqueado_ate = now() + interval '15 minutes' where email = v_email;
+       return jsonb_build_object('restantes', 0);
+     end if;
+     return jsonb_build_object('restantes', 3 - v_t);
+   end;
+   $$`,
+  // Cadastro feito pela própria pessoa na tela de login: entra como aluno sem turma (o admin depois põe no lugar certo).
+  `alter table alunos add column if not exists autocadastro_em timestamptz`,
+  // p = { id, nome, celular, email, pinHash, cpfHash }. Recusa nome, e-mail, celular ou CPF que já estão em uso.
+  // Nome de aluno excluído volta com o mesmo registro (o nome é único), como no cadastro feito pelo admin.
+  // Devolve { id, nome, pinVersao }; o CPF é gravado depois (a cifra usa o id).
+  `create or replace function aluno_autocadastro(p jsonb)
+   returns jsonb language plpgsql as $$
+   declare
+     v_nome text := btrim(p ->> 'nome');
+     v_email text := lower(btrim(coalesce(p ->> 'email', '')));
+     v_cel text := celular_chave(p ->> 'celular');
+     v_id uuid; v_versao int;
+     v_perfil jsonb := jsonb_build_object('info', jsonb_build_object('nome', btrim(p ->> 'nome'), 'celular', p ->> 'celular', 'email', v_email));
+   begin
+     if (select count(*) from alunos where autocadastro_em > now() - interval '1 hour') >= 20 then
+       raise exception 'Muitos cadastros na última hora. Tente de novo mais tarde.';
+     end if;
+     if exists (select 1 from alunos where lower(btrim(nome)) = lower(v_nome) and saida is null) then
+       raise exception 'Já existe um aluno com esse nome. Se for você, entre com o seu e-mail ou celular; senão, coloque o sobrenome.';
+     end if;
+     if v_email <> '' and (exists (select 1 from usuarios where email = v_email)
+        or exists (select 1 from pessoas where saida is null and lower(btrim(perfil -> 'info' ->> 'email')) = v_email)
+        or exists (select 1 from alunos where saida is null and lower(btrim(perfil -> 'info' ->> 'email')) = v_email)) then
+       raise exception 'Já existe um cadastro com esse e-mail. Entre com ele ou fale com a administração.';
+     end if;
+     if v_cel <> '' and (exists (select 1 from pessoas where saida is null and celular_chave(perfil -> 'info' ->> 'celular') = v_cel)
+        or exists (select 1 from alunos where saida is null and celular_chave(perfil -> 'info' ->> 'celular') = v_cel)) then
+       raise exception 'Já existe um cadastro com esse celular. Entre com ele ou fale com a administração.';
+     end if;
+     if coalesce(p ->> 'cpfHash', '') <> '' and exists (select 1 from alunos_cpf c join alunos a on a.id = c.aluno_id and a.saida is null
+                                                       where c.hash = p ->> 'cpfHash') then
+       raise exception 'Já existe um cadastro com esse CPF. Fale com a administração.';
+     end if;
+     update alunos set saida = null, turma_id = null, perfil = v_perfil, foto = null, pin_hash = p ->> 'pinHash',
+                       pin_versao = pin_versao + 1, autocadastro_em = now()
+      where lower(btrim(nome)) = lower(v_nome) and saida is not null
+      returning id, pin_versao into v_id, v_versao;
+     if v_id is null then
+       insert into alunos (id, nome, perfil, pin_hash, pin_versao, autocadastro_em)
+       values ((p ->> 'id')::uuid, v_nome, v_perfil, p ->> 'pinHash', 1, now())
+       returning id, pin_versao into v_id, v_versao;
+     end if;
+     delete from login_falhas where email = 'pina:' || v_id::text;
+     return jsonb_build_object('id', v_id, 'nome', v_nome, 'pinVersao', v_versao);
+   end;
    $$`,
 ];
