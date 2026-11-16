@@ -8,6 +8,7 @@ import { db } from './db.js';
 import { pode } from '../../shared/permissoes.js';
 import { cpfValido, cpfMascarado, emailValido } from '../../shared/perfil.js';
 import { cifrar, decifrar, hashCpf } from './cpf.js';
+import { randomUUID } from 'node:crypto';
 
 const soNumeros = (v) => String(v ?? '').replace(/\D/g, '');
 
@@ -55,7 +56,17 @@ export async function comExtras(estado, eu) {
     dados[a.id] = { nomeCompleto: a.nomeCompleto, celular: a.celular, email: a.email, temCpf: !!a.cifrado, cpf };
   }
   const pendencias = Object.fromEntries(x.pendencias.map((p) => [p.alunoId, p.itens]));
-  return { ...estado, dados, pendencias, pendenciasEm: x.atualizadoEm };
+  return { ...estado, dados, pendencias, pendenciasEm: x.atualizadoEm, exAlunos: x.exAlunos || [] };
+}
+
+// UP CPJ: o aluno vira pessoa da corrente levando o CPF. O CPF é cifrado com o id do dono, então é decifrado com o
+// id do aluno e cifrado de novo com o id da pessoa (gerado aqui) antes da transferência, que grava tudo de uma vez.
+// Sem a CPF_CHAVE (ou com o CPF ilegível), recusa antes de mexer em qualquer coisa.
+export async function promoverAluno(id) {
+  const cifrado = await db.rpc('aluno_cpf_ler', { id });
+  const pessoaId = randomUUID();
+  const cpfCifrado = cifrado ? cifrar(decifrar(cifrado, id), pessoaId) : '';
+  return db.rpc('aluno_transferir_cambone', { id, pessoaId, cpfCifrado });
 }
 
 // O CPF inteiro, quando quem edita Alunos toca em Mostrar.

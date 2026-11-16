@@ -35,7 +35,7 @@ import { rotaCpf, cifrar, hashCpf } from '../_lib/cpf.js';
 import { dadosAluno } from '../_lib/alunos.js';
 import { randomUUID } from 'node:crypto';
 import { temAbaPublica } from '../../shared/oferendas.js';
-import { gerarHash, conferirSenha, emitirToken, emitirTokenCorrente, emitirTokenGrupo, iguaisSeguro, SENHA_MINIMA } from '../_lib/senhas.js';
+import { gerarHash, conferirSenha, emitirToken, emitirTokenCorrente, emitirTokenGrupo, iguaisSeguro, limitarPorIp, SENHA_MINIMA } from '../_lib/senhas.js';
 import { permissoesDe, ehAcessoCorrente, grupoAcesso, pode, PIN_VALIDO, PERMISSOES_GRUPO } from '../../shared/permissoes.js';
 import { normalizarNome, nomesParecidos } from '../../shared/ervas.js';
 import { normalizarPerfil, perfilDaFuncao, blocosAfinidade, ANAMNESE_TIPOS, ANAMNESE_PERGUNTA_MAX, ANAMNESE_TEXTO_MAX, ANAMNESE_SIMNAO, ANAMNESE_OPCOES_MAX, ANAMNESE_OPCAO_MAX, limparRespostaTexto, limparRespostaData } from '../../shared/perfil.js';
@@ -122,9 +122,11 @@ function contatoDoLogin(texto) {
 // Entrar com e-mail ou celular e a senha que a pessoa criou: usuário (e-mail e senha), pessoa da corrente ou aluno
 // (e-mail ou celular do Perfil e a senha de 4 a 8 números). O mesmo contato pode estar em mais de um cadastro: vale o
 // primeiro cuja senha confere (usuário, depois corrente, depois aluno). Errar conta para todos eles (3 vezes bloqueia).
-async function entrarPorContato(contato, senha) {
+async function entrarPorContato(req, contato, senha) {
   const lista = await db.rpc('login_candidatos', contato);
   if (!lista.length) {
+    // Sem limite, daria para testar à vontade quais e-mails e celulares são da casa.
+    await limitarPorIp(req, 'busca', 20, 60, 'Muitas consultas de e-mail ou celular não cadastrados. Tente de novo em uma hora.');
     throw new HttpError(404, contato.email
       ? 'Não encontrei cadastro com esse e-mail. Confira ou toque em Criar cadastro.'
       : 'Não encontrei cadastro com esse celular. Confira o DDD e o número ou toque em Criar cadastro.');
@@ -461,13 +463,15 @@ const acoes = {
     if (senha.length > 200) throw new HttpError(400, 'Senha longa demais.');
     const contato = contatoDoLogin(b.email);
     if (!contato) throw new HttpError(400, 'Digite o e-mail, o celular com DDD ou a palavra-passe.');
-    return entrarPorContato(contato, senha);
+    return entrarPorContato(req, contato, senha);
   },
 
   // Criar cadastro (tela de login, sem estar logado): a pessoa entra como aluno sem turma e já sai logada;
   // a administração depois põe na turma ou na corrente. Nome, celular, e-mail, CPF e a senha (4 a 8 números).
   async cadastrar(req) {
     if (req.method !== 'POST') throw new HttpError(405, 'Método não permitido.');
+    // Cada tentativa conta (as recusas dizem se o CPF, e-mail ou celular já existe): 10 por hora por IP.
+    await limitarPorIp(req, 'cadastro', 10, 60, 'Muitas tentativas de cadastro. Tente de novo em uma hora ou fale com a administração.');
     const b = corpo(req);
     const nome = String(b.nome ?? '').replace(/\s+/g, ' ').trim();
     if (nome.length < 3 || nome.length > 80) throw new HttpError(400, 'Digite o seu nome (de 3 a 80 letras).');

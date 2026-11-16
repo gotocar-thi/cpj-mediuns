@@ -9,7 +9,7 @@
 // Estrutura: veja db/ESTRUTURA-ESQUEMA.md para o mapa de versões, domínios e
 // quais migrações foram testadas no Postgres.
 
-export const VERSAO = 124;  // v124: login por e-mail ou celular, 3 tentativas e autocadastro como aluno
+export const VERSAO = 126;  // v126: UP CPJ leva o CPF; limite de consultas por IP no login e no Criar cadastro
 
 import { PERFIS_PADRAO } from '../shared/permissoes.js';
 
@@ -3362,7 +3362,8 @@ export const MIGRACOES = [
      return oferendas_estado();
    end;
    $$`,
-  `select apagar_excluidos()`,
+  // Aqui havia um "select apagar_excluidos()" (limpeza única, já feita). Saiu na v125: como a lista roda de novo a cada
+  // versão com a definição antiga desta altura, ele apagaria os ex-alunos.
 
   // ================================================== v99: abertura do app em uma consulta e "nada mudou" ao voltar
   // Versão dos dados da abertura: um contador que sobe a cada gravação nas tabelas que vão em /auth/inicio,
@@ -5286,6 +5287,238 @@ export const MIGRACOES = [
      end if;
      delete from login_falhas where email = 'pina:' || v_id::text;
      return jsonb_build_object('id', v_id, 'nome', v_nome, 'pinVersao', v_versao);
+   end;
+   $$`,
+
+  // ================================================== v125: ex-alunos (excluir guarda o cadastro; apagar de vez é um segundo passo)
+  // Excluir o aluno leva para Ex-alunos: sai das listas, do login e das próximas oferendas, mas perfil, foto, senha e
+  // CPF ficam guardados (pode voltar). Excluir dos Ex-alunos apaga os dados na hora (apagado_em) e o registro some de vez
+  // quando nada aberto depende dele (apagar_excluidos); o que foi encerrado continua pelo retrato.
+  `alter table alunos add column if not exists apagado_em timestamptz`,
+  // Ex-aluno não usa sessão antiga (a versão da senha também sobe ao excluir).
+  `create or replace function aluno_acesso(p jsonb)
+   returns jsonb language sql stable as $$
+     select jsonb_build_object('id', a.id, 'nome', a.nome, 'turmaId', a.turma_id, 'temSenha', a.pin_hash is not null, 'pinVersao', a.pin_versao)
+     from alunos a where a.id = (p ->> 'id')::uuid and a.saida is null
+   $$`,
+  `create or replace function aluno_excluir(p jsonb)
+   returns jsonb language plpgsql as $$
+   declare
+     v_id uuid := (p ->> 'id')::uuid;
+     v_hoje date := (now() at time zone 'America/Sao_Paulo')::date;
+   begin
+     update alunos set saida = v_hoje, pin_versao = pin_versao + 1
+     where id = v_id and saida is null;
+     update oferenda_alunos oa set excluido = true from oferendas o
+     where oa.aluno_id = v_id and o.id = oa.oferenda_id and o.status <> 'encerrado' and o.data >= v_hoje;
+     return alunos_estado();
+   end;
+   $$`,
+  // Ex-aluno volta para os alunos com tudo o que tinha (a turma de antes, se ainda existir).
+  `create or replace function aluno_reativar(p jsonb)
+   returns jsonb language plpgsql as $$
+   begin
+     update alunos set saida = null where id = (p ->> 'id')::uuid and saida is not null and apagado_em is null;
+     if not found then raise exception 'Ex-aluno não encontrado.'; end if;
+     return alunos_estado();
+   end;
+   $$`,
+  // Apagar de vez (só ex-aluno): perfil, foto, senha e CPF somem na hora; o nome é trocado para liberar o original
+  // (é único) e o registro sai quando nada aberto depender dele.
+  `create or replace function aluno_apagar(p jsonb)
+   returns jsonb language plpgsql as $$
+   declare v_id uuid := (p ->> 'id')::uuid;
+   begin
+     update alunos set apagado_em = now(), perfil = '{}'::jsonb, foto = null, pin_hash = null, pin_versao = pin_versao + 1,
+                       nome = left(nome, 50) || ' (apagado ' || to_char(now() at time zone 'America/Sao_Paulo', 'DD/MM/YY HH24:MI:SS') || ')'
+     where id = v_id and saida is not null and apagado_em is null;
+     if not found then raise exception 'Só dá para apagar de vez quem está em Ex-alunos.'; end if;
+     delete from alunos_cpf where aluno_id = v_id;
+     update asaas2_atrasos set aluno_id = null where aluno_id = v_id;
+     delete from login_falhas where email = 'pina:' || v_id::text;
+     perform apagar_excluidos();
+     return alunos_estado();
+   end;
+   $$`,
+  // Igual à anterior, mas o aluno só é apagado depois de "apagar de vez" (o ex-aluno fica guardado).
+  `create or replace function apagar_excluidos(p jsonb default '{}'::jsonb)
+   returns jsonb language plpgsql as $$
+   declare v_pessoas uuid[]; v_alunos uuid[];
+   begin
+     select coalesce(array_agg(pe.id), '{}') into v_pessoas from pessoas pe
+     where pe.saida is not null
+       and not exists (select 1 from giras g where not g.encerrada and g.data < pe.saida and (pe.entrada is null or g.data >= pe.entrada))
+       and not exists (select 1 from presencas pr join giras g on g.data = pr.gira_data where pr.pessoa_id = pe.id and not g.encerrada)
+       and not exists (select 1 from duplas du join giras g on g.data = du.gira_data where pe.id in (du.pessoa_id, du.medium_id) and not g.encerrada)
+       and not exists (select 1 from oferenda_mediuns om join oferendas o on o.id = om.oferenda_id
+                       where om.pessoa_id = pe.id and not om.excluido and o.status <> 'encerrado')
+       and not exists (select 1 from oferendas o where o.responsavel_id = pe.id and o.status <> 'encerrado')
+       and not exists (select 1 from iemanja_grupos g join iemanja_eventos e on e.id = g.evento_id
+                       where g.responsavel_id = pe.id and e.encerrado_em is null)
+       and not exists (select 1 from iemanja_membros m join iemanja_grupos g on g.id = m.grupo_id join iemanja_eventos e on e.id = g.evento_id
+                       where m.chave = 'p:' || pe.id::text and e.encerrado_em is null);
+     select coalesce(array_agg(a.id), '{}') into v_alunos from alunos a
+     where a.saida is not null and a.apagado_em is not null
+       and not exists (select 1 from oferenda_alunos oa join oferendas o on o.id = oa.oferenda_id
+                       where oa.aluno_id = a.id and not oa.excluido and o.status <> 'encerrado')
+       and not exists (select 1 from iemanja_membros m join iemanja_grupos g on g.id = m.grupo_id join iemanja_eventos e on e.id = g.evento_id
+                       where m.chave = 'a:' || a.id::text and e.encerrado_em is null);
+     delete from oferenda_mediuns om using oferendas o
+       where om.pessoa_id = any(v_pessoas) and o.id = om.oferenda_id and o.status <> 'encerrado';
+     delete from oferenda_alunos oa using oferendas o
+       where oa.aluno_id = any(v_alunos) and o.id = oa.oferenda_id and o.status <> 'encerrado';
+     delete from pessoas where id = any(v_pessoas);
+     delete from alunos where id = any(v_alunos);
+     return jsonb_build_object('pessoas', cardinality(v_pessoas), 'alunos', cardinality(v_alunos));
+   end;
+   $$`,
+  // Cadastrar de novo o nome de um ex-aluno o traz de volta (com o que tinha); quem foi apagado de vez não volta.
+  `create or replace function alunos_criar(p jsonb)
+   returns jsonb language plpgsql as $$
+   declare v_n int; v_volta int;
+   begin
+     update alunos set saida = null, turma_id = nullif(p ->> 'turmaId', '')::uuid
+     where saida is not null and apagado_em is null
+       and lower(btrim(nome)) in (select lower(btrim(n)) from jsonb_array_elements_text(coalesce(p -> 'nomes', '[]'::jsonb)) n);
+     get diagnostics v_volta = row_count;
+     with novos as (
+       select distinct on (lower(btrim(n))) btrim(n) as nome
+       from jsonb_array_elements_text(coalesce(p -> 'nomes', '[]'::jsonb)) n where btrim(n) <> ''
+     ), ins as (
+       insert into alunos (nome, turma_id) select nome, nullif(p ->> 'turmaId', '')::uuid from novos
+       on conflict do nothing returning 1
+     )
+     select count(*) into v_n from ins;
+     return alunos_estado() || jsonb_build_object('criadas', v_n + v_volta);
+   end;
+   $$`,
+  // Autocadastro: o ex-aluno guarda dados e senha, então não volta por aqui (qualquer um poderia digitar o nome dele);
+  // nome, e-mail, celular ou CPF de ex-aluno mandam falar com a administração, que traz de volta.
+  `create or replace function aluno_autocadastro(p jsonb)
+   returns jsonb language plpgsql as $$
+   declare
+     v_nome text := btrim(p ->> 'nome');
+     v_email text := lower(btrim(coalesce(p ->> 'email', '')));
+     v_cel text := celular_chave(p ->> 'celular');
+     v_id uuid; v_versao int;
+     v_perfil jsonb := jsonb_build_object('info', jsonb_build_object('nome', btrim(p ->> 'nome'), 'celular', p ->> 'celular', 'email', v_email));
+   begin
+     if (select count(*) from alunos where autocadastro_em > now() - interval '1 hour') >= 20 then
+       raise exception 'Muitos cadastros na última hora. Tente de novo mais tarde.';
+     end if;
+     if exists (select 1 from alunos where lower(btrim(nome)) = lower(v_nome) and saida is null) then
+       raise exception 'Já existe um aluno com esse nome. Se for você, entre com o seu e-mail ou celular; senão, coloque o sobrenome.';
+     end if;
+     if exists (select 1 from alunos where lower(btrim(nome)) = lower(v_nome) and apagado_em is null)
+        or (v_email <> '' and exists (select 1 from alunos where saida is not null and apagado_em is null
+                                      and lower(btrim(perfil -> 'info' ->> 'email')) = v_email))
+        or (v_cel <> '' and exists (select 1 from alunos where saida is not null and apagado_em is null
+                                    and celular_chave(perfil -> 'info' ->> 'celular') = v_cel))
+        or (coalesce(p ->> 'cpfHash', '') <> '' and exists (select 1 from alunos_cpf c join alunos a on a.id = c.aluno_id
+                                                           where a.saida is not null and a.apagado_em is null and c.hash = p ->> 'cpfHash')) then
+       raise exception 'Você já tem cadastro como ex-aluno. Fale com a administração para voltar.';
+     end if;
+     if v_email <> '' and (exists (select 1 from usuarios where email = v_email)
+        or exists (select 1 from pessoas where saida is null and lower(btrim(perfil -> 'info' ->> 'email')) = v_email)
+        or exists (select 1 from alunos where saida is null and lower(btrim(perfil -> 'info' ->> 'email')) = v_email)) then
+       raise exception 'Já existe um cadastro com esse e-mail. Entre com ele ou fale com a administração.';
+     end if;
+     if v_cel <> '' and (exists (select 1 from pessoas where saida is null and celular_chave(perfil -> 'info' ->> 'celular') = v_cel)
+        or exists (select 1 from alunos where saida is null and celular_chave(perfil -> 'info' ->> 'celular') = v_cel)) then
+       raise exception 'Já existe um cadastro com esse celular. Entre com ele ou fale com a administração.';
+     end if;
+     if coalesce(p ->> 'cpfHash', '') <> '' and exists (select 1 from alunos_cpf c join alunos a on a.id = c.aluno_id and a.saida is null
+                                                       where c.hash = p ->> 'cpfHash') then
+       raise exception 'Já existe um cadastro com esse CPF. Fale com a administração.';
+     end if;
+     insert into alunos (id, nome, perfil, pin_hash, pin_versao, autocadastro_em)
+     values ((p ->> 'id')::uuid, v_nome, v_perfil, p ->> 'pinHash', 1, now())
+     returning id, pin_versao into v_id, v_versao;
+     return jsonb_build_object('id', v_id, 'nome', v_nome, 'pinVersao', v_versao);
+   exception when unique_violation then
+     raise exception 'Já existe um cadastro com esse nome. Coloque o sobrenome ou fale com a administração.';
+   end;
+   $$`,
+  // Para quem edita Alunos: também a lista de ex-alunos (nome, turma de antes e data em que saiu).
+  `create or replace function alunos_extras(p jsonb default '{}'::jsonb)
+   returns jsonb language sql stable as $$
+     select jsonb_build_object(
+       'dados', coalesce((select jsonb_agg(jsonb_build_object('id', al.id, 'nomeCompleto', coalesce(al.perfil -> 'info' ->> 'nome', ''),
+                   'celular', coalesce(al.perfil -> 'info' ->> 'celular', ''), 'email', coalesce(al.perfil -> 'info' ->> 'email', ''), 'cifrado', c.cifrado))
+                 from alunos al left join alunos_cpf c on c.aluno_id = al.id where al.saida is null), '[]'::jsonb),
+       'pendencias', coalesce((select jsonb_agg(jsonb_build_object('alunoId', x.aluno_id, 'itens', x.itens))
+                 from (select a.aluno_id, jsonb_agg(jsonb_build_object('conta', a.conta, 'valor', a.valor::float8, 'vencimento', a.vencimento,
+                         'descricao', a.descricao, 'link', a.link) order by a.vencimento nulls last) as itens
+                         from atrasos_validos() a join alunos al on al.id = a.aluno_id and al.saida is null
+                        where a.pessoa_id is null group by a.aluno_id) x), '[]'::jsonb),
+       'exAlunos', coalesce((select jsonb_agg(jsonb_build_object('id', al.id, 'nome', al.nome, 'turmaId', al.turma_id, 'saida', al.saida,
+                   'nomeCompleto', coalesce(al.perfil -> 'info' ->> 'nome', '')) order by lower(al.nome))
+                 from alunos al where al.saida is not null and al.apagado_em is null), '[]'::jsonb),
+       'atualizadoEm', (select to_char(valor::timestamptz at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') from sistema where chave = 'asaas2_atualizado'))
+   $$`,
+  // ================================================== v126: UP CPJ leva o CPF; limite de consultas por IP no login e no Criar cadastro
+  // O CPF do aluno é cifrado com o id do aluno; na corrente, com o id da pessoa. O backend decifra antes, gera o id da
+  // pessoa e manda o CPF já cifrado para ela (p.pessoaId, p.cpfCifrado): tudo numa transação só, sem perder o CPF.
+  `create or replace function aluno_transferir_cambone(p jsonb)
+   returns jsonb language plpgsql as $$
+   declare
+     v_id uuid := (p ->> 'id')::uuid;
+     v_aluno alunos%rowtype;
+     v_pessoa_id uuid := coalesce(nullif(p ->> 'pessoaId', '')::uuid, gen_random_uuid());
+   begin
+     select * into v_aluno from alunos where id = v_id and saida is null for update;
+     if not found then raise exception 'Aluno não encontrado.'; end if;
+     if exists (select 1 from pessoas where lower(btrim(nome)) = lower(btrim(v_aluno.nome))) then
+       raise exception 'Já existe uma pessoa da corrente com esse nome.';
+     end if;
+
+     insert into pessoas (id, nome, funcao, perfil, pin_hash, pin_versao, entrada)
+       values (v_pessoa_id, v_aluno.nome, 'cambone', v_aluno.perfil, v_aluno.pin_hash, v_aluno.pin_versao, (now() at time zone 'America/Sao_Paulo')::date);
+     if v_aluno.foto is not null then
+       insert into pessoas_fotos (pessoa_id, foto) values (v_pessoa_id, v_aluno.foto);
+     end if;
+     if coalesce(p ->> 'cpfCifrado', '') <> '' then
+       insert into pessoas_cpf (pessoa_id, cifrado, atualizado_em, atualizado_por) values (v_pessoa_id, p ->> 'cpfCifrado', now(), 'UP CPJ');
+     end if;
+     insert into oferenda_mediuns (oferenda_id, pessoa_id, pagamento, entrega, excluido, atualizado_em)
+       select oa.oferenda_id, v_pessoa_id, oa.pagamento, oa.entrega, oa.excluido, oa.atualizado_em
+       from oferenda_alunos oa join oferendas o on o.id = oa.oferenda_id
+       where oa.aluno_id = v_id and o.status <> 'encerrado'
+       on conflict (oferenda_id, pessoa_id) do update set
+         pagamento = excluded.pagamento, entrega = excluded.entrega,
+         excluido = excluded.excluido, atualizado_em = excluded.atualizado_em;
+     delete from oferenda_alunos oa using oferendas o
+       where oa.aluno_id = v_id and o.id = oa.oferenda_id and o.status <> 'encerrado';
+     update oferenda_doacoes d set pessoa_chave = 'p:' || v_pessoa_id::text
+       from oferenda_itens i join oferendas o on o.id = i.oferenda_id
+       where d.item_id = i.id and o.status <> 'encerrado' and d.pessoa_chave = 'a:' || v_id::text;
+     delete from alunos where id = v_id;
+
+     return alunos_estado() || jsonb_build_object('pessoas', pessoas_listar('{"todas": true}'::jsonb));
+   exception when unique_violation then
+     raise exception 'Já existe uma pessoa da corrente com esse nome.';
+   end;
+   $$`,
+  // Limite de consultas sem login (Criar cadastro, e-mail/celular que não existe no login), por IP (guardado só o hash).
+  // p = { chave, max, minutos }: conta mais uma; a janela começa na primeira consulta. Devolve { ok, restantes }.
+  `create table if not exists consultas_limite (
+     chave      text primary key,
+     total      integer not null default 0,
+     desde      timestamptz not null default now()
+   )`,
+  `create or replace function consulta_contar(p jsonb)
+   returns jsonb language plpgsql as $$
+   declare v_total int; v_max int := coalesce((p ->> 'max')::int, 10);
+   begin
+     delete from consultas_limite where desde < now() - interval '1 day';
+     insert into consultas_limite (chave, total, desde) values (p ->> 'chave', 1, now())
+     on conflict (chave) do update set
+       total = case when consultas_limite.desde < now() - make_interval(mins => coalesce((p ->> 'minutos')::int, 60)) then 1
+                    else consultas_limite.total + 1 end,
+       desde = case when consultas_limite.desde < now() - make_interval(mins => coalesce((p ->> 'minutos')::int, 60)) then now()
+                    else consultas_limite.desde end
+     returning total into v_total;
+     return jsonb_build_object('ok', v_total <= v_max, 'restantes', greatest(v_max - v_total, 0));
    end;
    $$`,
 ];

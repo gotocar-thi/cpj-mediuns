@@ -390,12 +390,26 @@ function cardAlunos() {
   const aberta = grupos.some((g) => g.id === estado.alunosTurmaAberta) ? estado.alunosTurmaAberta : null;
   let h = `${cab}
     <div class="pf-of-totais auto">${grupos.map((g) => `<button type="button" class="pf-of-total fn-alunos${aberta === g.id ? ' selecionado' : ''}" data-act="alunosTurma" data-t="${esc(g.id)}" aria-expanded="${aberta === g.id}" aria-label="${esc(g.nome)}: ${g.lista.length} ${g.lista.length === 1 ? 'aluno' : 'alunos'}${aberta === g.id ? ', recolher lista' : ', expandir lista'}"${g.id === 'sem' && !g.lista.length ? ' disabled' : ''}><b>${g.lista.length}</b><span>${esc(g.nome)}</span></button>`).join('')}</div>`;
-  const pendencias = editar ? cardPendenciasAlunos(A, grupos) : '';
+  const pendencias = editar ? cardPendenciasAlunos(A, grupos) + blocoExAlunos(A) : '';
   if (!aberta) return h + pendencias + '</div>';
   const g = grupos.find((x) => x.id === aberta);
   h += `<div class="lista-aberta">${acoesTurma(g, editar, podePromover)}
       ${g.lista.length ? `<div class="ppl">${g.lista.map((a) => linhaAluno(a, A.turmas, editar, promovendo(g))).join('')}</div>` : '<p class="nota">Nenhum aluno nesta turma.</p>'}</div>`;
   return h + pendencias + '</div>';
+}
+
+// Ex-alunos (quem edita Alunos): quem foi excluído fica guardado aqui, com perfil, senha e CPF.
+// ↩ Voltar devolve para os alunos; 🗑️ apaga de vez (pede confirmação).
+function blocoExAlunos(A) {
+  const lista = A.exAlunos || [];
+  if (!lista.length) return '';
+  const aberto = !!estado.exAlunosAberto;
+  const turma = (id) => A.turmas.find((t) => t.id === id)?.nome || 'Sem turma';
+  const linha = (a) => `<div class="pp al-l"><div class="pp-l1"><span class="nm">${esc(a.nome)}${a.nomeCompleto && a.nomeCompleto !== a.nome ? `<small class="muted al-nc">${esc(a.nomeCompleto)}</small>` : ''}<small class="muted al-nc">${esc(turma(a.turmaId))} · saiu em ${dBR(a.saida)}</small></span>
+    <span class="pp-bts"><button class="btn small pp-bt" type="button" data-act="reativarAluno" data-id="${a.id}" aria-label="Voltar ${esc(a.nome)} para os alunos">↩ Voltar</button><button class="btn small pp-bt pp-ico pp-del" type="button" data-act="excluirask" data-tipo="exal" data-id="${a.id}" aria-label="Apagar ${esc(a.nome)} de vez" title="Apagar de vez"><span aria-hidden="true">🗑️</span></button></span></div></div>`;
+  return `<div class="al-ex"><button type="button" class="btn small" data-act="exAlunosAbrir" aria-expanded="${aberto}">🗂️ Ex-alunos (${lista.length})</button>
+    ${aberto ? `<p class="nota">Cadastro guardado (perfil, foto, senha e CPF), fora do login e das listas. <b>↩ Voltar</b> devolve para os alunos; <b>🗑️</b> apaga de vez.</p>
+    <div class="ppl">${lista.map(linha).join('')}</div>` : ''}</div>`;
 }
 
 // Janela de confirmação para excluir (pessoa, aluno ou licença) ou remover uma turma.
@@ -410,7 +424,11 @@ function janelaExcluir() {
   } else if (x.tipo === 'al') {
     const a = (estado.alunos?.alunos || []).find((y) => y.id === x.id);
     if (!a) return '';
-    titulo = 'Excluir aluno'; texto = `Excluir o aluno <b>${esc(a.nome)}</b>? Sai das listas e das próximas oferendas. As oferendas já feitas ficam guardadas; perfil, foto e senha são apagados.`;
+    titulo = 'Excluir aluno'; texto = `Excluir o aluno <b>${esc(a.nome)}</b>? Vai para <b>Ex-alunos</b>: sai das listas, do login e das próximas oferendas, mas o cadastro (perfil, foto, senha e CPF) fica guardado e pode voltar.`;
+  } else if (x.tipo === 'exal') {
+    const a = (estado.alunos?.exAlunos || []).find((y) => y.id === x.id);
+    if (!a) return '';
+    titulo = 'Apagar de vez'; texto = `Apagar <b>${esc(a.nome)}</b> de vez? Perfil, foto, senha e CPF são apagados agora e <b>não dá para desfazer</b>. As oferendas já encerradas continuam com o nome.`;
   } else if (x.tipo === 'turma') {
     const t = (estado.alunos?.turmas || []).find((y) => y.id === x.id);
     if (!t) return '';
@@ -571,7 +589,8 @@ export const cliques = {
       const p = estado.pessoas.find((y) => y.id === x.id);
       if (p && await atualizarPessoa(x.id, { limpeza: null })) toast(`${p.nome} foi retirada da turma. O cadastro foi mantido.`);
     }
-    else if (x.tipo === 'al') await acaoAlunos('excluirAluno', { id: x.id });
+    else if (x.tipo === 'al') { if (await acaoAlunos('excluirAluno', { id: x.id })) toast('Aluno movido para Ex-alunos.'); }
+    else if (x.tipo === 'exal') { if (await acaoAlunos('apagarAluno', { id: x.id })) toast('Ex-aluno apagado de vez.'); }
     else if (x.tipo === 'turma') {
       estado.editTurma = null;
       if (await acaoAlunos('excluirTurma', { id: x.id })) {
@@ -625,6 +644,8 @@ export const cliques = {
   editturma(el) { estado.editTurma = el.dataset.id; estado.alunosTurmaAberta = el.dataset.id; avisar(); document.getElementById('turma-nome')?.select(); },
   cancelturma() { estado.editTurma = null; avisar(); },
   delaluno(el) { estado.confirm = null; acaoAlunos('excluirAluno', { id: el.dataset.id }); },
+  exAlunosAbrir() { estado.exAlunosAberto = !estado.exAlunosAberto; avisar(); },
+  async reativarAluno(el) { if (await acaoAlunos('reativarAluno', { id: el.dataset.id })) toast('Voltou para os alunos.'); },
   // Root: nova senha para o aluno que esqueceu; as sessões abertas dele são encerradas.
   async senhaaluno(el) {
     const senha = prompt(`Nova senha de ${el.dataset.nome}: de 4 a 8 números.`);

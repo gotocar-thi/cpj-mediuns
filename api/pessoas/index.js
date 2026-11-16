@@ -25,16 +25,16 @@ import { FUNCAO_KEYS } from '../../shared/regras.js';
 import { contagemPerfis, pessoasPorOrixaCabeca } from '../../shared/perfil.js';
 import { pode } from '../../shared/permissoes.js';
 import { amaci, acaoAmaci } from '../_lib/amaci.js';
-import { dadosAluno, temDados, salvarDadosAluno, comExtras, cpfDoAluno } from '../_lib/alunos.js';
+import { dadosAluno, temDados, salvarDadosAluno, comExtras, cpfDoAluno, promoverAluno } from '../_lib/alunos.js';
 
-const ACOES_ALUNOS = ['alunos', 'aluno', 'alunoCpf', 'excluirAluno', 'turma', 'excluirTurma', 'promoverAlunoCPJ'];
+const ACOES_ALUNOS = ['alunos', 'aluno', 'alunoCpf', 'excluirAluno', 'reativarAluno', 'apagarAluno', 'turma', 'excluirTurma', 'promoverAlunoCPJ'];
 const ACOES_CURIMBA = ['curimbaAluno', 'curimbaExcluirAluno', 'curimbaAula', 'curimbaExcluirAula', 'curimbaPresenca'];
 const limpar = (s, max) => String(s ?? '').replace(/\s+/g, ' ').trim().slice(0, max + 1);
 const turmaId = (v) => (v ? validarId(v, 'Turma') : '');
 
 async function acaoAlunos(b, eu) {
   if (b.acao === 'alunoCpf') return cpfDoAluno(b);
-  if (b.acao === 'promoverAlunoCPJ') return db.rpc('aluno_transferir_cambone', { id: validarId(b.id, 'Aluno') });
+  if (b.acao === 'promoverAlunoCPJ') return promoverAluno(validarId(b.id, 'Aluno'));
   if (b.acao === 'excluirTurma') return db.rpc('turma_aluno_excluir', { id: validarId(b.id, 'Turma') });
   if (b.acao === 'turma') {
     const nome = limpar(b.nome, 40);
@@ -42,11 +42,10 @@ async function acaoAlunos(b, eu) {
     if (b.id) return db.rpc('turma_aluno_renomear', { id: validarId(b.id, 'Turma'), nome });
     return db.rpc('turma_aluno_criar', { nome });
   }
-  if (b.acao === 'excluirAluno') {
-    const r = await db.rpc('aluno_excluir', { id: validarId(b.id, 'Aluno') });
-    await db.rpc('apagar_excluidos');   // sem oferenda aberta, o aluno é apagado de vez
-    return r;
-  }
+  // Excluir leva para Ex-alunos (cadastro guardado); de lá, volta ou é apagado de vez (dados e CPF somem na hora).
+  if (b.acao === 'excluirAluno') return db.rpc('aluno_excluir', { id: validarId(b.id, 'Aluno') });
+  if (b.acao === 'reativarAluno') return db.rpc('aluno_reativar', { id: validarId(b.id, 'Ex-aluno') });
+  if (b.acao === 'apagarAluno') return db.rpc('aluno_apagar', { id: validarId(b.id, 'Ex-aluno') });
   if (b.acao === 'aluno') {
     const p = { id: validarId(b.id, 'Aluno') };
     if ('nome' in b) {

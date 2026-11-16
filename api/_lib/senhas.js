@@ -2,6 +2,7 @@
 
 import { scrypt, randomBytes, timingSafeEqual, createHmac, createHash } from 'node:crypto';
 import { db } from './db.js';
+import { HttpError } from './http.js';
 
 const N = 16384, R = 8, P = 1, TAM = 32;
 const VALIDADE_SESSAO = 30 * 24 * 60 * 60; // 30 dias, em segundos
@@ -82,6 +83,16 @@ export async function lerToken(token) {
   } catch {
     return null;
   }
+}
+
+// Limite de consultas sem login, por IP: o banco guarda só um HMAC do IP (com o segredo das sessões), não o IP.
+// Na Vercel, x-real-ip / x-forwarded-for vêm da própria plataforma.
+export async function limitarPorIp(req, tipo, max, minutos, mensagem) {
+  const h = req.headers || {};
+  const ip = String(h['x-real-ip'] || String(h['x-forwarded-for'] || '').split(',')[0] || req.socket?.remoteAddress || 'sem-ip').trim();
+  const chave = tipo + ':' + assinar(ip, await obterSegredo()).slice(0, 32);
+  const r = await db.rpc('consulta_contar', { chave, max, minutos });
+  if (!r.ok) throw new HttpError(429, mensagem);
 }
 
 // Comparação de textos sem vazar tempo (para o código de instalação).
