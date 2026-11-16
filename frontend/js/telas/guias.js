@@ -17,6 +17,7 @@ const ui = {
   abertos: new Set(),       // grupos expandidos (admin)
   feitos: new Set(),        // pedidos encerrados expandidos ('número:grupo')
   painel: new Set(),        // grupos abertos no Painel de pedidos (começam minimizados)
+  painelSel: {},            // grupo → quadradinho de situação aberto no Painel (filtra a lista)
   minimizados: new Set(),   // blocos que a pessoa minimizou: id do grupo de itens ou 'meus' (Seus pedidos)
   grupoRen: null,           // id do grupo com o ✎ aberto
   item: null,               // formulário de item: { grupoId, id?, descricao, quantidade, valor, visivel, cpj, foto?: b64 | null }
@@ -31,7 +32,7 @@ const ui = {
   ocupado: null,            // ação enviada ao servidor e ainda sem resposta (trava o duplo clique)
 };
 export function limpar() {
-  ui.abertos.clear(); ui.feitos.clear(); ui.minimizados.clear(); ui.painel.clear();
+  ui.abertos.clear(); ui.feitos.clear(); ui.minimizados.clear(); ui.painel.clear(); ui.painelSel = {};
   Object.assign(ui, { grupoRen: null, item: null, qtd: {}, pedir: null, exportar: null, zoom: null, pix: null, gerando: false, cpf: '', ocupado: null });
   if (ui.img) URL.revokeObjectURL(ui.img.url);
   ui.img = null;
@@ -270,6 +271,21 @@ function listaPedido(linhas) {
     <div class="meu-tot"><span>${plural(pessoas.length, 'pessoa', 'pessoas')} · ${plural(itensDe(linhas), 'item', 'itens')}</span><b>${R(totalDe(linhas))}</b></div>`;
 }
 
+// Quadradinhos de situação das linhas do pedido (o mesmo desenho dos da aba ASAAS): verde pago, amarelo pendente
+// (link aguardando), cinza cancelado (link cancelado ou estornado), vermelho atrasado (link vencido) e, se houver,
+// "sem link" (pedido feito com o Pix desligado ou sem link gerado). Tocar filtra a lista; tocar de novo mostra tudo.
+const sitLinha = (l) => (l.pago ? 'paga' : l.pix === 'pendente' ? 'pendente' : l.pix === 'vencida' ? 'vencida'
+  : l.pix === 'cancelada' || l.pix === 'estornada' ? 'cancelada' : 'semlink');
+const QUADROS_PEDIDO = [['paga', 'Pago', 'as-q-ok'], ['pendente', 'Pendente', 'as-q-pend'], ['cancelada', 'Cancelado', 'as-q-canc'], ['vencida', 'Atrasado', 'as-q-atr'], ['semlink', 'Sem link', 'as-q-canc']];
+function quadrosPedido(g, linhas) {
+  const sel = ui.painelSel[g.id];
+  const qs = QUADROS_PEDIDO.filter(([k]) => k !== 'semlink' || linhas.some((l) => sitLinha(l) === 'semlink'));
+  return `<div class="pf-of-totais as-quadros${qs.length > 4 ? ' cinco' : ''}">${qs.map(([k, rot, cls]) => {
+    const n = linhas.filter((l) => sitLinha(l) === k).length;
+    return `<button type="button" class="pf-of-total ${cls}${sel === k ? ' selecionado' : ''}" data-act="guiaquadro" data-id="${g.id}" data-k="${k}" aria-expanded="${sel === k}" aria-label="${esc(g.descricao)}: ${n} ${rot.toLowerCase()}" ${n ? '' : 'disabled'}><b>${n}</b><span>${rot}</span></button>`;
+  }).join('')}</div>`;
+}
+
 // Painel de pedidos: um bloco por grupo, começando minimizado. Minimizado, mostra o pedido aberto,
 // quantas pessoas e quanto falta pagar. Aberto: Encerrar / Novo pedido do grupo e a lista por pessoa.
 function cardPainel(G) {
@@ -291,7 +307,10 @@ function cardPainel(G) {
       h += `<div class="gp-status"><span><b>Pedido nº ${r.numero}</b> <span class="muted">desde ${dia(r.criadoEm)}</span></span>
         ${estado.confirm === k ? `<button class="btn small danger" data-act="guiaencerrar" data-id="${g.id}">${rot('encerrar', 'Confirmar encerramento', 'Encerrando…')}</button>` : `<button class="btn small danger" data-act="askdel" data-k="${k}">Encerrar pedido</button>`}</div>`;
       if (estado.confirm === k) h += `<p class="muted gg-aviso">Depois de encerrar, ninguém pede mais itens de ${esc(g.descricao)} neste número. Os outros grupos continuam como estão.</p>`;
-      h += listaPedido(r.linhas);
+      const sel = ui.painelSel[g.id];
+      const linhas = sel ? r.linhas.filter((l) => sitLinha(l) === sel) : r.linhas;
+      if (r.linhas.length) h += quadrosPedido(g, r.linhas);
+      h += listaPedido(linhas.length ? linhas : r.linhas);
     } else {
       const ultimo = R0.find((x) => x.grupoId === g.id && x.encerradoEm);
       const k = 'gnovo:' + g.id;
@@ -476,6 +495,7 @@ export const cliques = {
   guiadobrar(el) { const id = el.dataset.id; if (ui.abertos.has(id)) ui.abertos.delete(id); else ui.abertos.add(id); avisar(); },
   guiaminimizar(el) { const id = el.dataset.id; if (ui.minimizados.has(id)) ui.minimizados.delete(id); else ui.minimizados.add(id); avisar(); },
   guiafeito(el) { const n = el.dataset.n; if (ui.feitos.has(n)) ui.feitos.delete(n); else ui.feitos.add(n); avisar(); },
+  guiaquadro(el) { const g = el.dataset.id; ui.painelSel[g] = ui.painelSel[g] === el.dataset.k ? null : el.dataset.k; avisar(); },
   guiapainel(el) { const id = el.dataset.id; if (ui.painel.has(id)) ui.painel.delete(id); else ui.painel.add(id); avisar(); },
   guiarenomear(el) { ui.grupoRen = el.dataset.id || null; avisar(); },
   async guiaexcluirgrupo(el) { if (await confirmado('gg:' + el.dataset.id, 'excluirGrupo', { id: el.dataset.id })) { ui.abertos.delete(el.dataset.id); toast('Grupo excluído.'); } },

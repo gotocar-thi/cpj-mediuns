@@ -7,7 +7,7 @@
 // Rotas (todas em api/oferendas, para não criar função nova):
 //   POST ?webhook=asaas                          — o ASAAS avisa (token no cabeçalho asaas-access-token)
 //   POST { acao: 'guias', op: 'pix', pedido, cpf? } — a pessoa gera o Pix do que pediu (cpf só na 1ª vez)
-//   GET  ?lista=asaas                            — aba ASAAS (root): situação, cobranças e eventos recebidos
+//   GET  ?lista=asaas                            — aba ASAAS (root e quem tem a aba no perfil): situação, cobranças e eventos recebidos
 //   POST { acao: 'asaas', op: 'ativar', ativo } · { acao: 'asaas', op: 'cancelar', id }   (root)
 //
 // Variáveis (só no servidor): ASAAS_API_KEY, ASAAS_WEBHOOK_TOKEN e ASAAS_API_URL (sem ela, usa o sandbox).
@@ -168,9 +168,13 @@ export async function webhookAsaas(req) {
   return { ok: true };
 }
 
-// ---------- aba ASAAS (root) ----------
-function exigirRoot(eu) {
-  if (!pode(eu, 'usuarios:gerenciar')) throw new HttpError(403, 'Só o admin root acessa a aba ASAAS.');
+// ---------- aba ASAAS (root e quem tem a aba no perfil, como o Admin financeiro) ----------
+// Ver: a situação, as cobranças e o retorno. Editar: ligar o Pix e cancelar links.
+function exigirVer(eu) {
+  if (!pode(eu, 'asaas:ver')) throw new HttpError(403, 'Seu perfil não tem a aba ASAAS.');
+}
+function exigirEditar(eu) {
+  if (!pode(eu, 'asaas:editar')) throw new HttpError(403, 'Seu perfil só pode olhar a aba ASAAS.');
 }
 
 async function respostaRoot() {
@@ -188,12 +192,12 @@ async function respostaRoot() {
 }
 
 export async function respostaAsaas(eu) {
-  exigirRoot(eu);
+  exigirVer(eu);
   return respostaRoot();
 }
 
 export async function acaoAsaas(eu, b) {
-  exigirRoot(eu);
+  exigirEditar(eu);
   if (b.op === 'ativar') {
     if (typeof b.ativo !== 'boolean') throw new HttpError(400, 'Informe se o Pix fica ligado.');
     if (b.ativo && !configurado()) throw new HttpError(400, 'Configure ASAAS_API_KEY e ASAAS_WEBHOOK_TOKEN na Vercel antes de ligar.');

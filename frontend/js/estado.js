@@ -22,7 +22,7 @@ export const estado = {
   ervasHist: null,     // Histórico de compras (admin): lista, undefined = carregando, { erro }
   guias: null,         // aba Compras (GET /api/oferendas?lista=guias)
   amaci: null,         // aba Amaci (GET /api/pessoas?lista=amaci)
-  asaas: null,         // aba ASAAS, só root (GET /api/oferendas?lista=asaas)
+  asaas: null,         // aba ASAAS: root e quem tem a aba no perfil (GET /api/oferendas?lista=asaas)
   ervasPara: null,     // admin montando o pedido de outra pessoa: { chave?, nome, itens: { ervaId: qtd } }    // 'fornecedor' | 'cobranca' (exportação aberta na aba Ervas)
   pronto: false,
   confirm: null,       // item aguardando "Confirmar"

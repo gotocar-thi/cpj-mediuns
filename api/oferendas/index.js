@@ -10,7 +10,7 @@
 //                excluirItem { id } · entregue { id, entregue }
 //                status { id, status: 'rascunho' | 'aguardando' | 'publicado' | 'encerrado' }
 // Aba Compras: GET ?lista=guias e POST { acao: 'guias', op, ... } (veja api/_lib/guias.js).
-// ASAAS (veja api/_lib/asaas.js): webhook sem sessão, com token, em POST ?webhook=asaas; aba ASAAS (root) em GET ?lista=asaas e POST { acao: 'asaas', op, ... }.
+// ASAAS (veja api/_lib/asaas.js): webhook sem sessão, com token, em POST ?webhook=asaas; aba ASAAS (root e quem tem a aba no perfil) em GET ?lista=asaas e POST { acao: 'asaas', op, ... }.
 // Quem não administra as oferendas vê as publicadas (e doa nelas) e as bloqueadas (sem os itens).
 //                doarPor { itemId, pessoaId | chave, quantidade }  — doação de outra pessoa (0 = exclui)
 import { rota, corpo, validarId, validarData, HttpError } from '../_lib/http.js';

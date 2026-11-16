@@ -1,8 +1,8 @@
-// Tela "ASAAS" (só o root): liga o Pix na aba Compras (cada Pedir gera um link de pagamento), acompanha
+// Tela "ASAAS" (o root e quem tem a aba no perfil, como o Admin financeiro; sem "Editar", só olha): liga o Pix na aba Compras (cada Pedir gera um link de pagamento), acompanha
 // os pedidos pagos e por pagar, mostra se a Vercel está configurada e o retorno do webhook (os eventos que o
 // ASAAS mandou e o que o app fez com cada um).
 
-import { estado, carregarAsaas, acaoAsaas, avisar } from '../estado.js';
+import { estado, pode, carregarAsaas, acaoAsaas, avisar } from '../estado.js';
 import { esc, toast } from '../util.js';
 import { centavos, reais } from '/shared/ervas.js';
 
@@ -10,11 +10,12 @@ const R = (v) => reais(centavos(v));
 const quando = (iso) => new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 export const URL_WEBHOOK = location.origin + '/api/oferendas?webhook=asaas';
 const STATUS = { pendente: ['Aguardando pagamento', 'new'], paga: ['Paga', 'pleno'], vencida: ['Vencida', 're'], cancelada: ['Cancelada', 're'], estornada: ['Estornada', 're'] };
+const editar = () => pode('asaas:editar');
 const badge = (s) => { const [t, c] = STATUS[s] || [s, '']; return `<span class="badge ${c}">${esc(t)}</span>`; };
 
 // Todos os blocos e sub-blocos começam minimizados.
-const ui = { conexao: false, cobrancas: false, eventos: false, cobGrupos: new Set(), evValores: new Set() };
-export function limpar() { ui.conexao = false; ui.cobrancas = false; ui.eventos = false; ui.cobGrupos.clear(); ui.evValores.clear(); }
+const ui = { conexao: false, cobrancas: false, eventos: false, cobSel: {}, evValores: new Set() };   // cobSel: grupo → quadradinho aberto
+export function limpar() { ui.conexao = false; ui.cobrancas = false; ui.eventos = false; ui.cobSel = {}; ui.evValores.clear(); }
 
 // Primeiro bloco, minimizado: o toggle do Pix e a configuração. Minimizado, mostra se o Pix está ligado e o ambiente.
 function cardConexao(A) {
@@ -25,7 +26,7 @@ function cardConexao(A) {
   if (!ui.conexao) return `<div class="card adm">${cab}</div>`;
   const item = (v, t) => `<li>${v ? '✅' : '❌'} ${t}</li>`;
   return `<div class="card adm">${cab}
-    <label class="of-sw"><input type="checkbox" role="switch" data-act="asaasativo" ${A.ativo ? 'checked' : ''} ${!ok && !A.ativo ? 'disabled' : ''}><span class="of-sw-t" aria-hidden="true"></span><b>Pix visível nas Compras</b></label>
+    <label class="of-sw"><input type="checkbox" role="switch" data-act="asaasativo" ${A.ativo ? 'checked' : ''} ${(!ok && !A.ativo) || !editar() ? 'disabled' : ''}><span class="of-sw-t" aria-hidden="true"></span><b>Pix visível nas Compras</b></label>
     <p class="muted" style="margin:0">${A.ativo ? 'Cada Pedir na aba Compras gera um link de pagamento Pix.' : 'Desligado: os pedidos da aba Compras não geram link de pagamento.'}</p>
     <ul class="as-cfg">${item(C.chave, 'ASAAS_API_KEY na Vercel')}${item(C.token, 'ASAAS_WEBHOOK_TOKEN na Vercel')}</ul>
     <label class="field">URL do webhook (cole no ASAAS, com o mesmo token)<input type="text" id="as-url" readonly value="${esc(URL_WEBHOOK)}"></label>
@@ -52,12 +53,32 @@ function linhaCobranca(c) {
     <span class="as-l1"><b>${esc(c.nome)}</b>${badge(c.status)}</span>
     ${c.itens?.length ? `<span class="as-l2">${esc(c.itens.join(', '))}</span>` : ''}
     <span class="as-l2 muted">Pedido nº ${c.pedido} · gerado ${quando(c.criadoEm)}${c.pagoEm ? ' · pago ' + quando(c.pagoEm) : c.status === 'pendente' && c.vencimento ? ' · vence ' + new Date(c.vencimento + 'T12:00:00').toLocaleDateString('pt-BR') : ''}${c.link ? ` · <a href="${esc(c.link)}" target="_blank" rel="noopener">link</a>` : ''}</span>
-    <span class="as-l3"><b>${R(c.valor)}</b>${c.status === 'pendente'
+    <span class="as-l3"><b>${R(c.valor)}</b>${c.status === 'pendente' && editar()
       ? (estado.confirm === 'asc:' + c.id ? `<button class="btn small danger" data-act="asaascancelar" data-id="${c.id}">Confirmar cancelamento</button>` : `<button class="btn small danger" data-act="askdel" data-k="asc:${c.id}">Cancelar</button>`)
       : ''}</span></li>`;
 }
 
-// Pedidos e pagamentos: começa minimizado; dentro, um sub-bloco por grupo da aba Compras (também minimizados).
+// Quadradinhos de situação em cada grupo: verde pago, amarelo pendente, cinza cancelado (e estornado), vermelho atrasado.
+// Tocar abre a lista daquela situação embaixo; tocar de novo fecha.
+const QUADROS = [
+  ['paga', 'Pago', 'as-q-ok', (c) => c.status === 'paga'],
+  ['pendente', 'Pendente', 'as-q-pend', (c) => c.status === 'pendente'],
+  ['cancelada', 'Cancelado', 'as-q-canc', (c) => c.status === 'cancelada' || c.status === 'estornada'],
+  ['vencida', 'Atrasado', 'as-q-atr', (c) => c.status === 'vencida'],
+];
+function grupoCobrancas(nome, cs) {
+  const sel = ui.cobSel[nome];
+  const aberto = QUADROS.find((q) => q[0] === sel);
+  const lista = aberto ? cs.filter(aberto[3]) : [];
+  return `<div class="as-grupo"><div class="as-grupo-h"><b>${esc(nome)}</b><span class="muted">${cs.length} ${cs.length === 1 ? 'link' : 'links'}</span></div>
+    <div class="pf-of-totais as-quadros">${QUADROS.map(([k, rot, cls, f]) => {
+      const n = cs.filter(f).length;
+      return `<button type="button" class="pf-of-total ${cls}${sel === k ? ' selecionado' : ''}" data-act="asaasquadro" data-g="${esc(nome)}" data-k="${k}" aria-expanded="${sel === k}" aria-label="${esc(nome)}: ${n} ${rot.toLowerCase()}" ${n ? '' : 'disabled'}><b>${n}</b><span>${rot}</span></button>`;
+    }).join('')}</div>
+    ${aberto && lista.length ? `<ul class="as-lista">${lista.map(linhaCobranca).join('')}</ul>` : ''}</div>`;
+}
+
+// Pedidos e pagamentos: começa minimizado; dentro, um grupo da aba Compras por vez, cada um com os seus quadradinhos.
 function cardCobrancas(A) {
   const L = A.cobrancas;
   const cab = `<button class="grp-h dobra" data-act="asaasdobrar" data-k="cobrancas" aria-expanded="${ui.cobrancas}"><h2>Pedidos e pagamentos</h2>
@@ -65,10 +86,7 @@ function cardCobrancas(A) {
   if (!ui.cobrancas) return `<div class="card adm">${cab}</div>`;
   if (!L.length) return `<div class="card adm">${cab}<p class="muted" style="margin:0">Nenhum link de pagamento gerado ainda.</p></div>`;
   const grupos = juntar(L, (c) => (c.grupos?.length ? c.grupos.join(' + ') : 'Sem grupo'));
-  return `<div class="card adm">${cab}<div class="as-subs">${grupos.map(([nome, cs]) => {
-    const pend = cs.filter((c) => c.status === 'pendente').length;
-    return sub('cobGrupos', nome, esc(nome), `${pend ? `${pend} ${pend === 1 ? 'pendente' : 'pendentes'} · ` : ''}${cs.length}`, () => `<ul class="as-lista">${cs.map(linhaCobranca).join('')}</ul>`);
-  }).join('')}</div></div>`;
+  return `<div class="card adm">${cab}<div class="as-grupos">${grupos.map(([nome, cs]) => grupoCobrancas(nome, cs)).join('')}</div></div>`;
 }
 
 // Do que se trata: os itens da cobrança (quando é do app) ou a descrição que veio do ASAAS.
@@ -81,14 +99,29 @@ function linhaEvento(e) {
       <span class="as-l2 muted">→ ${esc(e.resultado || '—')}</span></li>`;
 }
 
-// Retorno do ASAAS: os eventos juntos por valor; cada valor começa minimizado.
+// Situação do pagamento no ASAAS, como vem no evento.
+const SIT_ASAAS = { RECEIVED: 'Recebido', CONFIRMED: 'Confirmado', RECEIVED_IN_CASH: 'Recebido em dinheiro', PENDING: 'Aguardando pagamento',
+  OVERDUE: 'Vencido', REFUNDED: 'Estornado', REFUND_REQUESTED: 'Estorno pedido', CHARGEBACK_REQUESTED: 'Contestação', DELETED: 'Excluído' };
+const ORDEM_SIT = ['RECEIVED', 'CONFIRMED', 'RECEIVED_IN_CASH', 'PENDING', 'OVERDUE', 'REFUNDED', 'REFUND_REQUESTED', 'CHARGEBACK_REQUESTED', 'DELETED'];
+const descricaoEvento = (e) => e.descricao || (e.itens?.length ? e.itens.join(', ') : '') || 'Sem descrição';
+
+// Retorno do ASAAS: separado pela situação do pagamento; dentro de cada uma, um sub-bloco por descrição e valor
+// ("CPJ · Compras · pedido nº 7 · R$ 50,00"), minimizado, com quantos eventos.
 function cardEventos(A) {
   const L = A.eventos;
   const cab = `<button class="grp-h dobra" data-act="asaasdobrar" data-k="eventos" aria-expanded="${ui.eventos}"><h2>Retorno do ASAAS</h2>
     <span class="count">${L.length} <span class="seta" aria-hidden="true">${ui.eventos ? '▾' : '▸'}</span></span></button>`;
   if (!ui.eventos) return `<div class="card adm">${cab}</div>`;
-  const porValor = juntar(L, (e) => (e.valor != null && e.valor !== '' ? R(Number(e.valor)) : 'Sem valor'));
-  const corpo = L.length ? `<div class="as-subs">${porValor.map(([valor, es]) => sub('evValores', valor, esc(valor), `${es.length} ${es.length === 1 ? 'evento' : 'eventos'} `, () => `<ul class="as-lista">${es.map(linhaEvento).join('')}</ul>`)).join('')}</div>`
+  const porSit = juntar(L, (e) => e.status || '')
+    .sort(([a], [b]) => (ORDEM_SIT.indexOf(a) + 1 || 99) - (ORDEM_SIT.indexOf(b) + 1 || 99));
+  const corpo = L.length ? porSit.map(([sit, es]) => {
+    const grupos = juntar(es, (e) => `${descricaoEvento(e)}${e.valor ?? ''}`);
+    return `<div class="as-sit"><div class="as-sit-h"><h3>${esc(sit ? SIT_ASAAS[sit] || sit : 'Sem situação')}</h3><span class="muted">${es.length}</span></div>
+      <div class="as-subs">${grupos.map(([k, gs]) => {
+        const valor = gs[0].valor != null && gs[0].valor !== '' ? R(Number(gs[0].valor)) : 'sem valor';
+        return sub('evValores', `${sit}${k}`, `${esc(descricaoEvento(gs[0]))} · ${esc(valor)}`, `${gs.length} ${gs.length === 1 ? 'evento' : 'eventos'} `, () => `<ul class="as-lista">${gs.map(linhaEvento).join('')}</ul>`);
+      }).join('')}</div></div>`;
+  }).join('')
     : '<p class="muted" style="margin:0">Nenhum evento recebido ainda.</p>';
   return `<div class="card adm">${cab}${corpo}
     <div class="cp-bts"><button class="btn" data-act="asaasatualizar"><span aria-hidden="true">↻</span> Atualizar</button></div></div>`;
@@ -103,6 +136,7 @@ export function render() {
 
 export const cliques = {
   asaasdobrar(el) { ui[el.dataset.k] = !ui[el.dataset.k]; avisar(); },
+  asaasquadro(el) { const g = el.dataset.g; ui.cobSel[g] = ui.cobSel[g] === el.dataset.k ? null : el.dataset.k; avisar(); },
   asaassub(el) { const s = ui[el.dataset.c]; const k = el.dataset.k; if (s.has(k)) s.delete(k); else s.add(k); avisar(); },
   asaasatualizar() { estado.asaas = null; avisar(); },
   async asaascancelar(el) { if (await acaoAsaas('cancelar', { id: el.dataset.id })) toast('Cobrança cancelada.'); },

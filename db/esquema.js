@@ -9,7 +9,7 @@
 // Estrutura: veja db/ESTRUTURA-ESQUEMA.md para o mapa de versões, domínios e
 // quais migrações foram testadas no Postgres.
 
-export const VERSAO = 120;  // v120: pagamentos atrasados também da conta A (Compras)
+export const VERSAO = 121;  // v121: aba ASAAS nos perfis e o perfil Admin financeiro
 
 import { PERFIS_PADRAO } from '../shared/permissoes.js';
 
@@ -5035,4 +5035,10 @@ export const MIGRACOES = [
         where not (a.conta = 'A' and exists (select 1 from asaas_cobrancas c where c.id::text = a.referencia)
                    and not exists (select 1 from guias_linhas l where l.cobranca_id::text = a.referencia and l.pago_em is null))), '[]'::jsonb))
    $$`,
+
+  // ================================================== v121: aba ASAAS nos perfis e o perfil "Admin financeiro"
+  // A aba ASAAS passa a ser marcada por perfil (Ver / Editar). O Admin financeiro vem só com Ver; perfis que já existem
+  // ficam sem a aba (o root marca na aba Admin root). Se o root já criou um perfil com esse nome, fica o dele.
+  ...PERFIS_PADRAO.filter((p) => p.chave === 'admin_financeiro').map((p) => `insert into perfis (chave, nome, abas, ordem)
+     values ('${p.chave}', '${p.nome}', '${JSON.stringify(p.abas)}'::jsonb, ${p.ordem}) on conflict do nothing`),
 ];

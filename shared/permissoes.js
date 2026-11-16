@@ -19,6 +19,7 @@ export const ABAS = [
   { k: 'videos', nome: 'Vídeos', ver: 'A aba Vídeos: assistir aos vídeos das giras.', editar: 'Publicar, classificar e excluir vídeos.' },
   { k: 'amaci', nome: 'Amaci', ver: 'A aba Amaci (quando está visível para todos): o amaci de cada orixá liberado.', editar: 'Ligar Visível para todos, liberar os orixás por turma e escrever a Orientação.' },
   { k: 'fotos', nome: 'Fotos', ver: 'Ver os álbuns e enviar fotos (quem entra pela corrente precisa ter senha).', editar: 'Apagar fotos de qualquer pessoa; editar e excluir álbuns.' },
+  { k: 'asaas', nome: 'ASAAS', ver: 'A aba ASAAS: os links de pagamento das Compras e o retorno do ASAAS.', editar: 'Ligar o Pix nas Compras e cancelar links de pagamento.' },
 ];
 export const ABA_KEYS = ABAS.map((a) => a.k);
 
@@ -36,6 +37,7 @@ const MAPA = {
   videos: { ver: ['videos:ver'], editar: ['videos:editar'] },
   fotos: { ver: ['fotos:ver'], editar: ['fotos:editar'] },
   amaci: { ver: ['amaci:ver'], editar: ['amaci:editar'] },
+  asaas: { ver: ['asaas:ver'], editar: ['asaas:editar'] },
 };
 // Todo mundo logado vê os nomes da corrente (para mostrar as duplas, os pedidos etc.).
 const BASE = ['pessoas:ler'];
@@ -71,7 +73,8 @@ const abasDe = (o) => normalizarAbas(o);
 export const PERFIS_PADRAO = [
   { chave: 'root', nome: 'Admin root', ordem: 0, abas: abasDe(Object.fromEntries(ABA_KEYS.map((k) => [k, tudo(true, true)]))) },
   // A aba Curimba é um controle à parte. O Admin curimba também administra os vídeos.
-  { chave: 'admin', nome: 'Admin', ordem: 1, abas: abasDe(Object.fromEntries(ABA_KEYS.filter((k) => k !== 'curimba' && k !== 'videos').map((k) => [k, tudo(true, true)]))) },
+  // A aba ASAAS também não vem com o Admin (é do root e do Admin financeiro).
+  { chave: 'admin', nome: 'Admin', ordem: 1, abas: abasDe(Object.fromEntries(ABA_KEYS.filter((k) => !['curimba', 'videos', 'asaas'].includes(k)).map((k) => [k, tudo(true, true)]))) },
   // Fotos: todos veem e enviam; os perfis de admin também apagam a foto de qualquer pessoa.
   // Amaci: todos veem (quando está visível para todos); administram o root e o Admin.
   { chave: 'usuario', nome: 'Usuário', ordem: 2, abas: abasDe({ gira: tudo(true), pessoas: tudo(true), hist: tudo(true), ervas: tudo(true), oferendas: tudo(true), guias: tudo(true), perfil: tudo(true), amaci: tudo(true), fotos: tudo(true) }) },
@@ -80,6 +83,8 @@ export const PERFIS_PADRAO = [
   { chave: 'admin_curimba', nome: 'Admin curimba', ordem: 5, abas: abasDe({ gira: tudo(true), perfil: tudo(true), curimba: tudo(true, true), videos: tudo(true, true), amaci: tudo(true), fotos: tudo(true, true) }) },
   // Admin do perfil: o que a corrente vê e, na aba Perfil, o perfil de todos e a Anamnese (perguntas e respostas).
   { chave: 'admin_perfil', nome: 'Admin perfil', ordem: 6, abas: abasDe({ gira: tudo(true), ervas: tudo(true), oferendas: tudo(true), guias: tudo(true), perfil: tudo(true, true), amaci: tudo(true), fotos: tudo(true, true) }) },
+  // Admin financeiro: o que a corrente vê e a aba ASAAS só para olhar (o root marca Editar se quiser que ligue o Pix e cancele links).
+  { chave: 'admin_financeiro', nome: 'Admin financeiro', ordem: 7, abas: abasDe({ gira: tudo(true), ervas: tudo(true), oferendas: tudo(true), guias: tudo(true), perfil: tudo(true), amaci: tudo(true), fotos: tudo(true, true), asaas: tudo(true) }) },
   { chave: 'corrente', nome: 'Corrente', ordem: 99, abas: abasDe({ gira: tudo(true), ervas: tudo(true), oferendas: tudo(true), guias: tudo(true), perfil: tudo(true), amaci: tudo(true), fotos: tudo(true) }) },
 ];
 // Perfis do sistema: não podem ser excluídos (o root e o acesso da corrente também não mudam de nome).

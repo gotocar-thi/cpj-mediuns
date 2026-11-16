@@ -562,6 +562,15 @@ test('vídeos: código do YouTube sai de qualquer formato de link', async () => 
   for (const u of ['https://vimeo.com/123', 'https://evil.com/watch?v=dQw4w9WgXcQ', 'https://youtu.be/curto', '', null]) assert.equal(idDoYoutube(u), null, String(u));
 });
 
+test('aba ASAAS: o root vê e edita; o Admin financeiro só olha; os outros perfis não têm', () => {
+  assert.ok(PERMISSOES_ROOT.includes('asaas:ver') && PERMISSOES_ROOT.includes('asaas:editar'));
+  for (const p of PERFIS_PADRAO.filter((x) => x.chave !== 'root')) {
+    const perms = permissoesDe(p.chave, p.abas);
+    assert.equal(perms.includes('asaas:ver'), p.chave === 'admin_financeiro', p.chave);
+    assert.ok(!perms.includes('asaas:editar'), p.chave);
+  }
+});
+
 test('aba Fotos: todos veem; só os perfis de admin apagam a foto dos outros', () => {
   for (const p of PERFIS_PADRAO) {
     const perms = permissoesDe(p.chave, p.abas);

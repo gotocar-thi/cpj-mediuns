@@ -1693,10 +1693,31 @@ button.iem-tot-n{cursor:pointer}
 .as-subs{display:grid;gap:8px}
 .as-sub{border:1px solid var(--line);border-radius:10px;background:var(--bg);overflow:hidden}
 .as-sub-h{display:flex;justify-content:space-between;align-items:center;gap:8px;width:100%;min-height:44px;padding:8px 12px;background:none;border:0;color:var(--ink);font:inherit;text-align:left;cursor:pointer}
-.as-sub-h b{overflow-wrap:anywhere}
 .as-sub-x{display:inline-flex;align-items:center;gap:6px;color:var(--muted);font-size:.85rem;white-space:nowrap}
 .as-sub-x .seta{color:var(--accent);font-size:1rem}
 .as-sub-c{padding:0 12px 10px;border-top:1px solid var(--line)}
+/* Pedidos e pagamentos: um grupo por vez, com os quadradinhos de situação (mesmo desenho dos de Pessoas/Oferendas). */
+.as-grupos{display:grid;gap:10px}
+.as-grupo{display:grid;gap:8px;border:1px solid var(--line);border-radius:12px;background:var(--bg);padding:10px}
+.as-grupo-h{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.as-grupo-h b{overflow-wrap:break-word;min-width:0}
+.as-grupo-h .muted{font-size:.85rem;white-space:nowrap}
+.pf-of-totais.as-quadros{grid-template-columns:repeat(4,minmax(0,1fr))}
+.as-quadros .pf-of-total{background:var(--surface)}
+.pf-of-totais.as-quadros.cinco{grid-template-columns:repeat(3,minmax(0,1fr))}
+.gp-grupo-c .as-quadros{margin-bottom:10px}
+.pf-of-total.as-q-ok{--fn:var(--ok)}
+.pf-of-total.as-q-pend{--fn:var(--warn)}
+.pf-of-total.as-q-canc{--fn:var(--muted)}
+.pf-of-total.as-q-atr{--fn:var(--off)}
+.as-grupo .as-lista{max-height:none}
+.as-sit{display:grid;gap:8px}
+.as-sit+.as-sit{border-top:1px solid var(--line);padding-top:12px}
+.as-sit-h{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.as-sit-h h3{margin:0;font-size:1rem}
+.as-sub-h b{flex:1 1 auto;min-width:0;overflow-wrap:break-word}
+.as-sub-h{flex-wrap:wrap}
+.as-sub-x{margin-left:auto}
 .gi-foto.zoom{cursor:zoom-in}
 
 /* Cadastro do item da oferenda: prévia do que a corrente vai ver */
