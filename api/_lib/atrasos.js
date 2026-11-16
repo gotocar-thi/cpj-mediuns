@@ -67,7 +67,8 @@ async function buscarNoAsaas(k, porCpf) {
 
 export async function atrasos(eu, atualizar) {
   if (eu.grupo) throw new HttpError(403, 'Este acesso não tem pagamentos.');
-  const root = pode(eu, 'usuarios:gerenciar');
+  // Visão de todos (ADMIN FINANCEIRO): quem vê a aba ASAAS (root e Admin financeiro).
+  const root = pode(eu, 'asaas:ver');
   const contas = { A: ligada('A'), B: ligada('B') };
   if (!contas.A && !contas.B) return { configurado: false, contas, root, atrasos: [] };
   // Pelo acesso da corrente, só com a senha criada: sem ela, qualquer um entra com o nome de outra pessoa.

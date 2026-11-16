@@ -83,10 +83,10 @@ function cardCobrancas(A) {
   const L = A.cobrancas;
   const cab = `<button class="grp-h dobra" data-act="asaasdobrar" data-k="cobrancas" aria-expanded="${ui.cobrancas}"><h2>Pedidos e pagamentos</h2>
     <span class="count">${L.filter((c) => c.status === 'pendente').length} pendentes · ${L.length} <span class="seta" aria-hidden="true">${ui.cobrancas ? '▾' : '▸'}</span></span></button>`;
-  if (!ui.cobrancas) return `<div class="card adm">${cab}</div>`;
-  if (!L.length) return `<div class="card adm">${cab}<p class="muted" style="margin:0">Nenhum link de pagamento gerado ainda.</p></div>`;
+  if (!ui.cobrancas) return `<div class="card adm adm-financeiro">${cab}</div>`;
+  if (!L.length) return `<div class="card adm adm-financeiro">${cab}<p class="muted" style="margin:0">Nenhum link de pagamento gerado ainda.</p></div>`;
   const grupos = juntar(L, (c) => (c.grupos?.length ? c.grupos.join(' + ') : 'Sem grupo'));
-  return `<div class="card adm">${cab}<div class="as-grupos">${grupos.map(([nome, cs]) => grupoCobrancas(nome, cs)).join('')}</div></div>`;
+  return `<div class="card adm adm-financeiro">${cab}<div class="as-grupos">${grupos.map(([nome, cs]) => grupoCobrancas(nome, cs)).join('')}</div></div>`;
 }
 
 // Do que se trata: os itens da cobrança (quando é do app) ou a descrição que veio do ASAAS.
@@ -111,7 +111,7 @@ function cardEventos(A) {
   const L = A.eventos;
   const cab = `<button class="grp-h dobra" data-act="asaasdobrar" data-k="eventos" aria-expanded="${ui.eventos}"><h2>Retorno do ASAAS</h2>
     <span class="count">${L.length} <span class="seta" aria-hidden="true">${ui.eventos ? '▾' : '▸'}</span></span></button>`;
-  if (!ui.eventos) return `<div class="card adm">${cab}</div>`;
+  if (!ui.eventos) return `<div class="card adm adm-financeiro">${cab}</div>`;
   const porSit = juntar(L, (e) => e.status || '')
     .sort(([a], [b]) => (ORDEM_SIT.indexOf(a) + 1 || 99) - (ORDEM_SIT.indexOf(b) + 1 || 99));
   const corpo = L.length ? porSit.map(([sit, es]) => {
@@ -123,7 +123,7 @@ function cardEventos(A) {
       }).join('')}</div></div>`;
   }).join('')
     : '<p class="muted" style="margin:0">Nenhum evento recebido ainda.</p>';
-  return `<div class="card adm">${cab}${corpo}
+  return `<div class="card adm adm-financeiro">${cab}${corpo}
     <div class="cp-bts"><button class="btn" data-act="asaasatualizar"><span aria-hidden="true">↻</span> Atualizar</button></div></div>`;
 }
 

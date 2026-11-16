@@ -14,7 +14,8 @@ import { ICONE_WHATS } from './giraComum.js';
 const R = (v) => reais(centavos(v));
 let minimizado = true;
 const pessoasAbertas = new Set();   // root: pessoas expandidas ('conta:nome'); todas começam minimizadas
-const ehRoot = () => pode('usuarios:gerenciar');
+// ADMIN FINANCEIRO: quem vê a aba ASAAS (root e Admin financeiro) vê todas as pendências.
+const ehRoot = () => pode('asaas:ver');
 const dias = (venc) => Math.max(0, Math.round((pd(hoje()) - pd(venc)) / 86400000));
 const atraso = (venc) => (venc ? `Venceu em ${dShort(venc)}${dias(venc) ? ` · ${dias(venc)} ${dias(venc) === 1 ? 'dia' : 'dias'}` : ''}` : 'Sem vencimento');
 const pagar = (a) => (a.link ? `<a class="btn small primary" href="${esc(a.link)}" target="_blank" rel="noopener noreferrer">Pagar</a>` : '');
