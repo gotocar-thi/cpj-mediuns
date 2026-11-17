@@ -1996,3 +1996,11 @@ div.pf-of-total{cursor:default}
 .tr-busca{display:grid;gap:8px}
 .tr-busca > small{margin-top:-4px}
 .tr-lin-p{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px;align-items:center}
+.tr-grupo{display:grid;gap:8px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--bg)}
+.tr-grupo-h{display:flex;flex-direction:column;gap:1px}
+.tr-grupo-h b{font-size:.98rem}
+.tr-grupo .tr-tot{padding-top:6px}
+.tr-grupo .tr-nomes{background:var(--surface)}
+.tr-apo{border-top:3px solid var(--gold)}
+.tr-cred{border-top:3px solid var(--ok)}
+.tr-deb{border-top:3px solid var(--off)}

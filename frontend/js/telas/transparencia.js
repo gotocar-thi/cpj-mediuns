@@ -78,7 +78,7 @@ function cardTopo(T) {
 
 // ---------- resumo do mês (logo abaixo do topo) ----------
 function cardTotal(T) {
-  const entradas = T.creditos + T.aporte + aporteDoAsaas(T);
+  const aporte = T.aporte + aporteDoAsaas(T);
   const ini = estrutura(T)
     ? `<div class="tr-ini"><label class="field">Início do saldo<input type="month" id="tr-inicio" value="${esc(ui.ed.inicio)}" max="${esc(T.meses[0])}" required></label>
         <label class="field">Saldo inicial (R$)<input type="text" id="tr-saldoini" inputmode="decimal" value="${esc(ui.ed.saldoIni)}" required></label></div>` : '';
@@ -86,8 +86,9 @@ function cardTotal(T) {
     <div class="tr-saldo"><span class="muted">Saldo total${T.saldoParcial ? ' (parcial)' : ''}</span><b class="${sinal(T.saldo)}">${R(T.saldo)}</b></div>
     <ul class="tr-lista">
       <li><span>Saldo anterior</span><b class="${sinal(T.saldoAnterior)}">${R(T.saldoAnterior)}</b></li>
-      <li><span>Entradas (créditos e aporte)</span><b class="tr-pos">${R(entradas)}</b></li>
-      <li><span>Débitos</span><b class="tr-neg">− ${R(T.totalDebitos)}</b></li>
+      <li><span>📈 Créditos</span><b class="tr-pos">+ ${R(T.creditos)}</b></li>
+      <li><span>🤲 Aporte Mãe Vê</span><b class="${aporte ? 'tr-pos' : ''}">+ ${R(aporte)}</b></li>
+      <li><span>📉 Débitos</span><b class="tr-neg">− ${R(T.totalDebitos)}</b></li>
     </ul>
     <div class="tr-tot"><span>Resultado do mês</span><b class="${sinal(T.resultado)}">${mais(T.resultado)}</b></div>
     ${ini}
@@ -143,11 +144,14 @@ function linhaPagamentos(T, k, rot, D) {
   return `<button type="button" class="tr-tot tr-tot-bt" data-act="trabrir" data-k="${k}" aria-expanded="${ab}"><span>${rot} <span class="seta" aria-hidden="true">${ab ? '▾' : '▸'}</span></span><b class="tr-pos">${R(D.total)}</b></button>${lista}`;
 }
 
-function blocoAsaas(T) {
+// Caixa de um item: título, explicação curta, o conteúdo e o total do item.
+const grupo = (titulo, dica, corpo, total) => `<div class="tr-grupo"><div class="tr-grupo-h"><b>${titulo}</b>${dica ? `<small class="muted">${dica}</small>` : ''}</div>${corpo}${total || ''}</div>`;
+const totalItem = (rot, v, cls = 'tr-pos') => `<div class="tr-tot"><span>${rot}</span><b class="${cls}">${R(v)}</b></div>`;
+
+function gruposAsaas(T) {
   const A = T.asaas;
   if (!A.configurado) return '<p class="muted" style="margin:0">Mensalidades e doações: a conta B do ASAAS ainda não está ligada no servidor.</p>';
-  const lido = `<p class="muted" style="margin:0;font-size:.8rem">${A.atualizadoEm ? 'Lido do ASAAS em ' + quando(A.atualizadoEm) : 'Ainda sem leitura do ASAAS'}.</p>`;
-  if (!A.mensalidades) return `${A.erro ? `<p class="erro" style="margin:0">${esc(A.erro)}</p>` : ''}${lido}`;
+  if (!A.mensalidades) return A.erro ? `<p class="erro" style="margin:0">${esc(A.erro)}</p>` : '<p class="muted" style="margin:0">Mensalidades e doações: ainda sem leitura do ASAAS para este mês.</p>';
   const M = A.mensalidades;
   const quad = (k, n, rot, cls) => {
     const ab = ui.aberto === k;
@@ -158,33 +162,39 @@ function blocoAsaas(T) {
   const lista = !T.verNomes ? '' : ui.aberto === 'corrente' ? listaFora(A.corrente.fora)
     : ui.aberto === 'pagas' || ui.aberto === 'abertas' ? listaMens(M.lista || [], ui.aberto === 'pagas') : '';
   const D = A.doacoes;
-  return `<div class="tr-sub"><b>Mensalidades</b><small class="muted">${R(A.valorMensalidade)} · vencimento no mês</small></div>
-    <div class="pf-of-totais tr-quads">${quad('pagas', M.pagas, 'Pagas', 'tr-q-ok')}${quad('abertas', M.abertas, 'Em aberto', 'tr-q-ab')}${quad('corrente', A.corrente.total, 'Na corrente', 'tr-q-co')}</div>
-    ${lista}
-    <div class="tr-tot"><span>Total pago em mensalidades</span><b class="tr-pos">${R(M.totalPago)}</b></div>
-    <div class="tr-sub"><b>Doações das giras</b><small class="muted">Pix recebidos no mês</small></div>
-    ${linhaPagamentos(T, 'doacoes', `${D.quantidade} doaç${D.quantidade === 1 ? 'ão' : 'ões'}`, D)}
-    ${A.erro ? `<p class="erro" style="margin:0">${esc(A.erro)}</p>` : ''}${lido}`;
-}
-
-// Aporte Mãe Vê: o que veio do ASAAS (doações dos pagadores do aporte) e o lançado à mão (editável).
-function blocoAporte(T) {
-  const P = T.aporteAsaas;
-  const doAsaas = P && P.quantidade ? linhaPagamentos(T, 'aporte', `Pelo ASAAS · ${P.quantidade} pagamento${P.quantidade === 1 ? '' : 's'}`, P) : '';
-  const lancado = ui.ed
-    ? `<ul class="tr-lista"><li><span>${doAsaas ? 'Lançado à mão' : 'No mês'}</span><input type="text" id="tr-aporte" class="tr-v" inputmode="decimal" value="${esc(ui.ed.aporte)}" aria-label="Aporte Mãe Vê lançado à mão"></li></ul>`
-    : doAsaas ? `<div class="tr-tot"><span>Lançado à mão</span><b class="${T.aporte ? 'tr-pos' : ''}">${R(T.aporte)}</b></div>` : '';
-  const total = T.aporte + aporteDoAsaas(T);
-  return `<div class="tr-sub"><b>Aporte Mãe Vê</b></div>${doAsaas}${lancado}
-    ${doAsaas || !ui.ed ? `<div class="tr-tot"><span>Total do aporte</span><b class="${total ? 'tr-pos' : ''}">${R(total)}</b></div>` : ''}`;
+  return grupo('Mensalidades', `${R(A.valorMensalidade)} cada · vencimento no mês`,
+      `<div class="pf-of-totais tr-quads">${quad('pagas', M.pagas, 'Pagas', 'tr-q-ok')}${quad('abertas', M.abertas, 'Em aberto', 'tr-q-ab')}${quad('corrente', A.corrente.total, 'Na corrente', 'tr-q-co')}</div>${lista}`,
+      totalItem('Total pago', M.totalPago))
+    + grupo('Doações das giras', 'Pix recebidos no mês', linhaPagamentos(T, 'doacoes', `${D.quantidade} doaç${D.quantidade === 1 ? 'ão' : 'ões'}`, D))
+    + (A.erro ? `<p class="erro" style="margin:0">${esc(A.erro)}</p>` : '');
 }
 
 function cardCreditos(T) {
-  const temOutros = T.creditosExtras.length || estrutura(T);
-  const outros = temOutros ? `<div class="tr-sub"><b>Outros créditos</b></div>${linhas(T, 'creditos', T.creditosExtras, 'tr-pos')}` : '';
+  const extras = T.creditosExtras.length || estrutura(T)
+    ? grupo('Outros créditos', 'Lançados à mão', linhas(T, 'creditos', T.creditosExtras, 'tr-pos'), T.creditosExtras.length && !ui.ed ? totalItem('Total', T.creditosExtras.reduce((x, c) => x + c.valor, 0)) : '')
+    : '';
+  const lido = T.asaas.configurado ? `<p class="muted" style="margin:0;font-size:.8rem">${T.asaas.atualizadoEm ? 'Lido do ASAAS em ' + quando(T.asaas.atualizadoEm) : 'Ainda sem leitura do ASAAS'}.</p>` : '';
   return `<div class="card tr-bloco tr-cred"><div class="tr-h"><h3>📈 Créditos</h3></div>
-    ${blocoAsaas(T)}${outros}${blocoAporte(T)}
-    <div class="tr-tot tr-tot-g"><span>Total de entradas</span><b class="tr-pos">${R(T.creditos + T.aporte + aporteDoAsaas(T))}</b></div></div>`;
+    ${gruposAsaas(T)}${extras}
+    <div class="tr-tot tr-tot-g"><span>Total de créditos</span><b class="tr-pos">${R(T.creditos)}</b></div>${lido}</div>`;
+}
+
+// Aporte Mãe Vê: um bloco próprio, com o que veio do ASAAS (doações dos pagadores do aporte) e o lançado à mão.
+function cardAporte(T) {
+  const P = T.aporteAsaas;
+  const quem = T.root && T.config?.pagadoresAporte?.length ? 'Pix de ' + esc(T.config.pagadoresAporte.join(', ')) : 'Pix recebidos de quem paga o aporte';
+  const pelo = !T.asaas.configurado ? ''
+    : grupo('Pelo ASAAS', quem, P && P.quantidade
+      ? linhaPagamentos(T, 'aporte', `${P.quantidade} pagamento${P.quantidade === 1 ? '' : 's'}`, P)
+      : totalItem(P ? 'Nenhum pagamento no mês' : 'Ainda sem leitura do ASAAS', 0, ''));
+  const mao = grupo('Lançado à mão', 'Valor que quem administra informa no mês', ui.ed
+    ? `<ul class="tr-lista"><li><span>Valor do mês</span><input type="text" id="tr-aporte" class="tr-v" inputmode="decimal" value="${esc(ui.ed.aporte)}" aria-label="Aporte Mãe Vê lançado à mão"></li></ul>`
+    : totalItem('Valor do mês', T.aporte, T.aporte ? 'tr-pos' : ''));
+  const total = T.aporte + aporteDoAsaas(T);
+  return `<div class="card tr-bloco tr-apo"><div class="tr-h"><h3>🤲 Aporte Mãe Vê</h3></div>
+    <p class="muted" style="margin:0;font-size:.85rem">Contribuição da Mãe Vê no mês. Entra no saldo junto com os créditos.</p>
+    ${pelo}${mao}
+    <div class="tr-tot tr-tot-g"><span>Total do aporte</span><b class="${total ? 'tr-pos' : ''}">${R(total)}</b></div></div>`;
 }
 
 function janelaConfirmar(T) {
@@ -204,7 +214,7 @@ export function render() {
   if (T === null) { carregarTransparencia(); return '<div class="loading">Carregando o painel…</div>'; }
   if (T.erro) return `<div class="card"><p class="erro">${esc(T.erro)}</p><button class="btn" data-act="trrecarregar">Tentar de novo</button></div>`;
   if (T.carregando) return '<div class="loading">Carregando o mês…</div>';
-  const cards = cardTotal(T) + cardDebitos(T) + cardCreditos(T);
+  const cards = cardTotal(T) + cardDebitos(T) + cardCreditos(T) + cardAporte(T);
   // Em edição, os campos ficam num formulário só (o que foi digitado volta depois de um redesenho).
   return `<section class="panel tr-tela">${T.root ? cardBusca(T) : ''}${cardTopo(T)}${ui.ed ? `<form id="f-tr-val" class="tr-val" data-rascunho data-id="${esc(T.mes)}" autocomplete="off">${cards}</form>` : cards}${janelaConfirmar(T)}</section>`;
 }
