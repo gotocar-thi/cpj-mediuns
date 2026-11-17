@@ -64,6 +64,12 @@ let instalado = true;
 let ultimoDesenho = '';    // aba + HTML do último desenho (a aba Vídeos não redesenha se nada mudou)
 let arrastoAnamnese = null;
 
+// Sub-abas da aba Gira. Por dentro continuam sendo as telas 'agenda' e 'hist' (cada uma com o seu estado).
+function subabasGira() {
+  const sub = [['agenda', 'Gira'], ['hist', 'Histórico']];
+  return `<div class="subabas subabas-gira" role="tablist" aria-label="Sub-abas da Gira">${sub.map(([k, t]) => `<button class="subaba" role="tab" data-subgira="${k}" aria-selected="${prefs.tab === k}">${t}</button>`).join('')}</div>`;
+}
+
 // ---------- render ----------
 // Topo: "Seja bem-vindo, Nome!" e o Sair à direita. No fim da página: o perfil e o Trocar senha.
 function renderConta() {
@@ -114,18 +120,22 @@ function render() {
   if (!VE[prefs.tab]) prefs.tab = 'gira';
   tabs.hidden = false;
   Object.entries(VE).forEach(([k, v]) => { tabs.querySelector(`[data-tab="${k}"]`).hidden = !v; });
+  // O Histórico é uma sub-aba da aba Gira: o botão dele no topo fica sempre escondido.
+  tabs.querySelector('[data-tab="hist"]').hidden = true;
   tabs.querySelector('[data-tab="gira"]').textContent = 'Geral';
   tabs.querySelector('[data-tab="agenda"]').textContent = 'Gira';
   // Perfil: logo depois de Gira; para quem é admin, depois de Pessoas.
   const btPerfil = tabs.querySelector('[data-tab="perfil"]');
   const antes = tabs.querySelector(pode('pessoas:editar') ? '[data-tab="pessoas"]' : '[data-tab="agenda"]');
   if (VE.perfil && antes.nextElementSibling !== btPerfil) antes.after(btPerfil);
-  tabs.querySelectorAll('button').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.tab === prefs.tab)));
+  const abaTopo = prefs.tab === 'hist' ? 'agenda' : prefs.tab;
+  tabs.querySelectorAll('button').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.tab === abaTopo)));
   renderConta();
 
   const tela = TELAS[prefs.tab];
   if (!tela) { abrirTela(prefs.tab); return; }
-  const html = tela.render();
+  // Aba Gira: sub-abas Gira e Histórico (o Histórico só para quem tem a permissão).
+  const html = (abaTopo === 'agenda' && VE.hist ? subabasGira() : '') + tela.render();
   // Aba Vídeos: redesenhar recarrega o vídeo que está tocando; se nada mudou na tela, deixa como está.
   const desenho = prefs.tab + '|' + html;
   if (prefs.tab === 'videos' && desenho === ultimoDesenho) return;
@@ -281,6 +291,8 @@ main.addEventListener('click', async (e) => {
   if (e.target.closest('[data-conta="recarregar-pagina"]')) { location.reload(); return; }
   // Calendário da aba Gira: abre o seletor de data também no computador.
   if (e.target.dataset.act === 'irdata' || e.target.dataset.act === 'iemdata') { try { e.target.showPicker(); } catch { /* o toque já abre */ } return; }
+  const sub = e.target.closest('[data-subgira]');
+  if (sub) { if (sub.dataset.subgira !== prefs.tab) tabs.querySelector(`[data-tab="${sub.dataset.subgira}"]`).click(); return; }
   if (e.target.closest('[data-conta="voltarlogin"]')) { telaLogin = ''; cadastroDigitado = null; cadastroCpf = null; erroLogin = ''; render(); return; }
   if (e.target.closest('[data-conta="cadastro"]')) { telaLogin = 'cadastro'; cadastroCpf = null; erroLogin = ''; render(); window.scrollTo(0, 0); document.getElementById('c-cpf')?.focus(); return; }
   if (e.target.closest('[data-conta="trocarcpf"]')) { cadastroCpf = null; erroLogin = ''; render(); document.getElementById('c-cpf')?.focus(); return; }
