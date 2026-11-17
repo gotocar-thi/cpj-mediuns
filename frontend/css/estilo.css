@@ -1971,19 +1971,25 @@ section.panel.gi-tela{gap:12px}
 .tr-tot-g{font-size:1.08rem}
 .tr-tot-g > b{font-size:1.2rem}
 .tr-sub{display:flex;flex-direction:column;gap:1px}
-.tr-quads{grid-template-columns:repeat(2,minmax(0,1fr))}
+.tr-quads{grid-template-columns:repeat(3,minmax(0,1fr))}
 .tr-q-ok{--fn:var(--ok)}
 .tr-q-ab{--fn:var(--off)}
+.tr-q-co{--fn:var(--accent)}
 div.pf-of-total{cursor:default}
 .tr-nomes{max-height:320px;overflow:auto;padding:8px;border:1px solid var(--line);border-radius:9px;background:var(--bg)}
-.tr-form,.tr-cfg{display:grid;gap:10px}
-.tr-cfg input[type=month]{font:inherit;font-size:1rem;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:9px 11px;width:100%;box-sizing:border-box;color-scheme:light dark}
 .tr-lista li > input.tr-v{width:8.5em;flex:none;text-align:right}
 .tr-val{display:grid;gap:14px}
 .tr-aviso{margin:0;padding:8px 10px;border-radius:9px;background:var(--warn-soft);color:var(--ink);font-size:.88rem}
 .tr-ed-bts{justify-content:flex-end}
 .tr-editar{justify-self:start}
-.tr-campos{display:grid;gap:6px;padding:10px;border:1px solid var(--line);border-radius:9px;background:var(--surface)}
-.tr-campo{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px;align-items:center}
-.tr-asaas{display:grid;gap:4px;justify-items:start}
-.tr-asaas .muted{font-size:.82rem}
+.tr-tot-bt{width:100%;border:0;border-top:1px solid var(--line);padding:8px 0 0;background:none;color:inherit;font:inherit;text-align:left;cursor:pointer}
+.tr-topo-l1{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.tr-vis{font-size:.85rem}
+.tr-res .tr-saldo{padding:10px 12px}
+.tr-ini{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px}
+.tr-ini input[type=month]{font:inherit;font-size:1rem;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:9px 11px;width:100%;box-sizing:border-box;color-scheme:light dark}
+.tr-lins{display:grid;gap:6px}
+.tr-lin-r{display:grid;grid-template-columns:minmax(0,1fr) 7em auto;gap:6px;align-items:center}
+.tr-lin-r input.tr-v{width:100%;text-align:right}
+.tr-inline{margin-top:4px}
+.tr-lido{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;font-size:.8rem}

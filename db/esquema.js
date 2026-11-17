@@ -9,7 +9,7 @@
 // Estrutura: veja db/ESTRUTURA-ESQUEMA.md para o mapa de versões, domínios e
 // quais migrações foram testadas no Postgres.
 
-export const VERSAO = 128;  // v128: aba Painel da Transparência
+export const VERSAO = 129;  // v129: Transparência sem "(média)" nos campos; contagem da corrente
 
 import { PERFIS_PADRAO } from '../shared/permissoes.js';
 
@@ -5655,4 +5655,36 @@ export const MIGRACOES = [
   `update perfis set abas = abas || jsonb_build_object('transparencia', jsonb_build_object('ver', chave in ('root', 'admin_financeiro'),
      'editar', chave in ('root', 'admin_financeiro')))
    where not abas ? 'transparencia'`,
+  // ================================================== v129: Transparência sem "(média)" nos campos; contagem da corrente; renomear campo
+  // Os campos "Luz (média)" e "Água (média)" passam a se chamar "Luz" e "Água", na configuração e nos meses já lançados.
+  `update sistema set valor = replace(replace(valor, '"Luz (média)"', '"Luz"'), '"Água (média)"', '"Água"')
+   where chave = 'transparencia' and (valor like '%"Luz (média)"%' or valor like '%"Água (média)"%')`,
+  `update transparencia_meses set debitos = replace(replace(debitos::text, '"Luz (média)"', '"Luz"'), '"Água (média)"', '"Água"')::jsonb
+   where debitos::text like '%"Luz (média)"%' or debitos::text like '%"Água (média)"%'`,
+  // A corrente para o quadradinho do painel: quem está ativo (sem a curimba) e se tem CPF no Perfil (para ligar ao ASAAS).
+  `create or replace function transparencia_corrente(p jsonb default '{}'::jsonb)
+   returns jsonb language sql stable as $$
+     select coalesce(jsonb_agg(jsonb_build_object('id', pe.id, 'nome', pe.nome,
+              'temCpf', exists (select 1 from pessoas_cpf c where c.pessoa_id = pe.id)) order by lower(pe.nome)), '[]'::jsonb)
+       from pessoas pe where pe.saida is null and pe.funcao <> 'curimba'
+   $$`,
+  // Campo renomeado pelo root (na edição da própria tela): o nome novo vai para os valores de todos os meses lançados.
+  // p = { tipo: 'debitos' | 'creditos', de, para }.
+  `create or replace function transparencia_renomear(p jsonb)
+   returns jsonb language plpgsql as $$
+   begin
+     if p ->> 'tipo' = 'debitos' then
+       update transparencia_meses set debitos = (
+         select coalesce(jsonb_agg(case when e ->> 'nome' = p ->> 'de' then jsonb_set(e, '{nome}', to_jsonb(p ->> 'para')) else e end), '[]'::jsonb)
+           from jsonb_array_elements(debitos) e)
+       where debitos @> jsonb_build_array(jsonb_build_object('nome', p ->> 'de'));
+     elsif p ->> 'tipo' = 'creditos' then
+       update transparencia_meses set creditos = (
+         select coalesce(jsonb_agg(case when e ->> 'nome' = p ->> 'de' then jsonb_set(e, '{nome}', to_jsonb(p ->> 'para')) else e end), '[]'::jsonb)
+           from jsonb_array_elements(creditos) e)
+       where creditos @> jsonb_build_array(jsonb_build_object('nome', p ->> 'de'));
+     end if;
+     return jsonb_build_object('ok', true);
+   end;
+   $$`,
 ];

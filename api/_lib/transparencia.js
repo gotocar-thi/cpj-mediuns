@@ -11,15 +11,16 @@
 //   "Puxar dados do ASAAS" do root. O saldo soma, desde o mês de início, créditos + aporte − débitos de cada mês.
 //
 //   GET  /api/giras?lista=transparencia&mes=AAAA-MM[&atualizar=1 (root)]
-//   POST /api/giras { acao: 'transparencia', op: 'mes', mes, debitos: [{ nome, valor }], creditos: [{ nome, valor }], aporte }
-//                   · { op: 'publicar', publicada } · { op: 'config', inicio, saldoInicial, valorMensalidade, descricaoDoacao,
-//                     campos: { debitos: [nome], creditos: [nome] } } (só o root)
+//   POST /api/giras { acao: 'transparencia', op: 'mes', mes, debitos: [{ nome, valor }], creditos: [{ nome, valor }], aporte,
+//                     config?: { inicio, saldoInicial, valorMensalidade, descricaoDoacao, campos: { debitos, creditos } }, renomes? }
+//                   · { op: 'publicar', publicada } (config, renomes e publicar: só o root; op 'config' ainda vale)
 // Quem vê: quem tem a aba no perfil (Ver ou Editar) sempre; a corrente (não alunos nem curimba) quando está visível.
-// Os nomes das mensalidades só vão para o root e o Admin financeiro (quem vê a aba ASAAS).
+// Os nomes das mensalidades e das doações só vão para o root e o Admin financeiro (quem vê a aba ASAAS).
 
 import { HttpError } from './http.js';
 import { db } from './db.js';
 import { chamarAsaas } from './asaas.js';
+import { decifrar } from './cpf.js';
 import { pode } from '../../shared/permissoes.js';
 
 const CONTA = 'ASAAS2';
@@ -33,8 +34,8 @@ const MAX_CAMPOS = 30;
 const DEBITOS_PADRAO = [
   { nome: 'Aluguel', valor: 7131.59 },
   { nome: 'Contador', valor: 350 },
-  { nome: 'Luz (média)', valor: 45 },
-  { nome: 'Água (média)', valor: 180 },
+  { nome: 'Luz', valor: 45 },
+  { nome: 'Água', valor: 180 },
   { nome: 'Velas (mês)', valor: 480 },
 ];
 const PADRAO = {
@@ -75,6 +76,15 @@ async function cobrancas(filtros) {
   return lista;
 }
 
+// CPF do Perfil → pessoa (só quem está ativo). Sem a CPF_CHAVE, ninguém é ligado.
+async function cpfsDaCorrente() {
+  const m = new Map();
+  for (const l of (await db.rpc('cpf_todos')) || []) {
+    try { m.set(decifrar(l.cifrado, l.pessoaId), l.pessoaId); } catch { /* sem chave ou linha ruim: não liga */ }
+  }
+  return m;
+}
+
 // Lê um mês no ASAAS: mensalidades (pelo vencimento) e doações (pela data do pagamento), com o nome de cada cliente.
 async function lerMes(mes, cfg) {
   const ini = mes + '-01', fim = ultimoDia(mes);
@@ -87,26 +97,39 @@ async function lerMes(mes, cfg) {
   const alvo = centavos(cfg.valorMensalidade);
   const mens = porVencimento.filter((c) => !ehDoacao(c) && centavos(c.value) === alvo && (PAGO.includes(c.status) || ABERTO.includes(c.status)));
   const doacoes = porPagamento.filter((c) => ehDoacao(c) && PAGO.includes(c.status));
-  const ids = [...new Set(mens.map((c) => c.customer).filter(Boolean))];
+  const ids = [...new Set([...mens, ...doacoes].map((c) => c.customer).filter(Boolean))];
   const nomes = new Map();
+  const cpfs = new Map();
   for (let i = 0; i < ids.length; i += LOTE_CLIENTES) {
     await Promise.all(ids.slice(i, i + LOTE_CLIENTES).map(async (id) => {
-      try { nomes.set(id, String((await chamarAsaas(CONTA, 'GET', `/customers/${encodeURIComponent(id)}`))?.name || '')); } catch { /* fica sem nome */ }
+      try {
+        const cli = await chamarAsaas(CONTA, 'GET', `/customers/${encodeURIComponent(id)}`);
+        nomes.set(id, String(cli?.name || ''));
+        cpfs.set(id, String(cli?.cpfCnpj || '').replace(/\D/g, ''));
+      } catch { /* fica sem nome */ }
     }));
   }
+  // Pessoa da corrente de cada mensalidade, pelo CPF do Perfil (decifrado só aqui, em memória; nunca vai para a tela).
+  const porCpf = await cpfsDaCorrente();
   const pagas = mens.filter((c) => PAGO.includes(c.status));
   return {
     valorMensalidade: reais(alvo),
     descricaoDoacao: cfg.descricaoDoacao,
+    ligadoPorCpf: true,
     mensalidades: {
       pagas: pagas.length,
       abertas: mens.length - pagas.length,
       totalPago: reais(pagas.reduce((s, c) => s + centavos(c.value), 0)),
-      lista: mens.map((c) => ({ nome: nomes.get(c.customer) || 'Sem nome no ASAAS', valor: Number(c.value) || 0,
+      lista: mens.map((c) => ({ nome: nomes.get(c.customer) || 'Sem nome no ASAAS', pessoaId: porCpf.get(cpfs.get(c.customer)) || null, valor: Number(c.value) || 0,
         pago: PAGO.includes(c.status), vencida: c.status === 'OVERDUE', vencimento: c.dueDate || null, pagoEm: c.paymentDate || null }))
         .sort((a, b) => Number(a.pago) - Number(b.pago) || a.nome.localeCompare(b.nome, 'pt-BR')),
     },
-    doacoes: { quantidade: doacoes.length, total: reais(doacoes.reduce((s, c) => s + centavos(c.value), 0)) },
+    doacoes: {
+      quantidade: doacoes.length,
+      total: reais(doacoes.reduce((s, c) => s + centavos(c.value), 0)),
+      lista: doacoes.map((c) => ({ nome: nomes.get(c.customer) || 'Sem nome no ASAAS', valor: Number(c.value) || 0, pagoEm: c.paymentDate || null }))
+        .sort((a, b) => String(b.pagoEm || '').localeCompare(String(a.pagoEm || '')) || a.nome.localeCompare(b.nome, 'pt-BR')),
+    },
   };
 }
 
@@ -187,6 +210,14 @@ export async function transparencia(eu, query) {
   const linha = lidos.get(mes);
   const dados = linha?.dados || null;
   const verNomes = pode(eu, 'asaas:ver');
+  // Corrente (sem a curimba): o total vai para todos; quem ficou de fora das mensalidades do mês (sem cobrança, ou sem
+  // CPF no Perfil para ligar ao ASAAS) só para quem vê os nomes. Leitura antiga, sem a ligação por CPF: null (Puxar).
+  const pessoas = await db.rpc('transparencia_corrente');
+  let fora = null;
+  if (verNomes && dados?.ligadoPorCpf) {
+    const comMensalidade = new Set(dados.mensalidades.lista.map((x) => x.pessoaId).filter(Boolean));
+    fora = pessoas.filter((p) => !comMensalidade.has(p.id)).map((p) => ({ nome: p.nome, motivo: p.temCpf ? 'sem mensalidade no mês' : 'sem CPF no Perfil' }));
+  }
   return {
     publicada: !!cfg.publicada,
     editar: pode(eu, 'transparencia:editar'),
@@ -209,8 +240,10 @@ export async function transparencia(eu, query) {
       atualizadoEm: linha?.atualizadoEm || null,
       mensalidades: dados ? { pagas: dados.mensalidades.pagas, abertas: dados.mensalidades.abertas, totalPago: dados.mensalidades.totalPago,
         ...(verNomes ? { lista: dados.mensalidades.lista } : {}) } : null,
-      doacoes: dados ? dados.doacoes : null,
+      // A lista de quem doou também é só para quem vê os nomes (leitura antiga, sem lista: some até o próximo Puxar).
+      doacoes: dados ? { quantidade: dados.doacoes.quantidade, total: dados.doacoes.total, ...(verNomes ? { lista: dados.doacoes.lista || null } : {}) } : null,
       valorMensalidade: dados?.valorMensalidade ?? (Number(cfg.valorMensalidade) || 0),
+      corrente: { total: pessoas.length, ...(verNomes ? { fora } : {}) },
     },
     creditos: reais(centavos(doAsaas(dados)) + centavos(soma(v.creditos))),
     resultado: resultado(v, dados),
@@ -238,29 +271,48 @@ function linhasOk(lista, campos, rotulo) {
   return campos.map((nome) => ({ nome, valor: valorOk(lista.find((l) => l?.nome === nome)?.valor ?? 0, nome) }));
 }
 
+// Configuração do root conferida (o que vier no pedido).
+function configOk(b, cfg) {
+  const inicio = String(b.inicio || '');
+  if (!MES.test(inicio) || inicio > mesAtual()) throw new HttpError(400, 'Escolha o mês de início (até o mês atual).');
+  const valorMensalidade = valorOk(b.valorMensalidade, 'Mensalidade');
+  if (!valorMensalidade) throw new HttpError(400, 'Mensalidade: informe o valor.');
+  const n = Number(String(b.saldoInicial ?? '').replace(',', '.'));   // pode ser negativo (a casa pode começar devendo)
+  if (!Number.isFinite(n) || Math.abs(n) > 100000000) throw new HttpError(400, 'Saldo inicial: valor inválido.');
+  const descricaoDoacao = String(b.descricaoDoacao ?? '').replace(/s+/g, ' ').trim();
+  if (!descricaoDoacao || descricaoDoacao.length > 150) throw new HttpError(400, 'Descrição das doações: escreva o texto (até 150 letras).');
+  const campos = { debitos: camposOk(b.campos?.debitos, 'Campos de débito'), creditos: camposOk(b.campos?.creditos, 'Campos de crédito') };
+  return { ...cfg, inicio, saldoInicial: reais(centavos(n)), valorMensalidade, descricaoDoacao, campos };
+}
+
 export async function acaoTransparencia(eu, b, query) {
   if (!pode(eu, 'transparencia:editar')) throw new HttpError(403, 'Seu perfil não edita o Painel da Transparência.');
-  const cfg = configDe(await db.rpc('transparencia_estado'));
+  let cfg = configDe(await db.rpc('transparencia_estado'));
   const exigirRoot = () => { if (!pode(eu, 'usuarios:gerenciar')) throw new HttpError(403, 'Só o admin root muda a configuração do painel.'); };
   if (b.op === 'publicar') {
     exigirRoot();
     if (typeof b.publicada !== 'boolean') throw new HttpError(400, 'Informe se o painel fica visível.');
     await db.rpc('transparencia_config_salvar', { config: { ...cfg, publicada: b.publicada } });
-  } else if (b.op === 'config') {
+  } else if (b.op === 'config') {   // app de antes da edição na própria tela
     exigirRoot();
-    const inicio = String(b.inicio || '');
-    if (!MES.test(inicio) || inicio > mesAtual()) throw new HttpError(400, 'Escolha o mês de início (até o mês atual).');
-    const valorMensalidade = valorOk(b.valorMensalidade, 'Mensalidade');
-    if (!valorMensalidade) throw new HttpError(400, 'Mensalidade: informe o valor.');
-    const n = Number(String(b.saldoInicial ?? '').replace(',', '.'));   // pode ser negativo (a casa pode começar devendo)
-    if (!Number.isFinite(n) || Math.abs(n) > 100000000) throw new HttpError(400, 'Saldo inicial: valor inválido.');
-    const descricaoDoacao = String(b.descricaoDoacao ?? '').replace(/\s+/g, ' ').trim();
-    if (!descricaoDoacao || descricaoDoacao.length > 150) throw new HttpError(400, 'Descrição das doações: escreva o texto (até 150 letras).');
-    const campos = { debitos: camposOk(b.campos?.debitos, 'Campos de débito'), creditos: camposOk(b.campos?.creditos, 'Campos de crédito') };
-    await db.rpc('transparencia_config_salvar', { config: { ...cfg, inicio, saldoInicial: reais(centavos(n)), valorMensalidade, descricaoDoacao, campos } });
+    await db.rpc('transparencia_config_salvar', { config: configOk(b, cfg) });
   } else if (b.op === 'mes') {
     const mes = String(b.mes || '');
     if (!MES.test(mes) || mes > mesAtual()) throw new HttpError(400, 'Mês inválido.');
+    // O root salva junto a estrutura (campos, mensalidade, descrição, início e saldo inicial). Campo renomeado leva o
+    // nome novo para os valores de todos os meses já lançados (renomes: [{ tipo: 'debitos'|'creditos', de, para }]).
+    if (b.config) {
+      exigirRoot();
+      const novo = configOk(b.config, cfg);
+      const renomes = Array.isArray(b.renomes) ? b.renomes.slice(0, 60) : [];
+      for (const r of renomes) {
+        const tipo = r?.tipo === 'creditos' ? 'creditos' : r?.tipo === 'debitos' ? 'debitos' : null;
+        if (!tipo || !cfg.campos[tipo].includes(r.de) || !novo.campos[tipo].includes(r.para) || r.de === r.para) continue;
+        await db.rpc('transparencia_renomear', { tipo, de: r.de, para: r.para });
+      }
+      await db.rpc('transparencia_config_salvar', { config: novo });
+      cfg = novo;
+    }
     await db.rpc('transparencia_mes_salvar', {
       mes,
       debitos: linhasOk(b.debitos, cfg.campos.debitos, 'Débitos'),
