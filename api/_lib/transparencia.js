@@ -30,6 +30,9 @@ const MAX_PAGINAS = 20;
 const LOTE_CLIENTES = 10;
 const MAX_MESES_POR_PEDIDO = 3;   // meses lidos num pedido só (o limite de tempo da Vercel é 15 s)
 const VALIDADE_MS = 24 * 60 * 60 * 1000;
+// Formato da leitura guardada: mudou o que se guarda (ex.: a ligação por CPF, a lista de doações), sobe o número e a
+// leitura antiga é refeita na próxima abertura, sem esperar o dia.
+const FORMATO = 2;
 const MAX_CAMPOS = 30;
 const DEBITOS_PADRAO = [
   { nome: 'Aluguel', valor: 7131.59 },
@@ -115,6 +118,7 @@ async function lerMes(mes, cfg) {
   return {
     valorMensalidade: reais(alvo),
     descricaoDoacao: cfg.descricaoDoacao,
+    formato: FORMATO,
     ligadoPorCpf: true,
     mensalidades: {
       pagas: pagas.length,
@@ -133,8 +137,8 @@ async function lerMes(mes, cfg) {
   };
 }
 
-// A leitura guardada vale 1 dia e só para o mesmo valor de mensalidade e a mesma descrição de doação.
-const fresca = (linha, cfg) => linha && Date.now() - new Date(linha.atualizadoEm).getTime() < VALIDADE_MS
+// A leitura guardada vale 1 dia, só no formato atual e para o mesmo valor de mensalidade e a mesma descrição de doação.
+const fresca = (linha, cfg) => linha && linha.dados?.formato === FORMATO && Date.now() - new Date(linha.atualizadoEm).getTime() < VALIDADE_MS
   && centavos(linha.dados?.valorMensalidade) === centavos(cfg.valorMensalidade)
   && normalizar(linha.dados?.descricaoDoacao ?? PADRAO.descricaoDoacao) === normalizar(cfg.descricaoDoacao);
 
