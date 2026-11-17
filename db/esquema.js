@@ -9,7 +9,7 @@
 // Estrutura: veja db/ESTRUTURA-ESQUEMA.md para o mapa de versões, domínios e
 // quais migrações foram testadas no Postgres.
 
-export const VERSAO = 129;  // v129: Transparência sem "(média)" nos campos; contagem da corrente
+export const VERSAO = 130;  // v130: Criar cadastro acha o cadastro pelo CPF (hash do CPF da corrente)
 
 import { PERFIS_PADRAO } from '../shared/permissoes.js';
 
@@ -5686,5 +5686,64 @@ export const MIGRACOES = [
      end if;
      return jsonb_build_object('ok', true);
    end;
+   $$`,
+  // ================================================== v130: Criar cadastro acha o cadastro pelo CPF
+  // O CPF da corrente ganha um hash (HMAC da CPF_CHAVE, como o dos alunos) para achar o cadastro sem decifrar todos.
+  // As linhas de antes (e as do UP CPJ) ficam com hash '': o backend preenche na busca (o banco não tem a chave).
+  `alter table pessoas_cpf add column if not exists hash text not null default ''`,
+  `create index if not exists pessoas_cpf_hash on pessoas_cpf (hash)`,
+  // p = { pessoaId, cifrado, hash, por }; cifrado '' apaga.
+  `create or replace function cpf_salvar(p jsonb)
+   returns jsonb language plpgsql as $$
+   declare v_id uuid := (p ->> 'pessoaId')::uuid;
+   begin
+     if not exists (select 1 from pessoas where id = v_id and saida is null) then
+       raise exception 'Pessoa não encontrada.';
+     end if;
+     if coalesce(p ->> 'cifrado', '') = '' then
+       delete from pessoas_cpf where pessoa_id = v_id;
+     else
+       insert into pessoas_cpf (pessoa_id, cifrado, hash, atualizado_em, atualizado_por)
+       values (v_id, p ->> 'cifrado', coalesce(p ->> 'hash', ''), now(), coalesce(p ->> 'por', ''))
+       on conflict (pessoa_id) do update set cifrado = excluded.cifrado, hash = excluded.hash,
+         atualizado_em = now(), atualizado_por = excluded.atualizado_por;
+     end if;
+     return cpf_ler(p);
+   end;
+   $$`,
+  `create or replace function cpf_sem_hash(p jsonb default '{}'::jsonb)
+   returns jsonb language sql stable as $$
+     select coalesce(jsonb_agg(jsonb_build_object('pessoaId', pessoa_id, 'cifrado', cifrado)), '[]'::jsonb)
+       from pessoas_cpf where hash = ''
+   $$`,
+  // p = { itens: [{ pessoaId, hash }] } — só preenche quem ainda está sem hash.
+  `create or replace function cpf_hash_definir(p jsonb)
+   returns jsonb language plpgsql as $$
+   begin
+     update pessoas_cpf c set hash = x ->> 'hash'
+       from jsonb_array_elements(coalesce(p -> 'itens', '[]'::jsonb)) x
+      where c.pessoa_id = (x ->> 'pessoaId')::uuid and c.hash = '' and coalesce(x ->> 'hash', '') <> '';
+     return jsonb_build_object('ok', true);
+   end;
+   $$`,
+  // Quem tem esse CPF (p = { hash }): pessoa ativa da corrente ou aluno ativo, no mesmo formato de login_candidatos.
+  `create or replace function cadastro_por_cpf(p jsonb)
+   returns jsonb language sql stable as $$
+     with c as (
+       select 2 as ordem, 'corrente' as tipo, pe.id, pe.nome, pe.pin_hash as hash, pe.pin_versao as versao, 'pin:' || pe.id::text as chave,
+              celular_chave(pe.perfil -> 'info' ->> 'celular') as cel_cad, lower(btrim(coalesce(pe.perfil -> 'info' ->> 'email', ''))) as email_cad
+         from pessoas_cpf x join pessoas pe on pe.id = x.pessoa_id
+        where pe.saida is null and x.hash <> '' and x.hash = p ->> 'hash'
+       union all
+       select 3, 'aluno', al.id, al.nome, al.pin_hash, al.pin_versao, 'pina:' || al.id::text,
+              celular_chave(al.perfil -> 'info' ->> 'celular'), lower(btrim(coalesce(al.perfil -> 'info' ->> 'email', '')))
+         from alunos_cpf x join alunos al on al.id = x.aluno_id
+        where al.saida is null and x.hash <> '' and x.hash = p ->> 'hash'
+     )
+     select coalesce(jsonb_agg(jsonb_build_object('tipo', c.tipo, 'id', c.id, 'nome', c.nome, 'hash', c.hash, 'versao', c.versao,
+              'chave', c.chave, 'celular', c.cel_cad, 'email', c.email_cad,
+              'bloqueado', exists (select 1 from login_falhas f where f.email = c.chave and f.bloqueado_ate > now()))
+              order by c.ordem, lower(c.nome)), '[]'::jsonb)
+       from c
    $$`,
 ];

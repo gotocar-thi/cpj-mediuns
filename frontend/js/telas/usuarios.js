@@ -46,7 +46,7 @@ function cardPerfis() {
   if (sel.chave === 'root') return h + `<p class="leitura" style="margin:0">O Admin root pode tudo, inclusive a aba Admin root, e não precisa estar no cadastro da corrente.</p></div>`;
   const a = normalizarAbas(sel.abas);
   const fixo = sel.chave === 'corrente';
-  h += `${fixo ? '<p class="muted" style="margin:0;font-size:.85rem">Este é o acesso de quem entra com a palavra-chave da corrente e o próprio nome.</p>' : `<form id="f-perfilnome" class="row" data-chave="${esc(sel.chave)}" autocomplete="off" style="gap:6px;align-items:flex-end">
+  h += `${fixo ? '<p class="muted" style="margin:0;font-size:.85rem">Este é o acesso da corrente: quem entra com e-mail, celular ou CPF e a senha de números.</p>' : `<form id="f-perfilnome" class="row" data-chave="${esc(sel.chave)}" autocomplete="off" style="gap:6px;align-items:flex-end">
       <label class="field grow">Nome<input type="text" id="pf-nomecfg" maxlength="40" value="${esc(sel.nome)}"></label>
       <button class="btn small" type="submit">Renomear</button></form>`}
     <div class="pa-tab" role="table" aria-label="Acessos do perfil ${esc(sel.nome)}">
@@ -244,7 +244,7 @@ export const cliques = {
     document.getElementById('sn-in')?.focus();
   },
   snfechar() { estado.senhaEdit = null; avisar(); },
-  // Limpar a senha da corrente: a pessoa cria outra ao entrar (palavra-passe + celular, ou e-mail/celular confirmando o outro).
+  // Limpar a senha da corrente: a pessoa cria outra ao entrar (e-mail, celular ou CPF, confirmando o celular ou o e-mail do cadastro).
   async snlimpar(el) {
     if (!confirm(`Limpar a senha de ${el.dataset.nome}? A pessoa vai criar uma nova ao entrar.`)) return;
     if (await acaoUsuarios('pin', { pessoaId: el.dataset.id, limpar: true })) { estado.senhaEdit = null; toast('Senha limpa.'); avisar(); }

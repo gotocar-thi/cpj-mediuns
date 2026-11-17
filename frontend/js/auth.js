@@ -37,13 +37,12 @@ export const token = () => tok;
 
 export const estadoDoApp = () => chamar('GET', 'estado');
 
-// Acesso da corrente com nome em dúvida: devolve { candidatos } e não entra.
-// Pessoa com senha (PIN) e sem "pin": devolve { precisaSenha, nome } e não entra.
-export async function entrar(email, senha, digitado, pin) {
-  const r = await chamar('POST', 'entrar', { email, senha, ...(digitado ? { digitado } : {}), ...(pin ? { pin } : {}) });
-  if (r.confirmar) return { candidatos: r.candidatos || [] };
-  if (r.precisaSenha) return { precisaSenha: true, nome: r.nome };
+// Palavra-passe da curimba com nome em dúvida: devolve { candidatos } e não entra.
+// Sem senha: devolve { criarSenha, confirmar } (vem antes: "confirmar" também vem preenchido nessa resposta).
+export async function entrar(email, senha) {
+  const r = await chamar('POST', 'entrar', { email, senha });
   if (r.criarSenha) return { criarSenha: true, confirmar: r.confirmar };
+  if (r.confirmar) return { candidatos: r.candidatos || [] };
   guardar(r.token);
   return {};
 }
@@ -51,6 +50,23 @@ export async function entrar(email, senha, digitado, pin) {
 // Sem senha, entrando com e-mail ou celular: confirma com o outro contato do cadastro, cria a senha e já entra.
 export async function criarSenhaContato(contato, confirmacao, senha) {
   const r = await chamar('POST', 'criarSenhaContato', { contato, confirmacao, senha });
+  guardar(r.token);
+}
+
+// Criar cadastro, primeiro passo: o CPF já tem cadastro? → { existe, temSenha, confirmar }
+export const verificarCpf = (cpf) => chamar('POST', 'cadastrar', { cpf, verificar: true });
+
+// CPF que já tem cadastro com senha: entra com ela.
+export async function entrarCpf(cpf, senha) {
+  const r = await chamar('POST', 'entrar', { cpf, senha });
+  if (r.criarSenha) return { criarSenha: true, confirmar: r.confirmar };
+  guardar(r.token);
+  return {};
+}
+
+// CPF que já tem cadastro sem senha: confirma o celular (ou e-mail) do cadastro, cria a senha e já entra.
+export async function criarSenhaCpf(cpf, confirmacao, senha) {
+  const r = await chamar('POST', 'criarSenhaContato', { cpf, confirmacao, senha });
   guardar(r.token);
 }
 

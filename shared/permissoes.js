@@ -99,7 +99,7 @@ export const PERFIS_SISTEMA = PERFIS_PADRAO.map((p) => p.chave);
 // Perfis que podem existir sem cadastro na corrente.
 export const SEM_CADASTRO = ['root'];
 
-// No login, quem digita isto (ou só "cpj") no campo de e-mail entra sem senha, informando só o nome.
+// Palavra-passe antiga da corrente (acabou): o login reconhece para dizer como entrar agora.
 export const ACESSO_CORRENTE = 'corrente-cpj';
 // Textos aceitos no campo de e-mail para o acesso da corrente.
 export const ACESSOS_CORRENTE = [ACESSO_CORRENTE, 'cpj'];
@@ -109,7 +109,8 @@ export const grupoAcesso = (email) => {
   const valor = String(email || '').trim().toLowerCase();
   return GRUPOS_ACESSO.includes(valor) ? valor : ehAcessoCorrente(valor) ? 'cpj' : '';
 };
-export const ehAcessoGrupo = (email) => !!grupoAcesso(email);
+// Palavra-passe que ainda vale no login (o segundo campo vira o nome): só a da curimba. As de cpj e alunos acabaram.
+export const ehAcessoGrupo = (email) => grupoAcesso(email) === 'curimba';
 // O que os acessos de grupo podem fazer: o aluno vê o próprio registro; os dois pedem na aba Compras (quando ela está visível para todos).
 // O aluno também vê a aba Amaci (quando está visível para todos), só com os orixás liberados para a turma dele.
 export const PERMISSOES_GRUPO = { alunos: ['alunos:ver', 'guias:pedir', 'amaci:ver'], curimba: ['guias:pedir'] };

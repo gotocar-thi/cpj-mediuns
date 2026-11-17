@@ -40,7 +40,7 @@ function listaSemSenha(todos, A) {
   const zap = (s) => {
     const tel = soNumeros(todos.find((t) => t.pessoaId === s.pessoaId)?.perfil?.info?.celular || '');
     if (tel.length < 10) return '';
-    const txt = `Olá, ${s.nome.split(/\s+/)[0]}! Falta criar a sua senha no app da corrente: entre em ${app} com "cpj" e o seu nome e toque em 🔒 Criar senha (6 a 8 números). Sem ela, o seu Perfil e os seus pagamentos não abrem.`;
+    const txt = `Olá, ${s.nome.split(/\s+/)[0]}! Falta criar a sua senha no app da corrente: entre em ${app}, toque em Criar cadastro e digite o seu CPF (ou entre com o seu e-mail ou celular e a senha em branco) e crie a senha (6 a 8 números). Sem ela, o seu Perfil e os seus pagamentos não abrem.`;
     return `<a class="btn small wa-bt" href="https://wa.me/55${tel}?text=${encodeURIComponent(txt)}" target="_blank" rel="noopener noreferrer" aria-label="Lembrar ${esc(s.nome)} no WhatsApp"><span class="wa-ico" aria-hidden="true">${ICONE_WHATS}</span></a>`;
   };
   return `<div class="aj-sem"><button class="grp-h dobra" data-act="ajsemdobrar" aria-expanded="${aberto}"><h3>🔒 Sem senha</h3>
@@ -78,14 +78,14 @@ export function renderAjustesPerfil(todos) {
         <div class="aj-form"><label class="field">Entrada na corrente<input type="date" id="ent-${p.id}" data-act="entrada" data-id="${p.id}" value="${p.entrada || ''}"></label>
         ${p.entrada ? `<button class="btn" data-act="limparentrada" data-id="${p.id}" aria-label="Tirar a data de entrada">✕ Tirar a data</button>` : ''}</div>` : '';
   } else if (A.campo === 'senha') {
-      // Senha de quem entra com a palavra-chave e o nome; a do e-mail fica em "Quem tem acesso".
+      // Senha de números da corrente (entra com e-mail, celular ou CPF); a do e-mail fica em "Quem tem acesso".
       if (!estado.senhas) return h + '<div class="loading">Carregando…</div>';
       const s = estado.senhas.find((y) => y.pessoaId === x.pessoaId);
       const ed = estado.senhaEdit;
       h += `<div class="sn-l"><div class="sn-nome"><b>${esc(x.nome)}</b> <span class="badge ${s?.temSenha ? 'sn-com' : 'sn-sem'}">${s?.temSenha ? 'com senha' : 'sem senha'}</span></div>
         <div class="sn-bts"><button class="btn small" data-act="snabrir" data-tipo="pin" data-id="${x.pessoaId}">Senha da corrente</button>${s?.temSenha ? `<button class="btn small danger" data-act="snlimpar" data-id="${x.pessoaId}" data-nome="${esc(x.nome)}">Limpar senha</button>` : ''}</div>
         ${ed?.tipo === 'pin' && ed.id === x.pessoaId ? formSenha('pin', x.pessoaId, x.nome) : ''}</div>
-        <p class="muted" style="margin:0;font-size:.82rem">As senhas ficam guardadas embaralhadas: nem o app consegue mostrá-las. Esta é a senha de quem entra com a palavra-chave e o nome (ou com e-mail/celular). <b>Limpar senha</b> apaga a senha: a pessoa cria outra ao entrar, confirmando o celular (ou o e-mail). A senha do e-mail se troca em <b>Quem tem acesso</b>.</p>`;
+        <p class="muted" style="margin:0;font-size:.82rem">As senhas ficam guardadas embaralhadas: nem o app consegue mostrá-las. Esta é a senha de números de quem entra com e-mail, celular ou CPF. <b>Limpar senha</b> apaga a senha: a pessoa cria outra ao entrar, confirmando o celular (ou o e-mail). A senha do e-mail se troca em <b>Quem tem acesso</b>.</p>`;
   }
   return h;
 }

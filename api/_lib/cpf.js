@@ -71,11 +71,24 @@ export async function rotaCpf(req, eu) {
   const pessoaId = alvo(eu, b.pessoaId);
   const bruto = String(b.cpf ?? '').trim();
   let cifrado = '';
+  let hash = '';
   if (bruto) {
     const cpf = cpfValido(bruto);
     if (!cpf) throw new HttpError(400, 'CPF inválido. Confira os 11 números.');
     cifrado = cifrar(cpf, pessoaId);
+    hash = hashCpf(cpf);
   }
-  const linha = await db.rpc('cpf_salvar', { pessoaId, cifrado, por: eu.nome || '' });
+  const linha = await db.rpc('cpf_salvar', { pessoaId, cifrado, hash, por: eu.nome || '' });
   return resposta(linha, pessoaId, false);
+}
+
+// Quem tem esse CPF (já validado): pessoa ativa da corrente ou aluno ativo (Criar cadastro e login pelo CPF).
+// Antes, preenche o hash dos CPFs da corrente gravados sem ele (de antes da v130 e do UP CPJ).
+export async function cadastroPorCpf(cpf) {
+  const semHash = await db.rpc('cpf_sem_hash');
+  const itens = (semHash || []).map((l) => {
+    try { return { pessoaId: l.pessoaId, hash: hashCpf(decifrar(l.cifrado, l.pessoaId)) }; } catch { return null; }
+  }).filter(Boolean);
+  if (itens.length) await db.rpc('cpf_hash_definir', { itens });
+  return db.rpc('cadastro_por_cpf', { hash: hashCpf(cpf) });
 }

@@ -17,7 +17,7 @@ PWA da **Casa do Pai João (CPJ)** para organizar a corrente e as giras:
 ## Para quem
 
 - **Michelle** (admin) monta a escala: presença, sorteio, ajustes, publicação, encerramento.
-- **A corrente** entra pelo acesso `cpj` + nome e vê o resultado: a própria função na gira, a escala publicada, eventos, aniversariantes; declara ausência, preenche o perfil, pede ervas e participa das oferendas.
+- **A corrente** entra com e-mail, celular ou CPF e a senha e vê o resultado: a própria função na gira, a escala publicada, eventos, aniversariantes; declara ausência, preenche o perfil, pede ervas e participa das oferendas.
 - **Root** cuida de usuários, perfis e correções de histórico.
 
 ## Intenção (o que guia as decisões)
@@ -63,7 +63,8 @@ PWA da **Casa do Pai João (CPJ)** para organizar a corrente e as giras:
 - **Ex-alunos (v125) não foram testados no banco.** `aluno_excluir` passou a guardar o cadastro, `aluno_reativar`, `aluno_apagar` e `apagar_excluidos` (só apaga aluno marcado em `apagado_em`) não rodaram no Postgres; o bloco foi conferido só com dados falsos. O `select apagar_excluidos()` solto no meio da lista (limpeza única antiga) saiu da lista para não apagar ex-alunos a cada migração.
 - **Login por e-mail/celular, 3 tentativas e Criar cadastro não foram testados no banco.** A migração v124 (`login_candidatos`, `login_falha` com 3 erros, `aluno_autocadastro`) não rodou no Postgres; as telas foram conferidas só no visual (390 px). Conferir no app publicado: entrar por e-mail e por celular, errar 3 vezes, criar cadastro.
 - **Redefinir senha por e-mail.** O Esqueci a senha só manda falar com a administração. Para enviar o link: escolher o provedor (Resend, com domínio próprio, ou Brevo, sem domínio e com risco de spam) e pôr a chave na Vercel. SMS grátis não existe.
-- **Login só por e-mail/celular.** A palavra-passe (`cpj`, `alunos`, `curimba` + nome) continua liberada; desligar quando todos tiverem senha.
+- **Curimba ainda entra pela palavra-passe.** `cpj` e `alunos` acabaram (v130); `curimba` + nome continua porque a curimba não tem contato nem senha. Plano: passar a curimba para o cadastro da corrente (fora do sorteio) e então desligar `curimba`.
+- **Criar cadastro pelo CPF (v130) não foi testado no app publicado.** Conferir: CPF de alguém da corrente com senha (entra), sem senha (confirma o celular e cria), e CPF novo. Quem é da corrente sem CPF e sem celular/e-mail no cadastro não consegue entrar sozinho: a administração precisa cadastrar o CPF ou o celular.
 - **Testes no Windows.** `npm test` depende de Linux (`runuser`) e de Postgres local; na pasta atual não roda.
 - O doc `claude/regras-sort-mediuns.md` do Project é antigo (out/2026); [regras.md](regras.md) é a referência atual.
 

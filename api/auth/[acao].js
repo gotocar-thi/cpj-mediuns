@@ -1,14 +1,14 @@
 // Login e instalação.
 //   GET  /api/auth/estado   { instalado }  — o app já tem um admin?
 //   POST /api/auth/instalar { codigo, nome, email, senha }  — cria o primeiro admin
-//   POST /api/auth/entrar   { email, senha }  → { token, usuario }
+//   POST /api/auth/entrar   { email, senha } ou { cpf, senha }  → { token, usuario }
 //                           "email" pode ser e-mail ou celular: usuário, corrente ou aluno com a senha que criou (3 erros bloqueiam 15 min)
+//                           entrar de quem não tem senha → { criarSenha: true, confirmar: 'celular' | 'email' | null }
+//                           palavra-passe "curimba": a "senha" é o nome; se não for exato → { confirmar: true, candidatos }
+//                           ("cpj" e "alunos" acabaram: a resposta manda entrar com e-mail/celular ou achar o cadastro pelo CPF)
+//   POST /api/auth/cadastrar { cpf, verificar: true }  → { existe, temSenha, confirmar? }  o CPF já é de alguém?
 //   POST /api/auth/cadastrar { nome, celular, email, cpf, senha }  autocadastro: entra como aluno sem turma → { token, usuario }
-//                           entrar com e-mail/celular de quem não tem senha → { criarSenha: true, confirmar: 'celular' | 'email' }
-//   POST /api/auth/criarSenhaContato { contato, confirmacao, senha }  cria a senha confirmando o outro contato → { token, usuario }
-//                           acesso da corrente: a "senha" é o nome; precisa estar na lista de pessoas.
-//                           Se não for exato → { confirmar: true, candidatos: [nomes parecidos] } (sem token)
-//                           Se a pessoa tem senha (PIN): sem "pin" → { precisaSenha: true, nome }; com "pin" errado → 401
+//   POST /api/auth/criarSenhaContato { contato | cpf, confirmacao, senha }  cria a senha confirmando o outro contato → { token, usuario }
 //   POST /api/auth/senha    { atual, nova }   → { token }  (logado)
 //   POST /api/auth/criarSenha { senha, celular }  corrente ou aluno: cria a senha (6 a 8 números); o celular digitado tem de
 //                           bater com o do cadastro (Perfil) → { token }
@@ -33,14 +33,14 @@ import { abaIemanja } from '../_lib/iemanja.js';
 import { ocultarSorteios } from '../_lib/escala.js';
 import { oracoes } from '../_lib/oracoes.js';
 import { eventosDe } from '../_lib/eventos.js';
-import { rotaCpf, cifrar, hashCpf } from '../_lib/cpf.js';
+import { rotaCpf, cifrar, hashCpf, cadastroPorCpf } from '../_lib/cpf.js';
 import { dadosAluno } from '../_lib/alunos.js';
 import { randomUUID } from 'node:crypto';
 import { temAbaPublica } from '../../shared/oferendas.js';
 import { gerarHash, conferirSenha, emitirToken, emitirTokenCorrente, emitirTokenGrupo, iguaisSeguro, limitarPorIp, SENHA_MINIMA } from '../_lib/senhas.js';
-import { permissoesDe, ehAcessoCorrente, grupoAcesso, pode, PIN_VALIDO, PIN_NOVO, PIN_NOVO_MSG, PERMISSOES_GRUPO } from '../../shared/permissoes.js';
+import { permissoesDe, grupoAcesso, pode, PIN_VALIDO, PIN_NOVO, PIN_NOVO_MSG, PERMISSOES_GRUPO } from '../../shared/permissoes.js';
 import { normalizarNome, nomesParecidos } from '../../shared/ervas.js';
-import { normalizarPerfil, perfilDaFuncao, blocosAfinidade, ANAMNESE_TIPOS, ANAMNESE_PERGUNTA_MAX, ANAMNESE_TEXTO_MAX, ANAMNESE_SIMNAO, ANAMNESE_OPCOES_MAX, ANAMNESE_OPCAO_MAX, limparRespostaTexto, limparRespostaData } from '../../shared/perfil.js';
+import { cpfValido, normalizarPerfil, perfilDaFuncao, blocosAfinidade, ANAMNESE_TIPOS, ANAMNESE_PERGUNTA_MAX, ANAMNESE_TEXTO_MAX, ANAMNESE_SIMNAO, ANAMNESE_OPCOES_MAX, ANAMNESE_OPCAO_MAX, limparRespostaTexto, limparRespostaData } from '../../shared/perfil.js';
 import { LINHA_KEYS, compactarRetratos } from '../../shared/regras.js';
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -93,19 +93,6 @@ async function perfilAluno(req, eu) {
   return ver(await db.rpc('aluno_perfil_salvar', { alunoId, perfil }));
 }
 
-// Senha de quem tem uma; sem "pin" no pedido, devolve o pedido de senha para a tela.
-async function conferirPin(b, info, chaveFalha, nome) {
-  if (!info.pinHash) return null;
-  if (b.pin === undefined || b.pin === null || b.pin === '') return { precisaSenha: true, nome };
-  if (info.bloqueadoAte) throw new HttpError(429, BLOQUEADO);
-  if (!(await conferirSenha(String(b.pin), info.pinHash))) {
-    const { restantes } = await db.rpc('login_falha', { email: chaveFalha });
-    throw senhaErrada('Senha incorreta.', restantes);
-  }
-  await db.rpc('login_ok', { email: chaveFalha });
-  return null;
-}
-
 const BLOQUEADO = 'Senha errada 3 vezes: o acesso ficou bloqueado por 15 minutos. Se esqueceu a senha, fale com a administração.';
 const senhaErrada = (msg, restantes) => (restantes > 0
   ? new HttpError(401, `${msg} ${restantes === 1 ? 'Resta 1 tentativa' : `Restam ${restantes} tentativas`} antes de bloquear por 15 minutos.`)
@@ -133,10 +120,30 @@ async function entrarPorContato(req, contato, senha) {
       ? 'Não encontrei cadastro com esse e-mail. Confira ou toque em Criar cadastro.'
       : 'Não encontrei cadastro com esse celular. Confira o DDD e o número ou toque em Criar cadastro.');
   }
+  return entrarNaLista(lista, senha, contato.email ? 'E-mail' : 'Celular', contato.email ? 'celular' : 'email');
+}
+
+// Entrar pelo CPF (Criar cadastro, quando o CPF já tem cadastro): corrente ou aluno, com a senha de números.
+async function entrarPorCpf(req, cpfDigitado, senha) {
+  const cpf = cpfValido(cpfDigitado);
+  if (!cpf) throw new HttpError(400, 'CPF inválido. Confira os 11 números.');
+  const lista = await cadastroPorCpf(cpf);
+  if (!lista.length) {
+    await limitarPorIp(req, 'busca', 20, 60, 'Muitas consultas de CPF não cadastrado. Tente de novo em uma hora.');
+    throw new HttpError(404, 'Não encontrei cadastro com esse CPF.');
+  }
+  return entrarNaLista(lista, senha, 'CPF', campoConfirmacao(lista));
+}
+
+// Para criar a senha pelo CPF, confirma com o celular do cadastro (ou o e-mail, se não tiver celular).
+const campoConfirmacao = (lista) => (lista.some((c) => c.celular) ? 'celular' : lista.some((c) => c.email) ? 'email' : null);
+
+// lista: cadastros achados pelo contato ou pelo CPF; confirmar: o que a tela pede para criar a senha de quem não tem.
+async function entrarNaLista(lista, senha, rotulo, confirmar) {
   if (lista.some((c) => c.bloqueado)) throw new HttpError(429, BLOQUEADO);
   const comSenha = lista.filter((c) => c.hash);
   // Sem senha (nunca criou, ou o root limpou): a tela pede o outro contato para confirmar e a senha nova (criarSenhaContato).
-  if (!comSenha.length || (!senha && lista.some((c) => !c.hash))) return { criarSenha: true, confirmar: contato.email ? 'celular' : 'email' };
+  if (!comSenha.length || (!senha && lista.some((c) => !c.hash))) return { criarSenha: true, confirmar };
   if (!senha) throw new HttpError(400, 'Digite a sua senha.');
   let certo = null;
   for (const c of comSenha) {
@@ -146,7 +153,7 @@ async function entrarPorContato(req, contato, senha) {
   }
   if (!certo) {
     const r = await Promise.all(comSenha.map((c) => db.rpc('login_falha', { email: c.chave })));
-    throw senhaErrada(`${contato.email ? 'E-mail' : 'Celular'} ou senha incorretos.`, Math.min(...r.map((x) => x.restantes)));
+    throw senhaErrada(`${rotulo} ou senha incorretos.`, Math.min(...r.map((x) => x.restantes)));
   }
   await Promise.all(comSenha.map((c) => db.rpc('login_ok', { email: c.chave })));
   return sessaoDe(certo, certo.versao);
@@ -418,71 +425,62 @@ const acoes = {
   async entrar(req) {
     if (req.method !== 'POST') throw new HttpError(405, 'Método não permitido.');
     const b = corpo(req);
+    if (b.cpf) {
+      const senha = String(b.senha || '');
+      if (senha.length > 200) throw new HttpError(400, 'Senha longa demais.');
+      return entrarPorCpf(req, b.cpf, senha);
+    }
     const grupo = grupoAcesso(b.email);
-    if (grupo === 'alunos' || grupo === 'curimba') {
-      const lista = grupo === 'alunos'
-        ? (await db.rpc('alunos_estado')).alunos
-        : (await db.rpc('curimba_estado')).alunos;
+    // As palavras-passe da corrente (cpj) e dos alunos acabaram: quem não lembra o que está no cadastro acha pelo CPF.
+    if (grupo === 'cpj' || grupo === 'alunos') {
+      throw new HttpError(400, 'A palavra-passe acabou. Entre com o seu e-mail ou celular e a senha. Sem senha, ou sem saber o que está no seu cadastro, toque em Criar cadastro e digite o seu CPF.');
+    }
+    // Curimba: a palavra-passe continua (ainda sem cadastro próprio); no lugar da senha vem o nome.
+    if (grupo === 'curimba') {
+      const lista = (await db.rpc('curimba_estado')).alunos;
       const digitado = String(b.senha || '').replace(/\s+/g, ' ').trim();
       if (digitado.length < 2 || digitado.length > 80) throw new HttpError(400, 'Digite o seu nome.');
       const pessoa = lista.find((x) => normalizarNome(x.nome) === normalizarNome(digitado));
       if (pessoa) {
-        let versao = 0;
-        if (grupo === 'alunos') {
-          const pin = await db.rpc('aluno_pin', { alunoId: pessoa.id });
-          const pedido = await conferirPin(b, pin, 'pina:' + pessoa.id, pessoa.nome);
-          if (pedido) return pedido;
-          versao = pin.pinVersao;
-        }
         const usuario = {
-          id: null, nome: pessoa.nome, email: '', papel: grupo, papelNome: grupo === 'alunos' ? 'Aluno' : 'Curimba',
+          id: null, nome: pessoa.nome, email: '', papel: grupo, papelNome: 'Curimba',
           grupo, pessoaId: null, permissoes: PERMISSOES_GRUPO[grupo] || [],
         };
-        return { token: await emitirTokenGrupo(grupo, pessoa.id, pessoa.nome, versao), usuario: publico(usuario) };
+        return { token: await emitirTokenGrupo(grupo, pessoa.id, pessoa.nome, 0), usuario: publico(usuario) };
       }
       const candidatos = nomesParecidos(lista.map((x) => x.nome), digitado);
       if (candidatos.length) return { confirmar: true, candidatos };
       throw new HttpError(404, 'Não encontrei esse nome neste cadastro. Confira a palavra-passe e tente de novo.');
-    }
-    // Acesso da corrente: no lugar da senha vem o nome da pessoa.
-    if (ehAcessoCorrente(b.email)) {
-      const digitado = String(b.senha || '').replace(/\s+/g, ' ').trim();
-      if (digitado.length < 2 || digitado.length > 80) throw new HttpError(400, 'Digite o seu nome.');
-      // O nome tem que ser de alguém cadastrado na corrente; fica sempre salvo com o nome do cadastro.
-      const pessoas = await db.rpc('pessoas_listar');
-      const exata = pessoas.find((p) => normalizarNome(p.nome) === normalizarNome(digitado));
-      if (exata) {
-        // Quem criou senha (PIN) precisa digitá-la.
-        const pin = await db.rpc('pessoa_pin', { pessoaId: exata.id });
-        const pedido = await conferirPin(b, pin, 'pin:' + exata.id, exata.nome);
-        if (pedido) return pedido;
-        // Junta no cadastro da pessoa o que ela (ou o admin por ela) preencheu antes com o nome digitado.
-        const antigas = [...new Set([exata.nome, digitado, String(b.digitado || '')].filter(Boolean).map((n) => 'n:' + normalizarNome(n)))];
-        await db.rpc('corrente_vincular', { chave: 'p:' + exata.id, nome: exata.nome, antigas });
-        const s = await db.rpc('corrente_sessao', { pessoaId: exata.id });
-        const usuario = { id: null, nome: exata.nome, email: '', papel: 'corrente', papelNome: s.papelNome, pessoaId: exata.id, abas: s.abas };
-        return { token: await emitirTokenCorrente(exata.nome, exata.id, s.pinVersao), usuario: publico(usuario) };
-      }
-      const candidatos = nomesParecidos(pessoas.map((p) => p.nome), digitado);
-      if (candidatos.length) return { confirmar: true, candidatos };
-      throw new HttpError(404, 'Não encontrei esse nome na corrente. Digite como está no cadastro ou fale com um admin.');
     }
     const senha = String(b.senha || '');
     // Senha em branco vale: quem ainda não tem senha é levado a criar (criarSenha na resposta).
     if (!String(b.email || '').trim()) throw new HttpError(400, 'Informe o e-mail ou o celular.');
     if (senha.length > 200) throw new HttpError(400, 'Senha longa demais.');
     const contato = contatoDoLogin(b.email);
-    if (!contato) throw new HttpError(400, 'Digite o e-mail, o celular com DDD ou a palavra-passe.');
+    if (!contato) throw new HttpError(400, 'Digite o e-mail ou o celular com DDD.');
     return entrarPorContato(req, contato, senha);
   },
 
   // Criar cadastro (tela de login, sem estar logado): a pessoa entra como aluno sem turma e já sai logada;
   // a administração depois põe na turma ou na corrente. Nome, celular, e-mail, CPF e a senha (6 a 8 números).
+  // Começa pelo CPF ({ cpf, verificar: true }): se ele já é de alguém da corrente ou de um aluno, a pessoa não cria outro
+  // cadastro: entra com a senha (entrar { cpf, senha }) ou, sem senha, cria a senha confirmando o celular (ou o e-mail)
+  // do cadastro (criarSenhaContato { cpf, ... }). Os dados do cadastro ficam como estão. A resposta não diz o nome.
   async cadastrar(req) {
     if (req.method !== 'POST') throw new HttpError(405, 'Método não permitido.');
+    const b = corpo(req);
+    if (b.verificar) {
+      await limitarPorIp(req, 'cpfbusca', 20, 60, 'Muitas consultas de CPF. Tente de novo em uma hora ou fale com a administração.');
+      const cpf = cpfValido(b.cpf);
+      if (!cpf) throw new HttpError(400, 'CPF inválido. Confira os 11 números.');
+      const lista = await cadastroPorCpf(cpf);
+      if (!lista.length) return { existe: false };
+      if (lista.some((c) => c.bloqueado)) throw new HttpError(429, BLOQUEADO);
+      const temSenha = lista.some((c) => c.hash);
+      return { existe: true, temSenha, ...(temSenha ? {} : { confirmar: campoConfirmacao(lista) }) };
+    }
     // Cada tentativa conta (as recusas dizem se o CPF, e-mail ou celular já existe): 10 por hora por IP.
     await limitarPorIp(req, 'cadastro', 10, 60, 'Muitas tentativas de cadastro. Tente de novo em uma hora ou fale com a administração.');
-    const b = corpo(req);
     const nome = String(b.nome ?? '').replace(/\s+/g, ' ').trim();
     if (nome.length < 3 || nome.length > 80) throw new HttpError(400, 'Digite o seu nome (de 3 a 80 letras).');
     if (!/\s/.test(nome)) throw new HttpError(400, 'Digite nome e sobrenome.');
@@ -493,6 +491,13 @@ const acoes = {
     const senha = String(b.senha ?? '');
     if (!PIN_NOVO.test(senha)) throw new HttpError(400, PIN_NOVO_MSG);
     const cpfHash = hashCpf(d.cpf); // sem a CPF_CHAVE no servidor, recusa antes de gravar qualquer coisa
+    if ((await cadastroPorCpf(d.cpf)).length) {
+      throw new HttpError(400, 'Você já tem cadastro com esse CPF. Toque em Trocar CPF, digite o CPF de novo e entre com a sua senha.');
+    }
+    // Sem CPF no cadastro da corrente, a pessoa da corrente viraria aluno com o mesmo nome.
+    if ((await db.rpc('pessoas_listar')).some((p) => normalizarNome(p.nome) === normalizarNome(nome))) {
+      throw new HttpError(400, 'Já existe alguém da corrente com esse nome. Se for você, entre com o seu e-mail ou celular, ou fale com a administração para cadastrar o seu CPF.');
+    }
     const a = await db.rpc('aluno_autocadastro', {
       id: randomUUID(), nome, celular: d.celular, email: d.email, pinHash: await gerarHash(senha), cpfHash,
     });
@@ -509,29 +514,42 @@ const acoes = {
     if (req.method !== 'POST') throw new HttpError(405, 'Método não permitido.');
     await limitarPorIp(req, 'criarsenha', 10, 60, 'Muitas tentativas de criar senha. Tente de novo em uma hora ou fale com a administração.');
     const b = corpo(req);
-    const contato = contatoDoLogin(b.contato);
-    if (!contato) throw new HttpError(400, 'Digite o e-mail ou o celular com DDD.');
     const senha = String(b.senha ?? '');
-    if (!PIN_NOVO.test(senha)) throw new HttpError(400, PIN_NOVO_MSG);
+    let lista;
+    let campo;
+    // Pelo CPF (Criar cadastro de quem já tem cadastro): confirma com o celular do cadastro ou, sem ele, com o e-mail.
+    if (b.cpf) {
+      const cpf = cpfValido(b.cpf);
+      if (!cpf) throw new HttpError(400, 'CPF inválido. Confira os 11 números.');
+      if (!PIN_NOVO.test(senha)) throw new HttpError(400, PIN_NOVO_MSG);
+      lista = (await cadastroPorCpf(cpf)).filter((c) => !c.hash);
+      campo = campoConfirmacao(lista);
+    } else {
+      const contato = contatoDoLogin(b.contato);
+      if (!contato) throw new HttpError(400, 'Digite o e-mail ou o celular com DDD.');
+      if (!PIN_NOVO.test(senha)) throw new HttpError(400, PIN_NOVO_MSG);
+      lista = (await db.rpc('login_candidatos', contato)).filter((c) => c.tipo !== 'usuario' && !c.hash);
+      campo = contato.email ? 'celular' : 'email';
+    }
+    if (!lista.length) throw new HttpError(400, 'Este cadastro já tem senha. Entre com ela ou fale com a administração.');
+    if (lista.some((c) => c.bloqueado)) throw new HttpError(429, BLOQUEADO);
+    if (!campo || !lista.some((c) => c[campo])) {
+      throw new HttpError(400, campo
+        ? `O seu ${campo === 'celular' ? 'celular' : 'e-mail'} não está no cadastro. Fale com a administração.`
+        : 'O seu cadastro não tem celular nem e-mail para confirmar que é você. Fale com a administração.');
+    }
     let confirma;
-    if (contato.email) {
+    if (campo === 'celular') {
       confirma = contatoDoLogin(String(b.confirmacao ?? '').replace(/@/g, ''))?.celular;
       if (!confirma) throw new HttpError(400, 'Digite o seu celular com DDD.');
     } else {
       confirma = String(b.confirmacao ?? '').trim().toLowerCase();
       if (!confirma.includes('@')) throw new HttpError(400, 'Digite o seu e-mail.');
     }
-    const lista = (await db.rpc('login_candidatos', contato)).filter((c) => c.tipo !== 'usuario' && !c.hash);
-    if (!lista.length) throw new HttpError(400, 'Este cadastro já tem senha. Entre com ela ou fale com a administração.');
-    if (lista.some((c) => c.bloqueado)) throw new HttpError(429, BLOQUEADO);
-    const campo = contato.email ? 'celular' : 'email';
-    if (!lista.some((c) => c[campo])) {
-      throw new HttpError(400, `O seu ${contato.email ? 'celular' : 'e-mail'} não está no cadastro. Entre com a palavra-passe e o seu nome ou fale com a administração.`);
-    }
     const certo = lista.find((c) => c[campo] && c[campo] === confirma);
     if (!certo) {
       const r = await Promise.all(lista.map((c) => db.rpc('login_falha', { email: c.chave })));
-      throw senhaErrada(`O ${contato.email ? 'celular' : 'e-mail'} não confere com o do cadastro.`, Math.min(...r.map((x) => x.restantes)));
+      throw senhaErrada(`O ${campo === 'celular' ? 'celular' : 'e-mail'} não confere com o do cadastro.`, Math.min(...r.map((x) => x.restantes)));
     }
     const hash = await gerarHash(senha);
     const { pinVersao } = certo.tipo === 'corrente'

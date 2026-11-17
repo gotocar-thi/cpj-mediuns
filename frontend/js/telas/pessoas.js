@@ -330,7 +330,7 @@ function acoesTurma(g, editar, podePromover) {
   const real = g.id !== 'sem';   // "Sem turma" não se edita nem recebe alunos novos
   if (promovendo(g)) {
     const { ids, enviando } = estado.alunosPromover;
-    return `<div class="al-promover-bar"><p class="nota">Marque quem vai para a <b>Corrente CPJ</b> como Cambone. O acesso passa de “alunos” para “cpj” e o nome usado como senha é mantido.</p>
+    return `<div class="al-promover-bar"><p class="nota">Marque quem vai para a <b>Corrente CPJ</b> como Cambone. A senha, o CPF e os dados do cadastro continuam os mesmos.</p>
       <div class="pp-bts"><button class="btn small pp-bt" type="button" data-act="cancelarPromover"${enviando ? ' disabled' : ''}>Cancelar</button><button class="btn small primary pp-bt" type="button" data-act="confirmarPromover"${ids.length && !enviando ? '' : ' disabled'}>${enviando ? 'Promovendo…' : `Confirmar${ids.length ? ` (${ids.length})` : ''}`}</button></div></div>`;
   }
   if (real && estado.editTurma === g.id) {

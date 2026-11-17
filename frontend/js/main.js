@@ -1,11 +1,12 @@
 // Ponto de entrada do frontend: login, abas, renderização e eventos.
 
-import { estadoDoApp, logado, entrar, cadastrar, criarSenhaContato, instalar, sair, trocarSenha, criarSenhaCorrente } from './auth.js';
+import { estadoDoApp, logado, entrar, cadastrar, criarSenhaContato, verificarCpf, entrarCpf, criarSenhaCpf, instalar, sair, trocarSenha, criarSenhaCorrente } from './auth.js';
 import { quandoSessaoExpirar } from './api.js';
 import { estado, prefs, salvarPrefs, pode, visaoAtiva, aoMudar, avisar, carregarTudo, atualizarDoServidor, salvarPerfilAgora, mudarVisaoRoot, veErvas, veOferendas, veGuias, veAmaci, veTransparencia, temPendencia } from './estado.js';
 import { esc, toast, mascaraTel, guardarRascunhos, devolverRascunhos } from './util.js';
 import { iniciarAtualizacao } from './atualizacao.js';
 import { ehAcessoGrupo, PIN_NOVO, PIN_NOVO_MSG } from '/shared/permissoes.js';
+import { cpfValido } from '/shared/perfil.js';
 import { FOTOS_ATIVA } from '/shared/fotos.js';
 import * as gira from './telas/gira.js';
 import * as eventos from './telas/eventos.js';
@@ -55,12 +56,12 @@ function abrirTela(tab) {
 }
 let erroLogin = '';
 let emailLogin = '';
-let candidatosLogin = null;   // acesso da corrente: nomes parecidos para a pessoa confirmar
-let digitadoLogin = '';       // o nome como a pessoa digitou (para juntar o que ela preencheu antes)
-let pinLogin = null;          // acesso da corrente: a pessoa tem senha → { nome } (pede a senha)
+let candidatosLogin = null;   // palavra-passe da curimba: nomes parecidos para a pessoa confirmar
+let digitadoLogin = '';       // o segundo campo do login: a senha (ou o nome, na palavra-passe da curimba)
 let telaLogin = '';           // '' (entrar) · 'cadastro' (Criar cadastro) · 'esqueci' (Esqueci a senha) · 'criarsenha'
 let confirmarLogin = '';      // criar senha sem login: 'celular' ou 'email' (o outro contato do cadastro)
 let cadastroDigitado = null;  // o que a pessoa digitou no Criar cadastro (volta depois de um erro)
+let cadastroCpf = null;       // Criar cadastro depois do CPF: { cpf, existe, temSenha, confirmar }
 let instalado = true;
 let ultimoDesenho = '';    // aba + HTML do último desenho (a aba Vídeos não redesenha se nada mudou)
 let arrastoAnamnese = null;
@@ -96,16 +97,14 @@ function render() {
     renderConta();
     if (!logado()) {
       main.innerHTML = !instalado ? login.renderInstalacao(erroLogin)
-        : pinLogin ? login.renderPin(erroLogin, pinLogin.nome)
-        : telaLogin === 'cadastro' ? login.renderCadastro(erroLogin)
+        : telaLogin === 'cadastro' ? login.renderCadastro(erroLogin, cadastroCpf)
         : telaLogin === 'esqueci' ? login.renderEsqueci()
         : telaLogin === 'criarsenha' ? login.renderCriarSenha(erroLogin, emailLogin, confirmarLogin)
         : login.render(erroLogin, emailLogin, candidatosLogin);
-      if (instalado && !pinLogin && !telaLogin && ehAcessoGrupo(emailLogin)) login.ajustarCampoSenha(true);
+      if (instalado && !telaLogin && ehAcessoGrupo(emailLogin)) login.ajustarCampoSenha(true);
       if (telaLogin === 'cadastro' && cadastroDigitado) {
         for (const [id, v] of Object.entries(cadastroDigitado)) { const el = document.getElementById(id); if (el) el.value = v; }
       }
-      if (pinLogin) document.getElementById('l-pin')?.focus();
     }
     return;
   }
@@ -285,19 +284,19 @@ main.addEventListener('click', async (e) => {
   if (e.target.closest('[data-conta="recarregar-pagina"]')) { location.reload(); return; }
   // Calendário da aba Gira: abre o seletor de data também no computador.
   if (e.target.dataset.act === 'irdata' || e.target.dataset.act === 'iemdata') { try { e.target.showPicker(); } catch { /* o toque já abre */ } return; }
-  if (e.target.closest('[data-conta="voltarlogin"]')) { pinLogin = null; telaLogin = ''; cadastroDigitado = null; erroLogin = ''; render(); return; }
-  if (e.target.closest('[data-conta="cadastro"]')) { telaLogin = 'cadastro'; erroLogin = ''; render(); window.scrollTo(0, 0); return; }
+  if (e.target.closest('[data-conta="voltarlogin"]')) { telaLogin = ''; cadastroDigitado = null; cadastroCpf = null; erroLogin = ''; render(); return; }
+  if (e.target.closest('[data-conta="cadastro"]')) { telaLogin = 'cadastro'; cadastroCpf = null; erroLogin = ''; render(); window.scrollTo(0, 0); document.getElementById('c-cpf')?.focus(); return; }
+  if (e.target.closest('[data-conta="trocarcpf"]')) { cadastroCpf = null; erroLogin = ''; render(); document.getElementById('c-cpf')?.focus(); return; }
   if (e.target.closest('[data-conta="esqueci"]')) { telaLogin = 'esqueci'; erroLogin = ''; render(); return; }
-  // Acesso da corrente: a pessoa confirma qual nome cadastrado é o dela.
+  // Palavra-passe da curimba: a pessoa confirma qual nome cadastrado é o dela.
   const eu = e.target.closest('[data-soueu]');
   if (eu) {
     candidatosLogin = null;
     if (!eu.dataset.soueu) { render(); return; }
     try {
-      const r = await entrar(emailLogin, eu.dataset.soueu, digitadoLogin);
+      const r = await entrar(emailLogin, eu.dataset.soueu);
       erroLogin = '';
       if (r.candidatos) { candidatosLogin = r.candidatos; render(); return; }
-      if (r.precisaSenha) { pinLogin = { nome: r.nome }; render(); return; }
       await iniciar();
     } catch (err) { erroLogin = err.message; render(); }
     return;
@@ -383,6 +382,8 @@ main.addEventListener('pointercancel', (e) => terminarArrastoAnamnese(e, true));
 
 main.addEventListener('input', (e) => {
   if (e.target.id === 'l-email') login.ajustarCampoSenha(ehAcessoGrupo(e.target.value));
+  // Criar cadastro: com os 11 números de um CPF válido, já procura (sem precisar tocar em Continuar).
+  if (e.target.id === 'c-cpf' && e.target.form?.id === 'f-cadcpf' && cpfValido(e.target.value)) e.target.form.requestSubmit();
   if (e.target.id === 'ent-busca') { estado.entradaBusca = e.target.value; render(); }
   if (e.target.id === 'sn-busca') { estado.senhaBusca = e.target.value; render(); }
   if (e.target.id === 'us-busca') { estado.usBusca = e.target.value; render(); }
@@ -438,7 +439,6 @@ main.addEventListener('submit', async (e) => {
       const r = await entrar(emailLogin, digitadoLogin);
       erroLogin = '';
       if (r.candidatos) { candidatosLogin = r.candidatos; render(); return; }
-      if (r.precisaSenha) { pinLogin = { nome: r.nome }; render(); return; }
       if (r.criarSenha) { telaLogin = 'criarsenha'; confirmarLogin = r.confirmar; render(); document.getElementById('cs-conf')?.focus(); return; }
       await iniciar();
     } catch (err) {
@@ -457,28 +457,63 @@ main.addEventListener('submit', async (e) => {
       telaLogin = '';
       await iniciar();
     } catch (err) { erroLogin = err.message; render(); }
-  } else if (id === 'f-pin') {
-    const btn = document.getElementById('l-btn');
+  } else if (id === 'f-cadcpf') {
+    // Criar cadastro, 1º passo: o CPF já tem cadastro?
+    const btn = document.getElementById('c-btn');
+    if (btn.disabled) return;
+    const cpf = document.getElementById('c-cpf').value.trim();
+    btn.disabled = true;
+    btn.textContent = 'Procurando…';
+    try {
+      cadastroCpf = { cpf, ...(await verificarCpf(cpf)) };
+      erroLogin = '';
+      render();
+      window.scrollTo(0, 0);
+      document.querySelector('#f-cadsenha input:not([disabled]), #f-cadcriar input:not([disabled]), #f-cadastro input:not([disabled])')?.focus();
+    } catch (err) {
+      erroLogin = err.message;
+      render();
+      const el = document.getElementById('c-cpf');
+      if (el) { el.value = cpf; el.focus(); }
+    }
+  } else if (id === 'f-cadsenha') {
+    const btn = document.getElementById('c-btn');
     btn.disabled = true;
     btn.textContent = 'Entrando…';
     try {
-      await entrar(emailLogin, pinLogin.nome, digitadoLogin, document.getElementById('l-pin').value.trim());
+      const r = await entrarCpf(cadastroCpf.cpf, document.getElementById('c-senha').value.trim());
       erroLogin = '';
-      pinLogin = null;
+      if (r.criarSenha) { cadastroCpf = { ...cadastroCpf, temSenha: false, confirmar: r.confirmar }; render(); return; }
+      telaLogin = '';
+      cadastroCpf = null;
       await iniciar();
     } catch (err) { erroLogin = err.message; render(); }
-  } else if (id === 'f-cadastro') {
+  } else if (id === 'f-cadcriar') {
     const v = (x) => document.getElementById(x).value;
-    cadastroDigitado = Object.fromEntries(['c-nome', 'c-celular', 'c-email', 'c-cpf'].map((x) => [x, v(x)]));
     if (v('c-senha') !== v('c-senha2')) { erroLogin = 'As senhas não conferem.'; render(); return; }
     const btn = document.getElementById('c-btn');
     btn.disabled = true;
     btn.textContent = 'Criando…';
     try {
-      await cadastrar({ nome: v('c-nome').trim(), celular: v('c-celular'), email: v('c-email').trim(), cpf: v('c-cpf'), senha: v('c-senha') });
+      await criarSenhaCpf(cadastroCpf.cpf, v('c-conf').trim(), v('c-senha'));
+      erroLogin = '';
+      telaLogin = '';
+      cadastroCpf = null;
+      await iniciar();
+    } catch (err) { erroLogin = err.message; render(); }
+  } else if (id === 'f-cadastro') {
+    const v = (x) => document.getElementById(x).value;
+    cadastroDigitado = Object.fromEntries(['c-nome', 'c-celular', 'c-email'].map((x) => [x, v(x)]));
+    if (v('c-senha') !== v('c-senha2')) { erroLogin = 'As senhas não conferem.'; render(); return; }
+    const btn = document.getElementById('c-btn');
+    btn.disabled = true;
+    btn.textContent = 'Criando…';
+    try {
+      await cadastrar({ nome: v('c-nome').trim(), celular: v('c-celular'), email: v('c-email').trim(), cpf: cadastroCpf.cpf, senha: v('c-senha') });
       erroLogin = '';
       telaLogin = '';
       cadastroDigitado = null;
+      cadastroCpf = null;
       await iniciar();
     } catch (err) { erroLogin = err.message; render(); window.scrollTo(0, 0); }
   } else if (id === 'f-instalar') {
