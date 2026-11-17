@@ -4,8 +4,7 @@
 //   POST /api/auth/entrar   { email, senha } ou { cpf, senha }  → { token, usuario }
 //                           "email" pode ser e-mail ou celular: usuário, corrente ou aluno com a senha que criou (3 erros bloqueiam 15 min)
 //                           entrar de quem não tem senha → { criarSenha: true, confirmar: 'celular' | 'email' | null }
-//                           palavra-passe "curimba": a "senha" é o nome; se não for exato → { confirmar: true, candidatos }
-//                           ("cpj" e "alunos" acabaram: a resposta manda entrar com e-mail/celular ou achar o cadastro pelo CPF)
+//                           palavras-passe (cpj, alunos, curimba) acabaram: a resposta manda entrar com e-mail/celular ou achar o cadastro pelo CPF
 //   POST /api/auth/cadastrar { cpf, verificar: true }  → { existe, temSenha, confirmar? }  o CPF já é de alguém?
 //   POST /api/auth/cadastrar { nome, celular, email, cpf, senha }  autocadastro: entra como aluno sem turma → { token, usuario }
 //   POST /api/auth/criarSenhaContato { contato | cpf, confirmacao, senha }  cria a senha confirmando o outro contato → { token, usuario }
@@ -15,7 +14,7 @@
 //   GET  /api/auth/me       quem sou eu e o que posso fazer (logado)
 //   GET  /api/auth/inicio   a abertura do app em um pedido só → { me, versao, config, pessoas, giras, eventos, minhaCurimba, oracoes, entidadesApelidos }
 //                           ?atualizar=1 (voltar ao app): só as listas, sem "me"; com &versao= igual à atual, só { versao, semMudanca: true }.
-//                           Alunos recebem { eventos, config }; curimba, { eventos, minhaCurimba, config }.
+//                           Alunos recebem { eventos, oracoes, minhaCurimba, config }.
 //   GET  /api/auth/perfil   → { eu: { pessoaId, nome, perfil } | null, todos?: [{ pessoaId, nome, funcao, perfil }] (admin) }
 //   POST /api/auth/perfil   { perfil }  salva o meu perfil inteiro (curimba: só as informações pessoais)
 //                           Aluno (depois de criar a senha): só os próprios dados, informações, orixás e guias.
@@ -39,7 +38,7 @@ import { randomUUID } from 'node:crypto';
 import { temAbaPublica } from '../../shared/oferendas.js';
 import { gerarHash, conferirSenha, emitirToken, emitirTokenCorrente, emitirTokenGrupo, iguaisSeguro, limitarPorIp, SENHA_MINIMA } from '../_lib/senhas.js';
 import { permissoesDe, grupoAcesso, pode, PIN_VALIDO, PIN_NOVO, PIN_NOVO_MSG, PERMISSOES_GRUPO } from '../../shared/permissoes.js';
-import { normalizarNome, nomesParecidos } from '../../shared/ervas.js';
+import { normalizarNome } from '../../shared/ervas.js';
 import { cpfValido, normalizarPerfil, perfilDaFuncao, blocosAfinidade, ANAMNESE_TIPOS, ANAMNESE_PERGUNTA_MAX, ANAMNESE_TEXTO_MAX, ANAMNESE_SIMNAO, ANAMNESE_OPCOES_MAX, ANAMNESE_OPCAO_MAX, limparRespostaTexto, limparRespostaData } from '../../shared/perfil.js';
 import { LINHA_KEYS, compactarRetratos } from '../../shared/regras.js';
 
@@ -166,6 +165,8 @@ async function sessaoDe(c, versao) {
     return { token: await emitirToken(usuario), usuario: publico(usuario) };
   }
   if (c.tipo === 'corrente') {
+    // Junta no cadastro da pessoa o que ficou gravado só com o nome dela (pedidos de antes de ligar o acesso à pessoa).
+    await db.rpc('corrente_vincular', { chave: 'p:' + c.id, nome: c.nome, antigas: ['n:' + normalizarNome(c.nome)] });
     const s = await db.rpc('corrente_sessao', { pessoaId: c.id });
     const usuario = { id: null, nome: c.nome, email: '', papel: 'corrente', papelNome: s.papelNome, pessoaId: c.id, abas: s.abas };
     return { token: await emitirTokenCorrente(c.nome, c.id, s.pinVersao), usuario: publico(usuario) };
@@ -203,15 +204,13 @@ const opcional = (promessa) => promessa.catch((e) => {
   return undefined;
 });
 
-// Acessos de grupo (alunos, curimba): poucas listas, buscadas aqui.
+// Alunos: poucas listas, buscadas aqui.
 async function listasDoGrupo(eu) {
   const config = opcional(db.rpc('config_casa'));
-  if (eu.grupo === 'alunos') {
-    const [eventos, ora] = await Promise.all([eventosDe(eu), opcional(db.rpc('oracoes_listar'))]);
-    return { eventos, oracoes: ora ? await oracoes(eu, ora) : undefined, config: await config };
-  }
-  const [eventos, minhaCurimba] = await Promise.all([eventosDe(eu), db.rpc('curimba_minha', { alunoId: eu.curimbaAlunoId })]);
-  return { eventos, minhaCurimba, config: await config };
+  // Aluno da curimba (turma Curimba ou ligado na aba Curimba): as próprias aulas, como na corrente.
+  const [eventos, ora, minhaCurimba] = await Promise.all([eventosDe(eu), opcional(db.rpc('oracoes_listar')),
+    opcional(db.rpc('curimba_minha', { aluno: eu.alunoId }))]);
+  return { eventos, oracoes: ora ? await oracoes(eu, ora) : undefined, minhaCurimba, config: await config };
 }
 
 // Corrente e usuários: tudo de uma vez no banco (inicio_dados). Com a versão que o app já tem e nada mudado,
@@ -430,27 +429,9 @@ const acoes = {
       if (senha.length > 200) throw new HttpError(400, 'Senha longa demais.');
       return entrarPorCpf(req, b.cpf, senha);
     }
-    const grupo = grupoAcesso(b.email);
-    // As palavras-passe da corrente (cpj) e dos alunos acabaram: quem não lembra o que está no cadastro acha pelo CPF.
-    if (grupo === 'cpj' || grupo === 'alunos') {
+    // As palavras-passe (cpj, alunos, curimba) acabaram: quem não lembra o que está no cadastro acha pelo CPF.
+    if (grupoAcesso(b.email)) {
       throw new HttpError(400, 'A palavra-passe acabou. Entre com o seu e-mail ou celular e a senha. Sem senha, ou sem saber o que está no seu cadastro, toque em Criar cadastro e digite o seu CPF.');
-    }
-    // Curimba: a palavra-passe continua (ainda sem cadastro próprio); no lugar da senha vem o nome.
-    if (grupo === 'curimba') {
-      const lista = (await db.rpc('curimba_estado')).alunos;
-      const digitado = String(b.senha || '').replace(/\s+/g, ' ').trim();
-      if (digitado.length < 2 || digitado.length > 80) throw new HttpError(400, 'Digite o seu nome.');
-      const pessoa = lista.find((x) => normalizarNome(x.nome) === normalizarNome(digitado));
-      if (pessoa) {
-        const usuario = {
-          id: null, nome: pessoa.nome, email: '', papel: grupo, papelNome: 'Curimba',
-          grupo, pessoaId: null, permissoes: PERMISSOES_GRUPO[grupo] || [],
-        };
-        return { token: await emitirTokenGrupo(grupo, pessoa.id, pessoa.nome, 0), usuario: publico(usuario) };
-      }
-      const candidatos = nomesParecidos(lista.map((x) => x.nome), digitado);
-      if (candidatos.length) return { confirmar: true, candidatos };
-      throw new HttpError(404, 'Não encontrei esse nome neste cadastro. Confira a palavra-passe e tente de novo.');
     }
     const senha = String(b.senha || '');
     // Senha em branco vale: quem ainda não tem senha é levado a criar (criarSenha na resposta).

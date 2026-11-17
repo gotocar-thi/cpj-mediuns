@@ -14,6 +14,8 @@ export async function exigir(req, permissao) {
   const sessao = await lerToken(token);
   if (!sessao) throw new HttpError(401, 'Sessão expirada. Entre de novo.');
 
+  // A palavra-passe curimba acabou (v131): quem era de fora virou aluno e entra de novo pelo cadastro.
+  if (sessao.grupo === 'curimba') throw new HttpError(401, 'Sessão expirada. Entre de novo com o seu e-mail, celular ou CPF.');
   if (sessao.grupo) {
     const aluno = sessao.grupo === 'alunos'
       ? await db.rpc('aluno_acesso', { id: sessao.registroId })

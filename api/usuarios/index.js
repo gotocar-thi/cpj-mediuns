@@ -69,8 +69,8 @@ export default rota({
     const b = corpo(req);
     if (b.acao === 'perfil' || b.acao === 'excluirPerfil') return acaoPerfil(b);
     if (b.acao === 'config') return configCasa(await db.rpc('config_casa_salvar', { config: validarConfig(b.config) }));
-    // limpar: apaga a senha (as sessões abertas caem); a pessoa cria outra ao entrar (palavra-passe + celular, ou
-    // e-mail/celular confirmando o outro).
+    // limpar: apaga a senha (as sessões abertas caem); a pessoa cria outra ao entrar (e-mail, celular ou CPF,
+    // confirmando o celular ou o e-mail do cadastro).
     if (b.acao === 'pinAluno') {
       return db.rpc('aluno_pin_definir', { alunoId: validarId(b.alunoId, 'Aluno'), pinHash: await hashPinNovo(b) });
     }

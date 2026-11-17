@@ -106,7 +106,7 @@ export default rota({
     }
     if (req.query.lista === 'minhaCurimba') {
       const eu = await exigir(req);
-      if (eu.grupo === 'curimba') return db.rpc('curimba_minha', { alunoId: eu.curimbaAlunoId });
+      if (eu.grupo === 'alunos') return db.rpc('curimba_minha', { aluno: eu.alunoId });
       return eu.pessoaId ? db.rpc('curimba_minha', { pessoaId: eu.pessoaId }) : null;
     }
     if (req.query.lista === 'perfis') {

@@ -37,12 +37,10 @@ export const token = () => tok;
 
 export const estadoDoApp = () => chamar('GET', 'estado');
 
-// Palavra-passe da curimba com nome em dúvida: devolve { candidatos } e não entra.
-// Sem senha: devolve { criarSenha, confirmar } (vem antes: "confirmar" também vem preenchido nessa resposta).
+// Sem senha: devolve { criarSenha, confirmar } e não entra.
 export async function entrar(email, senha) {
   const r = await chamar('POST', 'entrar', { email, senha });
   if (r.criarSenha) return { criarSenha: true, confirmar: r.confirmar };
-  if (r.confirmar) return { candidatos: r.candidatos || [] };
   guardar(r.token);
   return {};
 }

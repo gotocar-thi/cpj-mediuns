@@ -39,17 +39,17 @@ function cardAlunos(C, editar) {
   if (editar && u.novoAluno) {
     const ja = new Set(C.alunos.map((a) => a.pessoaId).filter(Boolean));
     const ps = pessoasOrd().filter((p) => !ja.has(p.id));
-    h += `<div class="cur-novo"><div class="seg" role="group" aria-label="Quem é o aluno">${[['corrente', 'Da corrente'], ['fora', 'De fora']].map(([k, t]) => `<button data-act="curmodo" data-v="${k}" aria-pressed="${u.modo === k}">${t}</button>`).join('')}</div>
+    h += `<div class="cur-novo"><div class="seg" role="group" aria-label="Quem é o aluno">${[['corrente', 'Da corrente'], ['fora', 'Aluno']].map(([k, t]) => `<button data-act="curmodo" data-v="${k}" aria-pressed="${u.modo === k}">${t}</button>`).join('')}</div>
       <form id="f-cur-aluno" class="row" autocomplete="off">${u.modo === 'corrente'
         ? `<label class="field grow">Pessoa da corrente<select name="pessoa"><option value="">— escolha —</option>${ps.map((p) => `<option value="${p.id}">${esc(p.nome)}</option>`).join('')}</select></label>`
-        : '<label class="field grow">Nome<input type="text" name="nome" id="cur-nome" maxlength="80" placeholder="Nome de quem ainda não tem cadastro"></label>'}
+        : '<label class="field grow">Nome<input type="text" name="nome" id="cur-nome" maxlength="80" placeholder="Nome do aluno"></label>'}
       <button class="btn primary" type="submit">Adicionar</button></form>
-      <p class="muted" style="margin:0;font-size:.82rem">${u.modo === 'corrente' ? 'O aluno da corrente vê as próprias aulas na aba Gira.' : 'Quem é de fora fica só aqui na aba Curimba (não entra na corrente).'}</p></div>`;
+      <p class="muted" style="margin:0;font-size:.82rem">${u.modo === 'corrente' ? 'O aluno da corrente vê as próprias aulas na aba Gira.' : 'Quem não é da corrente entra em Alunos, na turma Curimba (se já é aluno, só liga). Ele entra no app como os outros alunos e vê as próprias aulas.'}</p></div>`;
   }
   if (!C.alunos.length) return h + '<p class="muted" style="margin:0">Nenhum aluno cadastrado.</p></div>';
   setTimeout(ajustarRolagem, 0);
   return h + `<div class="cur-lista" data-rolar="5">${C.alunos.map((a) => `<div class="cur-al"><span class="cur-nm">${esc(a.nome)}</span>
-    <span class="cur-tag${a.pessoaId ? ' cor' : ''}">${a.pessoaId ? 'Corrente' : 'De fora'}</span>
+    <span class="cur-tag${a.pessoaId ? ' cor' : ''}">${a.pessoaId ? 'Corrente' : a.alunoId ? 'Aluno' : 'Sem cadastro'}</span>
     ${editar ? `<button class="btn small" data-act="curexcluir" data-tipo="aluno" data-id="${a.id}" title="Excluir aluno" aria-label="Excluir ${esc(a.nome)}">🗑️</button>` : ''}</div>`).join('')}</div></div>`;
 }
 

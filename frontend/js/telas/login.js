@@ -4,21 +4,13 @@ import { esc } from '../util.js';
 
 const LOGO = `<div class="logo-terreiro"><img src="/img/terreiro.png" width="200" height="200" alt="Casa do Pai João · Terreiro de Umbanda"></div>`;
 
-export function render(erro, email = '', candidatos = null) {
-  if (candidatos) {
-    return `${LOGO}<div class="card login">
-      <h2>Quem é você?</h2>
-      <p class="muted" style="margin:0;font-size:.92rem">Não encontrei exatamente esse nome. Toque no seu nome como está cadastrado:</p>
-      <div class="candidatos">${candidatos.map((n) => `<button class="btn" data-soueu="${esc(n)}">${esc(n)}</button>`).join('')}</div>
-      <button class="btn link" data-soueu="">Não sou nenhum destes · digitar de novo</button>
-    </div>`;
-  }
+export function render(erro, email = '') {
   return `${LOGO}<div class="card login">
     <h2>Entrar</h2>
     ${erro ? `<div class="erro" role="alert">${esc(erro)}</div>` : ''}
     <form id="f-login">
       <label class="field">E-mail ou celular<input type="text" inputmode="email" id="l-email" autocomplete="username" autocapitalize="none" spellcheck="false" required value="${esc(email)}"></label>
-      <label class="field"><span id="l-senha-rotulo">Senha</span><input type="password" id="l-senha" autocomplete="current-password"></label>
+      <label class="field">Senha<input type="password" id="l-senha" autocomplete="current-password"></label>
       <button class="btn primary" type="submit" id="l-btn">Entrar</button>
     </form>
     <p class="muted" style="margin:0;font-size:.85rem">Primeiro acesso ou senha apagada pela administração? Digite o e-mail ou o celular, deixe a senha em branco e toque em Entrar. Não sabe o que está no seu cadastro? Toque em <b>Criar cadastro</b> e digite o seu CPF: se você já tem cadastro, o app acha.</p>
@@ -136,31 +128,4 @@ export function renderInstalacao(erro) {
       <button class="btn primary" type="submit" id="i-btn">Criar admin e entrar</button>
     </form>
   </div>`;
-}
-
-// Com a palavra-passe da curimba no primeiro campo, o segundo vira "Seu nome".
-export function ajustarCampoSenha(ehCorrente, preservarValor = false) {
-  const rot = document.getElementById('l-senha-rotulo');
-  const inp = document.getElementById('l-senha');
-  if (!rot || !inp) return;
-  // Na palavra-passe o botão procura o nome na lista; com e-mail e senha, entra.
-  const btn = document.getElementById('l-btn');
-  if (btn && !btn.disabled) btn.textContent = ehCorrente ? 'Procurar usuário' : 'Entrar';
-  if (ehCorrente && inp.type !== 'text') {
-    const valor = inp.value;
-    rot.textContent = 'Seu nome';
-    inp.type = 'text';
-    inp.required = true;
-    inp.value = preservarValor ? valor : '';
-    inp.autocomplete = 'name';
-    inp.placeholder = 'Seu nome como está cadastrado';
-  } else if (!ehCorrente && inp.type !== 'password') {
-    const valor = inp.value;
-    rot.textContent = 'Senha';
-    inp.type = 'password';
-    inp.required = false;
-    inp.value = preservarValor ? valor : '';
-    inp.autocomplete = 'current-password';
-    inp.placeholder = '';
-  }
 }

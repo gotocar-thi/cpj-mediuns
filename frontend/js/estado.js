@@ -127,24 +127,10 @@ export async function carregarTudo() {
     estado.eventos = r.eventos;
     estado.pessoas = [];
     estado.giras = {};
-    estado.minhaCurimba = null;
+    estado.minhaCurimba = r.minhaCurimba?.aulas ? r.minhaCurimba : null;   // aluno da curimba: as próprias aulas
     estado.curimba = null;
     estado.oracoes = r.oracoes || [];
     estado.alunos = null;
-    prefs.tab = 'gira';
-    prefs.data = hoje();
-    estado.pronto = true;
-    avisar();
-    return;
-  }
-  if (me.grupo === 'curimba') {
-    estado.pessoas = [];
-    estado.giras = {};
-    estado.eventos = r.eventos;
-    estado.minhaCurimba = r.minhaCurimba;
-    estado.curimba = null;
-    estado.alunos = null;
-    estado.oracoes = [];
     prefs.tab = 'gira';
     prefs.data = hoje();
     estado.pronto = true;
@@ -208,16 +194,11 @@ export async function atualizarDoServidor() {
     if (r.semMudanca) { await atualizarAbaAberta(); return; }
     if (r.versao) estado.versaoDados = r.versao;
     if (r.config) definirConfig(r.config);
-    if (estado.me?.grupo === 'curimba') {
-      estado.eventos = r.eventos;
-      estado.minhaCurimba = r.minhaCurimba;
-      avisar();
-      return;
-    }
-    // Alunos: só os eventos e os próprios pedidos de oração.
+    // Alunos: só os eventos, os próprios pedidos de oração e as aulas de curimba.
     if (estado.me?.grupo === 'alunos') {
       estado.eventos = r.eventos || estado.eventos;
       estado.oracoes = r.oracoes || estado.oracoes;
+      if (r.minhaCurimba !== undefined) estado.minhaCurimba = r.minhaCurimba?.aulas ? r.minhaCurimba : null;
       avisar();
       return;
     }

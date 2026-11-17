@@ -5,7 +5,7 @@ import { quandoSessaoExpirar } from './api.js';
 import { estado, prefs, salvarPrefs, pode, visaoAtiva, aoMudar, avisar, carregarTudo, atualizarDoServidor, salvarPerfilAgora, mudarVisaoRoot, veErvas, veOferendas, veGuias, veAmaci, veTransparencia, temPendencia } from './estado.js';
 import { esc, toast, mascaraTel, guardarRascunhos, devolverRascunhos } from './util.js';
 import { iniciarAtualizacao } from './atualizacao.js';
-import { ehAcessoGrupo, PIN_NOVO, PIN_NOVO_MSG } from '/shared/permissoes.js';
+import { PIN_NOVO, PIN_NOVO_MSG } from '/shared/permissoes.js';
 import { cpfValido } from '/shared/perfil.js';
 import { FOTOS_ATIVA } from '/shared/fotos.js';
 import * as gira from './telas/gira.js';
@@ -56,8 +56,6 @@ function abrirTela(tab) {
 }
 let erroLogin = '';
 let emailLogin = '';
-let candidatosLogin = null;   // palavra-passe da curimba: nomes parecidos para a pessoa confirmar
-let digitadoLogin = '';       // o segundo campo do login: a senha (ou o nome, na palavra-passe da curimba)
 let telaLogin = '';           // '' (entrar) · 'cadastro' (Criar cadastro) · 'esqueci' (Esqueci a senha) · 'criarsenha'
 let confirmarLogin = '';      // criar senha sem login: 'celular' ou 'email' (o outro contato do cadastro)
 let cadastroDigitado = null;  // o que a pessoa digitou no Criar cadastro (volta depois de um erro)
@@ -100,8 +98,7 @@ function render() {
         : telaLogin === 'cadastro' ? login.renderCadastro(erroLogin, cadastroCpf)
         : telaLogin === 'esqueci' ? login.renderEsqueci()
         : telaLogin === 'criarsenha' ? login.renderCriarSenha(erroLogin, emailLogin, confirmarLogin)
-        : login.render(erroLogin, emailLogin, candidatosLogin);
-      if (instalado && !telaLogin && ehAcessoGrupo(emailLogin)) login.ajustarCampoSenha(true);
+        : login.render(erroLogin, emailLogin);
       if (telaLogin === 'cadastro' && cadastroDigitado) {
         for (const [id, v] of Object.entries(cadastroDigitado)) { const el = document.getElementById(id); if (el) el.value = v; }
       }
@@ -288,19 +285,6 @@ main.addEventListener('click', async (e) => {
   if (e.target.closest('[data-conta="cadastro"]')) { telaLogin = 'cadastro'; cadastroCpf = null; erroLogin = ''; render(); window.scrollTo(0, 0); document.getElementById('c-cpf')?.focus(); return; }
   if (e.target.closest('[data-conta="trocarcpf"]')) { cadastroCpf = null; erroLogin = ''; render(); document.getElementById('c-cpf')?.focus(); return; }
   if (e.target.closest('[data-conta="esqueci"]')) { telaLogin = 'esqueci'; erroLogin = ''; render(); return; }
-  // Palavra-passe da curimba: a pessoa confirma qual nome cadastrado é o dela.
-  const eu = e.target.closest('[data-soueu]');
-  if (eu) {
-    candidatosLogin = null;
-    if (!eu.dataset.soueu) { render(); return; }
-    try {
-      const r = await entrar(emailLogin, eu.dataset.soueu);
-      erroLogin = '';
-      if (r.candidatos) { candidatosLogin = r.candidatos; render(); return; }
-      await iniciar();
-    } catch (err) { erroLogin = err.message; render(); }
-    return;
-  }
   const el = e.target.closest('[data-act]');
   if (!el || el.tagName === 'SELECT' || el.tagName === 'INPUT') return;
   const a = el.dataset.act;
@@ -314,7 +298,6 @@ main.addEventListener('click', async (e) => {
 
 main.addEventListener('change', (e) => {
   const t = e.target;
-  if (t.id === 'l-email') { login.ajustarCampoSenha(ehAcessoGrupo(t.value)); return; }
   if (t.id === 'f-ent') { gira.mudancas.entidade(t); return; }
   if (t.classList?.contains('cd-resp-txt')) { gira.mudancas.cdresp(t); return; }
   // Transparência: troca de mês e o interruptor Visível para a corrente.
@@ -324,10 +307,6 @@ main.addEventListener('change', (e) => {
   const tela = TELAS[prefs.tab];
   const fn = t.dataset.act && tela?.mudancas && tela.mudancas[t.dataset.act];
   if (fn) fn(t);
-});
-
-main.addEventListener('focusout', (e) => {
-  if (e.target.id === 'l-email') login.ajustarCampoSenha(ehAcessoGrupo(e.target.value));
 });
 
 main.addEventListener('pointerdown', (e) => {
@@ -381,7 +360,6 @@ main.addEventListener('pointercancel', (e) => terminarArrastoAnamnese(e, true));
 
 
 main.addEventListener('input', (e) => {
-  if (e.target.id === 'l-email') login.ajustarCampoSenha(ehAcessoGrupo(e.target.value));
   // Criar cadastro: com os 11 números de um CPF válido, já procura (sem precisar tocar em Continuar).
   if (e.target.id === 'c-cpf' && e.target.form?.id === 'f-cadcpf' && cpfValido(e.target.value)) e.target.form.requestSubmit();
   if (e.target.id === 'ent-busca') { estado.entradaBusca = e.target.value; render(); }
@@ -430,15 +408,12 @@ main.addEventListener('submit', async (e) => {
   if (id === 'f-login') {
     const btn = document.getElementById('l-btn');
     emailLogin = document.getElementById('l-email').value.trim();
-    const campoSenha = document.getElementById('l-senha');
-    digitadoLogin = campoSenha.value;
-    login.ajustarCampoSenha(ehAcessoGrupo(emailLogin), true);
+    const senha = document.getElementById('l-senha').value;
     btn.disabled = true;
-    btn.textContent = ehAcessoGrupo(emailLogin) ? 'Procurando usuário…' : 'Entrando…';
+    btn.textContent = 'Entrando…';
     try {
-      const r = await entrar(emailLogin, digitadoLogin);
+      const r = await entrar(emailLogin, senha);
       erroLogin = '';
-      if (r.candidatos) { candidatosLogin = r.candidatos; render(); return; }
       if (r.criarSenha) { telaLogin = 'criarsenha'; confirmarLogin = r.confirmar; render(); document.getElementById('cs-conf')?.focus(); return; }
       await iniciar();
     } catch (err) {

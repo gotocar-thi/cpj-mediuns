@@ -9,7 +9,7 @@
 // Estrutura: veja db/ESTRUTURA-ESQUEMA.md para o mapa de versões, domínios e
 // quais migrações foram testadas no Postgres.
 
-export const VERSAO = 130;  // v130: Criar cadastro acha o cadastro pelo CPF (hash do CPF da corrente)
+export const VERSAO = 131;  // v131: alunos de curimba de fora da corrente viram alunos da turma Curimba
 
 import { PERFIS_PADRAO } from '../shared/permissoes.js';
 
@@ -5745,5 +5745,126 @@ export const MIGRACOES = [
               'bloqueado', exists (select 1 from login_falhas f where f.email = c.chave and f.bloqueado_ate > now()))
               order by c.ordem, lower(c.nome)), '[]'::jsonb)
        from c
+   $$`,
+  // ================================================== v131: alunos de curimba de fora da corrente viram alunos (turma Curimba)
+  // Quem é da corrente continua ligado à pessoa (pessoa_id). Quem era "de fora" (só o nome, entrava pela palavra-passe
+  // curimba, que acabou) vira aluno da turma Curimba em Alunos e entra como os outros alunos (e-mail, celular ou CPF).
+  // As aulas e a presença continuam na mesma linha de curimba_alunos, agora ligada ao aluno (aluno_id).
+  `alter table curimba_alunos add column if not exists aluno_id uuid references alunos (id) on delete set null`,
+  `create unique index if not exists curimba_alunos_aluno on curimba_alunos (aluno_id) where aluno_id is not null`,
+  // A turma Curimba: guardada pelo id (o admin pode renomear); se foi removida, é criada de novo quando precisar.
+  `create or replace function turma_curimba()
+   returns uuid language plpgsql as $$
+   declare v uuid;
+   begin
+     select t.id into v from sistema s join turmas_alunos t on t.id::text = s.valor where s.chave = 'turma_curimba';
+     if v is null then
+       select id into v from turmas_alunos where lower(btrim(nome)) = 'curimba';
+       if v is null then insert into turmas_alunos (nome) values ('Curimba') returning id into v; end if;
+       insert into sistema (chave, valor) values ('turma_curimba', v::text)
+       on conflict (chave) do update set valor = excluded.valor;
+     end if;
+     return v;
+   end;
+   $$`,
+  `select turma_curimba()`,
+  // Aluno que entra na turma Curimba (cadastro, mudança de turma) vira aluno de curimba: liga à linha de mesmo nome
+  // ainda sem cadastro (de antes desta versão) ou cria uma linha nova.
+  `create or replace function alunos_turma_curimba()
+   returns trigger language plpgsql as $$
+   declare v_turma uuid;
+   begin
+     select t.id into v_turma from sistema s join turmas_alunos t on t.id::text = s.valor where s.chave = 'turma_curimba';
+     if v_turma is null or new.turma_id is distinct from v_turma or new.saida is not null then return new; end if;
+     if tg_op = 'UPDATE' and old.turma_id is not distinct from new.turma_id then return new; end if;
+     if exists (select 1 from curimba_alunos where aluno_id = new.id) then return new; end if;
+     update curimba_alunos set aluno_id = new.id
+      where id = (select id from curimba_alunos where aluno_id is null and pessoa_id is null
+                   and lower(btrim(nome)) = lower(btrim(new.nome)) limit 1);
+     if not found then insert into curimba_alunos (nome, aluno_id) values (new.nome, new.id); end if;
+     return new;
+   end;
+   $$`,
+  `drop trigger if exists alunos_turma_curimba on alunos`,
+  `create trigger alunos_turma_curimba after insert or update of turma_id on alunos
+   for each row execute function alunos_turma_curimba()`,
+  // UP CPJ: o aluno vira pessoa da corrente com o mesmo nome; as aulas de curimba vão junto (a linha passa para a pessoa).
+  `create or replace function pessoas_curimba_do_aluno()
+   returns trigger language plpgsql as $$
+   begin
+     if not exists (select 1 from curimba_alunos where pessoa_id = new.id) then
+       update curimba_alunos ca set pessoa_id = new.id
+         from alunos al
+        where ca.aluno_id = al.id and ca.pessoa_id is null and lower(btrim(al.nome)) = lower(btrim(new.nome));
+     end if;
+     return new;
+   end;
+   $$`,
+  `drop trigger if exists pessoas_curimba_do_aluno on pessoas`,
+  `create trigger pessoas_curimba_do_aluno after insert on pessoas
+   for each row execute function pessoas_curimba_do_aluno()`,
+  // Os de fora de antes: liga ao aluno de mesmo nome que já existir; os outros viram alunos da turma Curimba (o gatilho liga).
+  `update curimba_alunos ca set aluno_id = al.id
+     from alunos al
+    where ca.pessoa_id is null and ca.aluno_id is null and lower(btrim(al.nome)) = lower(btrim(ca.nome))
+      and not exists (select 1 from curimba_alunos x where x.aluno_id = al.id)`,
+  `insert into alunos (nome, turma_id)
+   select btrim(ca.nome), turma_curimba() from curimba_alunos ca
+    where ca.pessoa_id is null and ca.aluno_id is null
+   on conflict do nothing`,
+  `create or replace function curimba_estado(p jsonb default '{}'::jsonb)
+   returns jsonb language sql stable as $$
+     select jsonb_build_object(
+       'alunos', coalesce((select jsonb_agg(jsonb_build_object('id', a.id, 'nome', coalesce(pe.nome, al.nome, a.nome), 'pessoaId', a.pessoa_id,
+                                                               'alunoId', a.aluno_id)
+                                            order by lower(coalesce(pe.nome, al.nome, a.nome)))
+                           from curimba_alunos a left join pessoas pe on pe.id = a.pessoa_id left join alunos al on al.id = a.aluno_id
+                          where al.id is null or al.saida is null), '[]'::jsonb),
+       'aulas', coalesce((select jsonb_agg(jsonb_build_object('id', id, 'data', data, 'nome', nome) order by data) from curimba_aulas), '[]'::jsonb),
+       'presencas', coalesce((select jsonb_agg(jsonb_build_object('aulaId', aula_id, 'alunoId', aluno_id, 'status', status)) from curimba_presencas), '[]'::jsonb))
+   $$`,
+  // p = { pessoaId } (da corrente) ou { nome } (aluno: o de mesmo nome, ou um novo na turma Curimba).
+  `create or replace function curimba_aluno_criar(p jsonb)
+   returns jsonb language plpgsql as $$
+   declare
+     v_pessoa uuid := nullif(p ->> 'pessoaId', '')::uuid;
+     v_nome text := btrim(coalesce(p ->> 'nome', ''));
+     v_aluno uuid;
+   begin
+     if v_pessoa is not null then
+       select nome into v_nome from pessoas where id = v_pessoa;
+       if not found then raise exception 'Pessoa não encontrada.'; end if;
+       if exists (select 1 from curimba_alunos where pessoa_id = v_pessoa) then raise exception 'Essa pessoa já é aluna da curimba.'; end if;
+       insert into curimba_alunos (nome, pessoa_id) values (v_nome, v_pessoa);
+       return curimba_estado();
+     end if;
+     if v_nome = '' then raise exception 'Digite o nome.'; end if;
+     if exists (select 1 from curimba_alunos a left join pessoas pe on pe.id = a.pessoa_id left join alunos al on al.id = a.aluno_id
+                 where lower(btrim(coalesce(pe.nome, al.nome, a.nome))) = lower(v_nome)) then
+       raise exception 'Já existe um aluno com esse nome.';
+     end if;
+     if exists (select 1 from pessoas where saida is null and lower(btrim(nome)) = lower(v_nome)) then
+       raise exception 'Essa pessoa é da corrente: escolha em "Da corrente".';
+     end if;
+     select id into v_aluno from alunos where lower(btrim(nome)) = lower(v_nome);
+     if v_aluno is null then
+       insert into alunos (nome, turma_id) values (v_nome, turma_curimba()) returning id into v_aluno;
+     elsif exists (select 1 from alunos where id = v_aluno and saida is not null) then
+       raise exception 'Esse nome é de um ex-aluno: traga de volta em Pessoas → Alunos → Ex-alunos e ponha na turma Curimba.';
+     end if;
+     insert into curimba_alunos (nome, aluno_id) select v_nome, v_aluno
+      where not exists (select 1 from curimba_alunos where aluno_id = v_aluno);
+     return curimba_estado();
+   end;
+   $$`,
+  // As aulas de quem está logado: { alunoId } (linha de curimba_alunos), { aluno } (aluno de Alunos) ou { pessoaId }.
+  `create or replace function curimba_minha(p jsonb)
+   returns jsonb language sql stable as $$
+     select jsonb_build_object('aulas', coalesce((select jsonb_agg(jsonb_build_object('data', au.data, 'nome', au.nome, 'status', cp.status) order by au.data)
+                                                  from curimba_aulas au left join curimba_presencas cp on cp.aula_id = au.id and cp.aluno_id = a.id), '[]'::jsonb))
+     from curimba_alunos a
+     where case when nullif(p ->> 'alunoId', '') is not null then a.id = (p ->> 'alunoId')::uuid
+                when nullif(p ->> 'aluno', '') is not null then a.aluno_id = (p ->> 'aluno')::uuid
+                else a.pessoa_id = nullif(p ->> 'pessoaId', '')::uuid end
    $$`,
 ];
