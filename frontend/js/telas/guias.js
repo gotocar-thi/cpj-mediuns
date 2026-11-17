@@ -230,7 +230,7 @@ function grupoAdmin(g) {
   return h + '</div></div>';
 }
 
-// Cabeçalho de bloco de admin que abre e fecha (Grupos, Exportar pedido): começa minimizado.
+// Cabeçalho de bloco de admin que abre e fecha (Cadastro de grupos e itens, Exportar pedido): começa minimizado.
 const cabBloco = (k, titulo, count = '') => {
   const ab = ui.blocos.has(k);
   return `<button class="grp-h dobra" data-act="guiabloco" data-k="${k}" aria-expanded="${ab}"><h2>${titulo}</h2><span class="count">${count} <span class="seta" aria-hidden="true">${ab ? '▾' : '▸'}</span></span></button>`;
@@ -239,8 +239,8 @@ const cabBloco = (k, titulo, count = '') => {
 function cardGrupos(G) {
   // Com um item em edição, fica aberto (senão o formulário sumiria).
   const ab = ui.blocos.has('grupos') || !!ui.item || !!ui.grupoRen;
-  if (!ab) return `<div class="card adm">${cabBloco('grupos', 'Grupos', G.grupos.length)}</div>`;
-  return `<div class="card adm">${cabBloco('grupos', 'Grupos', G.grupos.length)}
+  if (!ab) return `<div class="card adm">${cabBloco('grupos', 'Cadastro de grupos e itens', G.grupos.length)}</div>`;
+  return `<div class="card adm">${cabBloco('grupos', 'Cadastro de grupos e itens', G.grupos.length)}
     <form id="f-guia-grupo" class="row" autocomplete="off"><label class="field" style="flex:1">Novo grupo<input type="text" id="gg-nova" maxlength="80" placeholder="Descrição do grupo" required></label>
       <button class="btn primary" type="submit">${rot('grupo', 'Cadastrar grupo', 'Salvando…')}</button></form>
     ${G.grupos.length ? `<div class="gg-lista">${G.grupos.map(grupoAdmin).join('')}</div>` : '<p class="muted" style="margin:0">Nenhum grupo cadastrado ainda.</p>'}</div>`;

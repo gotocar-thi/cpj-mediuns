@@ -20,6 +20,7 @@
 //                  { acao: 'condutaCancelar', id } (quem abriu, antes de lido: apaga o relato)
 // GET  /api/giras?lista=atrasos[&atualizar=1] — pagamentos em atraso da conta B do ASAAS: cada um os seus, o root todos (api/_lib/atrasos.js)
 //                  → { ativa, relatos }
+// GET  /api/giras?lista=transparencia&mes=AAAA-MM[&atualizar=1] · POST { acao: 'transparencia', op, ... } — Painel da Transparência (api/_lib/transparencia.js)
 // GET  /api/giras?lista=fotos — álbuns e fotos (aba Fotos), com links assinados do R2  → { albuns, fotos, usado, limite, configurado }
 // POST /api/giras  { acao: 'fotoAlbum', id?, data, nome }  → { ...fotos, albumId } (com id = editar: só admin)
 //                  { acao: 'fotoEnviar', albumId, foto, miniatura (JPEG em base64), largura, altura }  → { ok }
@@ -32,6 +33,7 @@ import { acaoVideo } from '../_lib/videos.js';
 import { ACOES_ORACOES, oracoes, acaoOracao } from '../_lib/oracoes.js';
 import { ACOES_CONDUTA, condutas, acaoConduta } from '../_lib/conduta.js';
 import { atrasos } from '../_lib/atrasos.js';
+import { transparencia, acaoTransparencia } from '../_lib/transparencia.js';
 import { eventosDe } from '../_lib/eventos.js';
 import { ACOES_FOTOS, exigirFotosAtiva, fotosEstado, acaoFoto } from '../_lib/fotos.js';
 import { pode } from '../../shared/permissoes.js';
@@ -86,6 +88,7 @@ export default rota({
       return condutas(eu);
     }
     if (req.query.lista === 'atrasos') return atrasos(await exigir(req), req.query.atualizar === '1');
+    if (req.query.lista === 'transparencia') return transparencia(await exigir(req), req.query);
     if (req.query.lista === 'ausencias') {
       await exigir(req, 'giras:editar');
       return db.rpc('ausencias_previas_listar');
@@ -105,6 +108,7 @@ export default rota({
       await exigir(req, 'usuarios:gerenciar');
       return db.rpc('entidades_apelidos_salvar', { apelidos: validarApelidos(b.apelidos) });
     }
+    if (b.acao === 'transparencia') return acaoTransparencia(await exigir(req), b, req.query);
     if (b.acao === 'video' || b.acao === 'excluirVideo') {
       await exigir(req, 'videos:editar');
       return acaoVideo(b);

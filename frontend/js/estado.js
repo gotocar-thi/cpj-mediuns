@@ -22,6 +22,7 @@ export const estado = {
   ervasHist: null,     // Histórico de compras (admin): lista, undefined = carregando, { erro }
   guias: null,         // aba Compras (GET /api/oferendas?lista=guias)
   amaci: null,         // aba Amaci (GET /api/pessoas?lista=amaci)
+  transparencia: null, // aba Transparência (GET /api/giras?lista=transparencia)
   asaas: null,         // aba ASAAS: root e quem tem a aba no perfil (GET /api/oferendas?lista=asaas)
   ervasPara: null,     // admin montando o pedido de outra pessoa: { chave?, nome, itens: { ervaId: qtd } }    // 'fornecedor' | 'cobranca' (exportação aberta na aba Ervas)
   pronto: false,
@@ -803,6 +804,27 @@ export async function acaoAmaci(op, dados = {}) {
   try {
     estado.amaci = await api('POST', '/pessoas', { acao: 'amaci', op, ...dados });
     if (op === 'publicar') estado.me = { ...estado.me, amaciPublicada: !!estado.amaci.publicada };
+    avisar();
+    return true;
+  } catch (e) {
+    toast(e.message);
+    avisar();
+    return false;
+  }
+}
+
+// ---------- Painel da Transparência ----------
+// Quem edita sempre vê; quem tem Ver no perfil também; a corrente (não alunos nem curimba), quando está visível.
+export const veTransparencia = () => !estado.me?.grupo && (pode('transparencia:ver') || pode('transparencia:editar') || !!estado.me?.transparenciaPublicada);
+export async function carregarTransparencia(mes = '', atualizar = false) {
+  const q = new URLSearchParams({ lista: 'transparencia', ...(mes ? { mes } : {}), ...(atualizar ? { atualizar: '1' } : {}) });
+  try { estado.transparencia = await api('GET', '/giras?' + q); } catch (e) { estado.transparencia = { erro: e.message, mes }; }
+  avisar();
+}
+export async function acaoTransparencia(op, dados = {}) {
+  try {
+    estado.transparencia = await api('POST', '/giras', { acao: 'transparencia', op, mes: estado.transparencia?.mes, ...dados });
+    if (op === 'publicar') estado.me = { ...estado.me, transparenciaPublicada: !!estado.transparencia.publicada };
     avisar();
     return true;
   } catch (e) {

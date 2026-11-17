@@ -2,7 +2,7 @@
 
 import { estadoDoApp, logado, entrar, cadastrar, criarSenhaContato, instalar, sair, trocarSenha, criarSenhaCorrente } from './auth.js';
 import { quandoSessaoExpirar } from './api.js';
-import { estado, prefs, salvarPrefs, pode, visaoAtiva, aoMudar, avisar, carregarTudo, atualizarDoServidor, salvarPerfilAgora, mudarVisaoRoot, veErvas, veOferendas, veGuias, veAmaci, temPendencia } from './estado.js';
+import { estado, prefs, salvarPrefs, pode, visaoAtiva, aoMudar, avisar, carregarTudo, atualizarDoServidor, salvarPerfilAgora, mudarVisaoRoot, veErvas, veOferendas, veGuias, veAmaci, veTransparencia, temPendencia } from './estado.js';
 import { esc, toast, mascaraTel, guardarRascunhos, devolverRascunhos } from './util.js';
 import { iniciarAtualizacao } from './atualizacao.js';
 import { ehAcessoGrupo, PIN_NOVO, PIN_NOVO_MSG } from '/shared/permissoes.js';
@@ -28,6 +28,7 @@ const SOB_DEMANDA = {
   guias: () => import('./telas/guias.js'),
   amaci: () => import('./telas/amaci.js'),
   asaas: () => import('./telas/asaas.js'),
+  transparencia: () => import('./telas/transparencia.js'),
   perfil: () => import('./telas/perfil.js'),
   videos: () => import('./telas/videos.js'),
   fotos: () => import('./telas/fotos.js'),
@@ -110,10 +111,10 @@ function render() {
   }
   const visao = visaoAtiva();
   // Abas que o perfil pode ver.
-  let VE = { usuarios: pode('usuarios:gerenciar'), asaas: pode('asaas:ver'), ervas: veErvas(), oferendas: veOferendas(), guias: veGuias(), amaci: veAmaci(),
+  let VE = { usuarios: pode('usuarios:gerenciar'), asaas: pode('asaas:ver'), transparencia: veTransparencia(), ervas: veErvas(), oferendas: veOferendas(), guias: veGuias(), amaci: veAmaci(),
     pessoas: pode('pessoas:ver') || pode('alunos:ver'), hist: pode('historico:ver'), perfil: pode('perfil:ver'), curimba: pode('curimba:ver'), videos: pode('videos:ver') || !!estado.me.videosPublicada, fotos: FOTOS_ATIVA && pode('fotos:ver'), gira: true, agenda: true };
-  if (visao === 'alunos') VE = { usuarios: false, asaas: false, ervas: false, oferendas: veOferendas(), guias: veGuias(), amaci: veAmaci(), pessoas: false, hist: false, perfil: true, curimba: false, videos: false, fotos: false, gira: true, agenda: false };
-  if (visao === 'curimba') VE = { usuarios: false, asaas: false, ervas: false, oferendas: false, guias: veGuias(), amaci: false, pessoas: false, hist: false, perfil: false, curimba: false, videos: !!estado.me.videosPublicada, fotos: false, gira: true, agenda: false };
+  if (visao === 'alunos') VE = { usuarios: false, asaas: false, transparencia: false, ervas: false, oferendas: veOferendas(), guias: veGuias(), amaci: veAmaci(), pessoas: false, hist: false, perfil: true, curimba: false, videos: false, fotos: false, gira: true, agenda: false };
+  if (visao === 'curimba') VE = { usuarios: false, asaas: false, transparencia: false, ervas: false, oferendas: false, guias: veGuias(), amaci: false, pessoas: false, hist: false, perfil: false, curimba: false, videos: !!estado.me.videosPublicada, fotos: false, gira: true, agenda: false };
   if (!VE[prefs.tab]) prefs.tab = 'gira';
   tabs.hidden = false;
   Object.entries(VE).forEach(([k, v]) => { tabs.querySelector(`[data-tab="${k}"]`).hidden = !v; });
@@ -191,6 +192,7 @@ quandoSessaoExpirar(() => {
   estado.guias = null;
   estado.amaci = null;
   estado.asaas = null;
+  estado.transparencia = null;
   estado.perfil = null;
   estado.curimba = null;
   estado.videos = null;
@@ -215,6 +217,8 @@ tabs.addEventListener('click', (e) => {
   // Amaci: busca de novo e volta ao último orixá liberado.
   if (b.dataset.tab === 'amaci') { estado.amaci = null; TELAS.amaci?.limpar(); }
   if (b.dataset.tab === 'asaas') { estado.asaas = null; TELAS.asaas?.limpar(); }
+  // Transparência: busca de novo (o ASAAS muda) e volta ao mês atual.
+  if (b.dataset.tab === 'transparencia') { estado.transparencia = null; TELAS.transparencia?.limpar(); }
   if (b.dataset.tab === 'perfil') estado.perfil = null;
   // Curimba: busca de novo e fecha as janelas abertas.
   if (b.dataset.tab === 'curimba') { estado.curimba = null; if (estado.curUi) estado.curUi.confirmar = null; }
@@ -236,7 +240,7 @@ async function cliqueConta(e) {
   if (!b) return;
   if (b.dataset.conta === 'sair') {
     sair();
-    Object.assign(estado, { me: null, pessoas: [], giras: {}, oferendas: null, infoPessoa: null, pfUi: { abertos: {}, infoBuscaVisivel: false, infoBusca: '' }, recadoTxt: null, tituloTxt: null, usuarios: null, ervas: null, guias: null, amaci: null, asaas: null, iemanja: null, ervasPara: null, ervasCompra: null, perfil: null, alunos: null, curimba: null, minhaCurimba: null, curUi: null, videos: null, vidUi: null, fotos: null, fotUi: null, fotosPessoa: {}, visaoRoot: 'root', perfisCfg: null, senhas: null, pronto: false, img: null });
+    Object.assign(estado, { me: null, pessoas: [], giras: {}, oferendas: null, infoPessoa: null, pfUi: { abertos: {}, infoBuscaVisivel: false, infoBusca: '' }, recadoTxt: null, tituloTxt: null, usuarios: null, ervas: null, guias: null, amaci: null, asaas: null, transparencia: null, iemanja: null, ervasPara: null, ervasCompra: null, perfil: null, alunos: null, curimba: null, minhaCurimba: null, curUi: null, videos: null, vidUi: null, fotos: null, fotUi: null, fotosPessoa: {}, visaoRoot: 'root', perfisCfg: null, senhas: null, pronto: false, img: null });
     erroLogin = '';
     render();
   } else if (b.dataset.conta === 'senha') {
@@ -314,6 +318,8 @@ main.addEventListener('change', (e) => {
   if (t.id === 'l-email') { login.ajustarCampoSenha(ehAcessoGrupo(t.value)); return; }
   if (t.id === 'f-ent') { gira.mudancas.entidade(t); return; }
   if (t.classList?.contains('cd-resp-txt')) { gira.mudancas.cdresp(t); return; }
+  // Transparência: troca de mês e o interruptor Visível para a corrente.
+  if (prefs.tab === 'transparencia' && (t.id === 'tr-mes' || t.dataset.act === 'trpublicar')) { TELAS.transparencia?.mudou(t); return; }
   if (prefs.tab === 'oferendas' && t.form?.querySelector('[data-previa]')) TELAS.oferendas?.atualizarPrevia(t.form);
   if (t.id === 'f-import' && t.files && t.files[0]) { const f = t.files[0]; t.value = ''; telaDe('hist').then((m) => m.restaurar(f)); return; }
   const tela = TELAS[prefs.tab];
@@ -543,6 +549,8 @@ main.addEventListener('submit', async (e) => {
     await (await telaDe('usuarios')).salvarApelidoEntidade(e.target);
   } else if (id === 'f-amaci-ori') {
     await (await telaDe('amaci')).enviar(e.target);
+  } else if (id === 'f-tr-val' || id === 'f-tr-cfg') {
+    await (await telaDe('transparencia')).enviar(e.target);
   } else if (id.startsWith('f-guia-')) {
     await (await telaDe('guias')).enviar(e.target);
   } else if (id === 'f-of' || e.target.dataset.form) {

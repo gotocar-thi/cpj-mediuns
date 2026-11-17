@@ -1951,3 +1951,39 @@ section.panel.gi-tela{gap:12px}
 @keyframes gi-gira{to{transform:rotate(360deg)}}
 @media (prefers-reduced-motion: reduce){.gi-spin{animation-duration:2s}}
 .gi-pix{scroll-margin-top:72px}
+
+/* Painel da Transparência */
+.tr-topo{gap:10px}
+.tr-mes{display:flex;align-items:center;gap:8px}
+.tr-mes select{flex:1;min-width:0;font-weight:700}
+.tr-saldo{display:grid;gap:2px;padding:12px;border:1px solid var(--line);border-radius:11px;background:var(--bg)}
+.tr-saldo > b{font:700 1.7rem var(--f-display);line-height:1.15}
+.tr-pos{color:var(--ok)}
+.tr-neg{color:var(--off)}
+.tr-bloco{gap:10px}
+.tr-h{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.tr-h h3{margin:0;font-size:1.05rem}
+.tr-lista{list-style:none;margin:0;padding:0;display:grid;gap:6px}
+.tr-lista li{display:flex;justify-content:space-between;align-items:baseline;gap:10px;min-width:0}
+.tr-lista li > span{min-width:0;overflow-wrap:anywhere}
+.tr-lista li > b,.tr-tot > b{flex:none;white-space:nowrap}
+.tr-tot{display:flex;justify-content:space-between;align-items:baseline;gap:10px;padding-top:8px;border-top:1px solid var(--line)}
+.tr-tot-g{font-size:1.08rem}
+.tr-tot-g > b{font-size:1.2rem}
+.tr-sub{display:flex;flex-direction:column;gap:1px}
+.tr-quads{grid-template-columns:repeat(2,minmax(0,1fr))}
+.tr-q-ok{--fn:var(--ok)}
+.tr-q-ab{--fn:var(--off)}
+div.pf-of-total{cursor:default}
+.tr-nomes{max-height:320px;overflow:auto;padding:8px;border:1px solid var(--line);border-radius:9px;background:var(--bg)}
+.tr-form,.tr-cfg{display:grid;gap:10px}
+.tr-cfg input[type=month]{font:inherit;font-size:1rem;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:9px 11px;width:100%;box-sizing:border-box;color-scheme:light dark}
+.tr-lista li > input.tr-v{width:8.5em;flex:none;text-align:right}
+.tr-val{display:grid;gap:14px}
+.tr-aviso{margin:0;padding:8px 10px;border-radius:9px;background:var(--warn-soft);color:var(--ink);font-size:.88rem}
+.tr-ed-bts{justify-content:flex-end}
+.tr-editar{justify-self:start}
+.tr-campos{display:grid;gap:6px;padding:10px;border:1px solid var(--line);border-radius:9px;background:var(--surface)}
+.tr-campo{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px;align-items:center}
+.tr-asaas{display:grid;gap:4px;justify-items:start}
+.tr-asaas .muted{font-size:.82rem}

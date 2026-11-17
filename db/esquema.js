@@ -9,7 +9,7 @@
 // Estrutura: veja db/ESTRUTURA-ESQUEMA.md para o mapa de versões, domínios e
 // quais migrações foram testadas no Postgres.
 
-export const VERSAO = 127;  // v127: celular único; criar senha pelo login com e-mail ou celular
+export const VERSAO = 128;  // v128: aba Painel da Transparência
 
 import { PERFIS_PADRAO } from '../shared/permissoes.js';
 
@@ -5589,4 +5589,70 @@ export const MIGRACOES = [
   `drop trigger if exists alunos_celular_unico on alunos`,
   `create trigger alunos_celular_unico before insert or update of perfil, saida, apagado_em on alunos
    for each row execute function alunos_celular_unico()`,
+  // ================================================== v128: aba Painel da Transparência
+  // Configuração (root): visível para a corrente, mês de início do saldo, saldo inicial, valor da mensalidade e descrição
+  // das doações (conta B) e os campos de débito e de crédito. O que faltar aqui vale o padrão de api/_lib/transparencia.js.
+  `insert into sistema (chave, valor) values ('transparencia', '{"publicada":false}')
+   on conflict (chave) do nothing`,
+  // Valores de um mês: débitos e créditos digitados (linhas { nome, valor }, uma por campo) e o aporte da Mãe Vê.
+  // Mês sem linha herda o último mês anterior que tem.
+  `create table if not exists transparencia_meses (
+     mes            text primary key check (mes ~ '^[0-9]{4}-(0[1-9]|1[0-2])$'),
+     debitos        jsonb not null default '[]'::jsonb,
+     creditos       jsonb not null default '[]'::jsonb,
+     aporte         numeric(12, 2) not null default 0,
+     atualizado_em  timestamptz not null default now(),
+     por            text not null default ''
+   )`,
+  // Leitura da conta B do ASAAS por mês (mensalidades e doações), guardada para não chamar o ASAAS a cada abertura.
+  `create table if not exists transparencia_asaas (
+     mes            text primary key check (mes ~ '^[0-9]{4}-(0[1-9]|1[0-2])$'),
+     dados          jsonb not null,
+     atualizado_em  timestamptz not null default now()
+   )`,
+  `create or replace function transparencia_publicada(p jsonb default '{}'::jsonb)
+   returns jsonb language sql stable as $$
+     select to_jsonb(coalesce((select (valor::jsonb ->> 'publicada')::boolean from sistema where chave = 'transparencia'), false))
+   $$`,
+  `create or replace function transparencia_estado(p jsonb default '{}'::jsonb)
+   returns jsonb language sql stable as $$
+     select jsonb_build_object(
+       'config', coalesce((select valor::jsonb from sistema where chave = 'transparencia'), '{}'::jsonb),
+       'meses', coalesce((select jsonb_agg(jsonb_build_object('mes', mes, 'debitos', debitos, 'creditos', creditos, 'aporte', aporte::float8,
+                  'atualizadoEm', atualizado_em, 'por', por) order by mes) from transparencia_meses), '[]'::jsonb),
+       'asaas', coalesce((select jsonb_agg(jsonb_build_object('mes', mes, 'dados', dados, 'atualizadoEm', atualizado_em) order by mes)
+                  from transparencia_asaas), '[]'::jsonb))
+   $$`,
+  // p = { config }: troca a configuração inteira (o backend já conferiu os campos).
+  `create or replace function transparencia_config_salvar(p jsonb)
+   returns jsonb language plpgsql as $$
+   begin
+     update sistema set valor = (p -> 'config')::text where chave = 'transparencia';
+     return transparencia_estado();
+   end;
+   $$`,
+  `create or replace function transparencia_mes_salvar(p jsonb)
+   returns jsonb language plpgsql as $$
+   begin
+     insert into transparencia_meses (mes, debitos, creditos, aporte, atualizado_em, por)
+     values (p ->> 'mes', coalesce(p -> 'debitos', '[]'::jsonb), coalesce(p -> 'creditos', '[]'::jsonb), coalesce((p ->> 'aporte')::numeric, 0),
+             now(), coalesce(p ->> 'por', ''))
+     on conflict (mes) do update set debitos = excluded.debitos, creditos = excluded.creditos, aporte = excluded.aporte,
+             atualizado_em = now(), por = excluded.por;
+     return transparencia_estado();
+   end;
+   $$`,
+  `create or replace function transparencia_asaas_salvar(p jsonb)
+   returns jsonb language plpgsql as $$
+   begin
+     insert into transparencia_asaas (mes, dados, atualizado_em) values (p ->> 'mes', p -> 'dados', now())
+     on conflict (mes) do update set dados = excluded.dados, atualizado_em = now();
+     return jsonb_build_object('ok', true);
+   end;
+   $$`,
+  // A aba entra nos perfis: o root e o Admin financeiro editam os valores (a configuração é só do root); os outros perfis
+  // veem quando está visível para a corrente.
+  `update perfis set abas = abas || jsonb_build_object('transparencia', jsonb_build_object('ver', chave in ('root', 'admin_financeiro'),
+     'editar', chave in ('root', 'admin_financeiro')))
+   where not abas ? 'transparencia'`,
 ];

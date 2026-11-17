@@ -170,7 +170,7 @@ async function sessaoDe(c, versao) {
 
 // extras: o que decide as abas, quando já veio junto na abertura (inicio_dados); sem ele, busca aqui (/auth/me).
 async function dadosDoMe(u, extras = null) {
-  const [iemanja, abasOferendas, videosPublicada, ervasPublicada, guiasPublicada, amaciPublicada] = await Promise.all([
+  const [iemanja, abasOferendas, videosPublicada, ervasPublicada, guiasPublicada, amaciPublicada, transparenciaPublicada] = await Promise.all([
     // Falha na aba Iemanjá só esconde a aba: não pode impedir o app de abrir.
     abaIemanja(u, extras?.iemanja).catch((e) => {
       console.error('[auth/me] aba Iemanjá', e);
@@ -181,11 +181,13 @@ async function dadosDoMe(u, extras = null) {
     extras ? extras.ervasPublicada : db.rpc('ervas_publicada'),
     extras ? extras.guiasPublicada : db.rpc('guias_publicada'),
     extras ? extras.amaciPublicada : db.rpc('amaci_publicada'),
+    // Painel da Transparência: só a corrente (alunos e curimba nunca veem).
+    u.grupo ? false : db.rpc('transparencia_publicada').catch(() => false),
   ]);
   // Sem nenhuma sub-aba visível, a aba Oferendas some para quem não administra.
   // Aba Vídeos publicada: aparece também para quem não tem a aba no perfil.
   return { ...publico(u), corrente: u.papel === 'corrente', ...(u.papel === 'corrente' || u.grupo === 'alunos' ? { temSenha: !!u.temSenha } : {}),
-    videosPublicada: !!videosPublicada, ervasPublicada: !!ervasPublicada, guiasPublicada: !!guiasPublicada, amaciPublicada: !!amaciPublicada, oferendasPublica: temAbaPublica(abasOferendas), ...iemanja };
+    videosPublicada: !!videosPublicada, ervasPublicada: !!ervasPublicada, guiasPublicada: !!guiasPublicada, amaciPublicada: !!amaciPublicada, transparenciaPublicada: !!transparenciaPublicada, oferendasPublica: temAbaPublica(abasOferendas), ...iemanja };
 }
 
 // Lista que não pode impedir o app de abrir: se falhar, a chave não vem e a tela usa o que já tem.
