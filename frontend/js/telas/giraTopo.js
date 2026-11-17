@@ -7,7 +7,7 @@ import { corDaFaixa } from './curimba.js';
 import { textoEntrega, dataBR, ROTULO_MEDIUM, compromissosDe, qtdTxt } from '/shared/oferendas.js';
 import { abertos, cabDobra, ICONE_WHATS } from './giraComum.js';
 
-// Aba Gira: gira dos próximos 30 dias, evento e aviso todos os futuros, amaci só da semana.
+// Aba Gira: gira dos próximos 30 dias; amaci, evento, aviso e os tipos novos, todos os futuros.
 export function cardSemana({ ocultarAvisos = false } = {}) {
   const hj = hoje();
   const eventos = ocultarAvisos ? estado.eventos.filter((e) => e.tipo !== 'aviso') : estado.eventos;

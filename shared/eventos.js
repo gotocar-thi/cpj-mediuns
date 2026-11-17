@@ -39,10 +39,10 @@ export const eventosDaSemana = (eventos, hoje) => {
   const fim = somaDias(hoje, 7);
   return (eventos || []).filter((e) => e.data >= hoje && e.data <= fim).sort(porData);
 };
-// Bloco "Eventos" da aba Gira: gira dos próximos 30 dias; evento e aviso, todos os futuros;
-// amaci só os da semana (hoje + 7 dias). O que já passou não aparece.
+// Bloco "Eventos" da aba Gira: gira dos próximos 30 dias; os outros tipos (amaci, evento, aviso e os novos), todos os
+// futuros. O que já passou não aparece.
 export function eventosDoTopo(eventos, hoje) {
-  const ate = { gira: somaDias(hoje, 30), amaci: somaDias(hoje, 7) };
+  const ate = { gira: somaDias(hoje, 30) };
   return (eventos || []).filter((e) => e.data >= hoje && e.data <= (ate[e.tipo || 'evento'] || '9999-12-31')).sort(porData);
 }
 

@@ -373,7 +373,7 @@ test('eventos: sem nada no dia, o próximo cadastrado (qualquer tipo, sem limite
   assert.deepEqual(proximosEventos(null, '2026-11-05'), []);
 });
 
-test('bloco Eventos da aba Gira: gira dos próximos 30 dias, evento e aviso todos os futuros, amaci só da semana', async () => {
+test('bloco Eventos da aba Gira: gira dos próximos 30 dias; amaci, evento e aviso, todos os futuros', async () => {
   const { eventosDoTopo } = await import('../shared/eventos.js');
   const hoje = '2026-11-03';
   const evs = [
@@ -387,7 +387,7 @@ test('bloco Eventos da aba Gira: gira dos próximos 30 dias, evento e aviso todo
     { data: '2026-11-09', nome: 'Amaci da semana', tipo: 'amaci' },
     { data: '2026-11-20', nome: 'Amaci depois', tipo: 'amaci' },
   ];
-  assert.deepEqual(eventosDoTopo(evs, hoje).map((e) => e.nome), ['Hoje', 'Amaci da semana', 'Gira do mês', 'Gira daqui a 30', 'Evento longe', 'Aviso longe']);
+  assert.deepEqual(eventosDoTopo(evs, hoje).map((e) => e.nome), ['Hoje', 'Amaci da semana', 'Amaci depois', 'Gira do mês', 'Gira daqui a 30', 'Evento longe', 'Aviso longe']);
 });
 
 test('perfil: informações (nascimento, telefones e e-mail validados)', async () => {
