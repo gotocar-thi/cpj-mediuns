@@ -13,7 +13,8 @@
 //   GET  /api/giras?lista=transparencia&mes=AAAA-MM[&atualizar=1 (root)]
 //   POST /api/giras { acao: 'transparencia', op: 'mes', mes, debitos: [{ nome, valor }], creditos: [{ nome, valor }], aporte,
 //                     config?: { inicio, saldoInicial, valorMensalidade, descricaoDoacao, campos: { debitos, creditos } }, renomes? }
-//                   · { op: 'publicar', publicada } (config, renomes e publicar: só o root; op 'config' ainda vale)
+//                   · { op: 'publicar', publicada } · { op: 'config', valorMensalidade?, descricaoDoacao?, pagadoresAporte?, ... }
+//                   (config, renomes, publicar e o op 'config': só o root; só os campos que vierem mudam)
 // Quem vê: quem tem a aba no perfil (Ver ou Editar) sempre; a corrente (não alunos nem curimba) quando está visível.
 // Os nomes das mensalidades e das doações só vão para o root e o Admin financeiro (quem vê a aba ASAAS).
 
@@ -32,7 +33,7 @@ const MAX_MESES_POR_PEDIDO = 3;   // meses lidos num pedido só (o limite de tem
 const VALIDADE_MS = 24 * 60 * 60 * 1000;
 // Formato da leitura guardada: mudou o que se guarda (ex.: a ligação por CPF, a lista de doações), sobe o número e a
 // leitura antiga é refeita na próxima abertura, sem esperar o dia.
-const FORMATO = 2;
+const FORMATO = 3;
 const MAX_CAMPOS = 30;
 const DEBITOS_PADRAO = [
   { nome: 'Aluguel', valor: 7131.59 },
@@ -44,6 +45,8 @@ const DEBITOS_PADRAO = [
 const PADRAO = {
   publicada: false, inicio: '', saldoInicial: 0, valorMensalidade: 110,
   descricaoDoacao: 'Cobrança gerada automaticamente a partir de Pix recebido.',
+  // Doações destes pagadores (nome do cliente no ASAAS) entram como Aporte Mãe Vê, não como doação.
+  pagadoresAporte: ['Aurora Artigos Religiosos E Treinamentos Ltda'],
   campos: { debitos: DEBITOS_PADRAO.map((d) => d.nome), creditos: [] },
 };
 
@@ -64,6 +67,7 @@ function configDe(E) {
   const c = { ...PADRAO, ...E.config };
   const lista = (x, padrao) => (Array.isArray(x) ? x.filter((n) => typeof n === 'string' && n.trim()) : padrao);
   c.campos = { debitos: lista(c.campos?.debitos, PADRAO.campos.debitos), creditos: lista(c.campos?.creditos, []) };
+  c.pagadoresAporte = lista(c.pagadoresAporte, PADRAO.pagadoresAporte);
   return c;
 }
 
@@ -89,6 +93,7 @@ async function cpfsDaCorrente() {
 }
 
 // Lê um mês no ASAAS: mensalidades (pelo vencimento) e doações (pela data do pagamento), com o nome de cada cliente.
+// Doação de um dos pagadores do aporte (config) vai para o aporte da Mãe Vê.
 async function lerMes(mes, cfg) {
   const ini = mes + '-01', fim = ultimoDia(mes);
   const [porVencimento, porPagamento] = await Promise.all([
@@ -99,8 +104,8 @@ async function lerMes(mes, cfg) {
   const ehDoacao = (c) => !!desc && normalizar(c.description).includes(desc);
   const alvo = centavos(cfg.valorMensalidade);
   const mens = porVencimento.filter((c) => !ehDoacao(c) && centavos(c.value) === alvo && (PAGO.includes(c.status) || ABERTO.includes(c.status)));
-  const doacoes = porPagamento.filter((c) => ehDoacao(c) && PAGO.includes(c.status));
-  const ids = [...new Set([...mens, ...doacoes].map((c) => c.customer).filter(Boolean))];
+  const recebidas = porPagamento.filter((c) => ehDoacao(c) && PAGO.includes(c.status));
+  const ids = [...new Set([...mens, ...recebidas].map((c) => c.customer).filter(Boolean))];
   const nomes = new Map();
   const cpfs = new Map();
   for (let i = 0; i < ids.length; i += LOTE_CLIENTES) {
@@ -115,9 +120,20 @@ async function lerMes(mes, cfg) {
   // Pessoa da corrente de cada mensalidade, pelo CPF do Perfil (decifrado só aqui, em memória; nunca vai para a tela).
   const porCpf = await cpfsDaCorrente();
   const pagas = mens.filter((c) => PAGO.includes(c.status));
+  const doAporte = new Set(cfg.pagadoresAporte.map(normalizar));
+  const ehAporte = (c) => doAporte.has(normalizar(nomes.get(c.customer)));
+  const doacoes = recebidas.filter((c) => !ehAporte(c));
+  const aporte = recebidas.filter(ehAporte);
+  const resumo = (l) => ({
+    quantidade: l.length,
+    total: reais(l.reduce((s2, c) => s2 + centavos(c.value), 0)),
+    lista: l.map((c) => ({ nome: nomes.get(c.customer) || 'Sem nome no ASAAS', valor: Number(c.value) || 0, pagoEm: c.paymentDate || null }))
+      .sort((a, b) => String(b.pagoEm || '').localeCompare(String(a.pagoEm || '')) || a.nome.localeCompare(b.nome, 'pt-BR')),
+  });
   return {
     valorMensalidade: reais(alvo),
     descricaoDoacao: cfg.descricaoDoacao,
+    pagadoresAporte: cfg.pagadoresAporte,
     formato: FORMATO,
     ligadoPorCpf: true,
     mensalidades: {
@@ -128,19 +144,17 @@ async function lerMes(mes, cfg) {
         pago: PAGO.includes(c.status), vencida: c.status === 'OVERDUE', vencimento: c.dueDate || null, pagoEm: c.paymentDate || null }))
         .sort((a, b) => Number(a.pago) - Number(b.pago) || a.nome.localeCompare(b.nome, 'pt-BR')),
     },
-    doacoes: {
-      quantidade: doacoes.length,
-      total: reais(doacoes.reduce((s, c) => s + centavos(c.value), 0)),
-      lista: doacoes.map((c) => ({ nome: nomes.get(c.customer) || 'Sem nome no ASAAS', valor: Number(c.value) || 0, pagoEm: c.paymentDate || null }))
-        .sort((a, b) => String(b.pagoEm || '').localeCompare(String(a.pagoEm || '')) || a.nome.localeCompare(b.nome, 'pt-BR')),
-    },
+    doacoes: resumo(doacoes),
+    aporte: resumo(aporte),
   };
 }
 
-// A leitura guardada vale 1 dia, só no formato atual e para o mesmo valor de mensalidade e a mesma descrição de doação.
+// A leitura guardada vale 1 dia, só no formato atual e para o mesmo valor de mensalidade, descrição de doação e pagadores do aporte.
+const listaIgual = (a, b) => (a || []).map(normalizar).sort().join('|') === (b || []).map(normalizar).sort().join('|');
 const fresca = (linha, cfg) => linha && linha.dados?.formato === FORMATO && Date.now() - new Date(linha.atualizadoEm).getTime() < VALIDADE_MS
   && centavos(linha.dados?.valorMensalidade) === centavos(cfg.valorMensalidade)
-  && normalizar(linha.dados?.descricaoDoacao ?? PADRAO.descricaoDoacao) === normalizar(cfg.descricaoDoacao);
+  && normalizar(linha.dados?.descricaoDoacao ?? PADRAO.descricaoDoacao) === normalizar(cfg.descricaoDoacao)
+  && listaIgual(linha.dados?.pagadoresAporte, cfg.pagadoresAporte);
 
 // Valores valendo no mês: os do lançamento dele ou do último mês anterior, um por campo da configuração.
 // Campo sem valor guardado: o padrão (débitos de sempre) ou zero.
@@ -160,7 +174,9 @@ function valoresDoMes(meses, mes, cfg) {
 }
 const soma = (l) => reais(l.reduce((s, x) => s + centavos(x.valor), 0));
 const doAsaas = (dados) => (dados ? reais(centavos(dados.mensalidades.totalPago) + centavos(dados.doacoes.total)) : 0);
-const resultado = (v, dados) => reais(centavos(doAsaas(dados)) + centavos(soma(v.creditos)) + centavos(v.aporte) - centavos(soma(v.debitos)));
+const aporteAsaas = (dados) => Number(dados?.aporte?.total) || 0;
+const resultado = (v, dados) => reais(centavos(doAsaas(dados)) + centavos(soma(v.creditos)) + centavos(v.aporte) + centavos(aporteAsaas(dados))
+  - centavos(soma(v.debitos)));
 
 function podeVer(eu, publicada) {
   if (eu.grupo) return false;   // alunos e curimba nunca
@@ -229,7 +245,7 @@ export async function transparencia(eu, query) {
     verNomes,
     config: root ? {
       inicio: MES.test(cfg.inicio || '') ? cfg.inicio : '', saldoInicial: Number(cfg.saldoInicial) || 0,
-      valorMensalidade: Number(cfg.valorMensalidade) || 0, descricaoDoacao: cfg.descricaoDoacao, campos: cfg.campos,
+      valorMensalidade: Number(cfg.valorMensalidade) || 0, descricaoDoacao: cfg.descricaoDoacao, pagadoresAporte: cfg.pagadoresAporte, campos: cfg.campos,
     } : null,
     meses: disponiveis,
     mes,
@@ -237,6 +253,8 @@ export async function transparencia(eu, query) {
     totalDebitos: soma(v.debitos),
     creditosExtras: v.creditos,
     aporte: v.aporte,
+    // Aporte que veio do ASAAS (doações dos pagadores do aporte); a lista de pagamentos só para quem vê os nomes.
+    aporteAsaas: dados?.aporte ? { quantidade: dados.aporte.quantidade, total: dados.aporte.total, ...(verNomes ? { lista: dados.aporte.lista } : {}) } : null,
     herdado: v.herdado,
     asaas: {
       configurado: ligada(),
@@ -275,18 +293,30 @@ function linhasOk(lista, campos, rotulo) {
   return campos.map((nome) => ({ nome, valor: valorOk(lista.find((l) => l?.nome === nome)?.valor ?? 0, nome) }));
 }
 
-// Configuração do root conferida (o que vier no pedido).
+// Configuração do root conferida: só os campos que vieram no pedido mudam.
 function configOk(b, cfg) {
-  const inicio = String(b.inicio || '');
-  if (!MES.test(inicio) || inicio > mesAtual()) throw new HttpError(400, 'Escolha o mês de início (até o mês atual).');
-  const valorMensalidade = valorOk(b.valorMensalidade, 'Mensalidade');
-  if (!valorMensalidade) throw new HttpError(400, 'Mensalidade: informe o valor.');
-  const n = Number(String(b.saldoInicial ?? '').replace(',', '.'));   // pode ser negativo (a casa pode começar devendo)
-  if (!Number.isFinite(n) || Math.abs(n) > 100000000) throw new HttpError(400, 'Saldo inicial: valor inválido.');
-  const descricaoDoacao = String(b.descricaoDoacao ?? '').replace(/s+/g, ' ').trim();
-  if (!descricaoDoacao || descricaoDoacao.length > 150) throw new HttpError(400, 'Descrição das doações: escreva o texto (até 150 letras).');
-  const campos = { debitos: camposOk(b.campos?.debitos, 'Campos de débito'), creditos: camposOk(b.campos?.creditos, 'Campos de crédito') };
-  return { ...cfg, inicio, saldoInicial: reais(centavos(n)), valorMensalidade, descricaoDoacao, campos };
+  const c = { ...cfg };
+  if ('inicio' in b) {
+    const inicio = String(b.inicio || '');
+    if (!MES.test(inicio) || inicio > mesAtual()) throw new HttpError(400, 'Escolha o mês de início (até o mês atual).');
+    c.inicio = inicio;
+  }
+  if ('valorMensalidade' in b) {
+    c.valorMensalidade = valorOk(b.valorMensalidade, 'Mensalidade');
+    if (!c.valorMensalidade) throw new HttpError(400, 'Mensalidade: informe o valor.');
+  }
+  if ('saldoInicial' in b) {
+    const n = Number(String(b.saldoInicial ?? '').replace(',', '.'));   // pode ser negativo (a casa pode começar devendo)
+    if (!Number.isFinite(n) || Math.abs(n) > 100000000) throw new HttpError(400, 'Saldo inicial: valor inválido.');
+    c.saldoInicial = reais(centavos(n));
+  }
+  if ('descricaoDoacao' in b) {
+    c.descricaoDoacao = String(b.descricaoDoacao ?? '').replace(/\s+/g, ' ').trim();
+    if (!c.descricaoDoacao || c.descricaoDoacao.length > 150) throw new HttpError(400, 'Descrição das doações: escreva o texto (até 150 letras).');
+  }
+  if ('pagadoresAporte' in b) c.pagadoresAporte = camposOk(b.pagadoresAporte, 'Pagadores do aporte');
+  if ('campos' in b) c.campos = { debitos: camposOk(b.campos?.debitos, 'Campos de débito'), creditos: camposOk(b.campos?.creditos, 'Campos de crédito') };
+  return c;
 }
 
 export async function acaoTransparencia(eu, b, query) {
@@ -297,7 +327,7 @@ export async function acaoTransparencia(eu, b, query) {
     exigirRoot();
     if (typeof b.publicada !== 'boolean') throw new HttpError(400, 'Informe se o painel fica visível.');
     await db.rpc('transparencia_config_salvar', { config: { ...cfg, publicada: b.publicada } });
-  } else if (b.op === 'config') {   // app de antes da edição na própria tela
+  } else if (b.op === 'config') {   // bloco Busca no ASAAS (e o app de antes da edição na própria tela)
     exigirRoot();
     await db.rpc('transparencia_config_salvar', { config: configOk(b, cfg) });
   } else if (b.op === 'mes') {

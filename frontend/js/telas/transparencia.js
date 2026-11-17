@@ -1,10 +1,10 @@
 // Tela "Transparência" (Painel da Transparência): o saldo da casa, débitos e créditos (mensalidades e doações da conta B
 // do ASAAS, outros créditos e o aporte da Mãe Vê), mês a mês. Trocar o mês troca todas as informações.
-// Tudo se ajusta na própria tela: ✎ Editar transforma os valores em campos e o Salvar pede confirmação. Quem edita a
-// aba (root e Admin financeiro) muda os valores; o root também muda a estrutura no mesmo lugar (adicionar, renomear e
-// tirar linhas, valor da mensalidade, descrição das doações, mês de início e saldo inicial), liga Visível para a
-// corrente e puxa os dados do ASAAS. Os nomes das mensalidades, das doações e de quem está fora da contagem só aparecem
-// para quem vê a aba ASAAS (o servidor só manda para eles).
+// ✎ Editar transforma os valores em campos e o Salvar pede confirmação. Quem edita a aba (root e Admin financeiro) muda
+// os valores; o root também muda, no mesmo lugar, as linhas, o mês de início e o saldo inicial, e liga Visível para a
+// corrente. O que o app busca no ASAAS (valor da mensalidade, descrição das doações, pagadores que entram como aporte)
+// fica no bloco ADMIN ROOT "Busca no ASAAS", com o Puxar. Os nomes (mensalidades, doações, aporte e quem está fora da
+// contagem) só aparecem para quem vê a aba ASAAS (o servidor só manda para eles).
 
 import { estado, carregarTransparencia, acaoTransparencia, avisar } from '../estado.js';
 import { esc, toast } from '../util.js';
@@ -19,14 +19,42 @@ const mais = (v) => (v > 0 ? '+' : '') + R(v);
 const virgula = (v) => String(Number(v) || 0).replace('.', ',');
 // "7.131,59", "7131,59" ou "7131.59" → "7131.59" (com vírgula, o ponto é de milhar).
 const numero = (s) => { const t = String(s ?? '').trim().replace(/\s|R\$/g, ''); return t.includes(',') ? t.replace(/\./g, '').replace(',', '.') : t; };
+const aporteDoAsaas = (T) => T.aporteAsaas?.total || 0;
 
 // Estado só desta tela (volta ao padrão ao trocar de aba).
-// ed: edição em andamento — linhas { debitos: [{ nome, de, valor }], creditos: [...] } (de = nome original, para
-//     renomear), aporte e, para o root, mensal, desc, inicio, saldoIni · confirmar: janela do Salvar
-// mens: quadradinho aberto ('pagas' | 'abertas' | 'corrente') · doacoes: lista de doações aberta
-const ui = { ed: null, confirmar: false, salvando: false, mens: null, doacoes: false };
-export function limpar() { Object.assign(ui, { ed: null, confirmar: false, salvando: false, mens: null, doacoes: false }); }
+// ed: edição dos valores — linhas { debitos: [{ nome, de, valor }], creditos: [...] } (de = nome original, para
+//     renomear), aporte e, para o root, inicio e saldoIni · busca: bloco Busca no ASAAS { aberto, mensal, desc, pagadores }
+// confirmar: 'valores' | 'busca' (janela do Salvar) · aberto: lista aberta ('pagas' | 'abertas' | 'corrente' | 'doacoes' | 'aporte')
+const ui = { ed: null, busca: null, confirmar: null, salvando: false, aberto: null };
+export function limpar() { Object.assign(ui, { ed: null, busca: null, confirmar: null, salvando: false, aberto: null }); }
 const estrutura = (T) => !!(ui.ed && T.root);
+
+// ---------- ADMIN ROOT: o que o app busca no ASAAS ----------
+function cardBusca(T) {
+  const A = T.asaas;
+  const ab = !!ui.busca;
+  const cab = `<button class="grp-h dobra" data-act="trbusca" aria-expanded="${ab}"><h2>🔎 Busca no ASAAS</h2>
+    <span class="count">${A.atualizadoEm ? 'lido ' + quando(A.atualizadoEm) : 'sem leitura'} <span class="seta" aria-hidden="true">${ab ? '▾' : '▸'}</span></span></button>`;
+  if (!ab) return `<div class="card adm root">${cab}</div>`;
+  const B = ui.busca;
+  return `<div class="card adm root">${cab}
+    <form id="f-tr-busca" class="tr-busca" data-rascunho data-id="busca" autocomplete="off">
+      <label class="field">Valor da mensalidade (R$)<input type="text" id="tr-mensal" inputmode="decimal" value="${esc(B.mensal)}" required></label>
+      <small class="muted">Mensalidade = cobrança da conta B com esse valor e vencimento no mês.</small>
+      <label class="field">Descrição das doações<input type="text" id="tr-desc" maxlength="150" value="${esc(B.desc)}" required></label>
+      <small class="muted">Doação = cobrança cuja descrição contém esse texto, paga no mês.</small>
+      <div class="tr-lins"><b>Pagadores que entram como Aporte Mãe Vê</b>
+        ${B.pagadores.map((n, i) => `<div class="tr-lin-p"><input type="text" id="tr-pg-${i}" class="tr-pg" data-i="${i}" value="${esc(n)}" maxlength="60" placeholder="Nome do cliente no ASAAS" aria-label="Pagador ${i + 1}" required>
+          <button type="button" class="btn small pp-ico pp-del" data-act="trpgtirar" data-i="${i}" aria-label="Tirar ${esc(n || 'pagador')}">✕</button></div>`).join('')}
+        <button type="button" class="btn small" data-act="trpg">＋ Adicionar pagador</button>
+        <small class="muted">A doação de um destes (nome do cliente no ASAAS) soma no aporte, não nas doações.</small></div>
+      <button type="button" class="btn small primary" data-act="trbuscasalvar">Salvar busca</button>
+    </form>
+    ${A.configurado ? `<div class="tr-lido"><span class="muted">${A.atualizadoEm ? esc(nomeMes(T.mes)) + ' lido em ' + quando(A.atualizadoEm) : 'Mês ainda não lido'} · sozinho, 1 vez por dia</span>
+      <button type="button" class="btn small" data-act="tratualizar">⬇️ Puxar dados do ASAAS</button></div>`
+      : '<p class="muted" style="margin:0">A conta B do ASAAS não está ligada no servidor.</p>'}
+  </div>`;
+}
 
 // ---------- topo ----------
 function cardTopo(T) {
@@ -34,7 +62,7 @@ function cardTopo(T) {
   const ed = !!ui.ed;
   const bts = !T.editar ? '' : ed
     ? `<div class="pp-bts tr-ed-bts"><button type="button" class="btn small" data-act="trcancelar">Cancelar</button><button type="button" class="btn small primary" data-act="trsalvar">Salvar</button></div>`
-    : '<button type="button" class="btn small tr-editar" data-act="treditar">✎ Editar</button>';
+    : '<button type="button" class="btn small tr-editar" data-act="treditar">✎ Editar valores</button>';
   return `<div class="card tr-topo">
     <div class="tr-topo-l1"><span class="eyebrow">Painel da transparência</span>
       ${T.root ? `<label class="of-sw tr-vis"><input type="checkbox" role="switch" data-act="trpublicar" ${T.publicada ? 'checked' : ''}><span class="of-sw-t" aria-hidden="true"></span><span>Visível para a corrente</span></label>` : ''}</div>
@@ -43,14 +71,14 @@ function cardTopo(T) {
       <select id="tr-mes" aria-label="Escolher o mês"${ed ? ' disabled' : ''}>${T.meses.map((m) => `<option value="${m}"${m === T.mes ? ' selected' : ''}>${esc(nomeMes(m))}</option>`).join('')}</select>
       <button class="btn small pp-ico" data-act="trmes" data-d="-1" aria-label="Próximo mês"${i <= 0 || ed ? ' disabled' : ''}>›</button>
     </div>
-    ${ed ? `<p class="tr-aviso">Editando <b>${esc(nomeMes(T.mes))}</b>: os valores valem para este mês e os seguintes, até alguém mudar de novo.${T.root ? ' Linhas, mensalidade, descrição e saldo inicial valem para todos os meses.' : ''}</p>` : ''}
+    ${ed ? `<p class="tr-aviso">Editando <b>${esc(nomeMes(T.mes))}</b>: os valores valem para este mês e os seguintes, até alguém mudar de novo.${T.root ? ' Linhas, início e saldo inicial valem para todos os meses.' : ''}</p>` : ''}
     ${bts}
   </div>`;
 }
 
-// ---------- totalizado (logo abaixo do topo: o resumo do mês) ----------
+// ---------- resumo do mês (logo abaixo do topo) ----------
 function cardTotal(T) {
-  const entradas = T.creditos + T.aporte;
+  const entradas = T.creditos + T.aporte + aporteDoAsaas(T);
   const ini = estrutura(T)
     ? `<div class="tr-ini"><label class="field">Início do saldo<input type="month" id="tr-inicio" value="${esc(ui.ed.inicio)}" max="${esc(T.meses[0])}" required></label>
         <label class="field">Saldo inicial (R$)<input type="text" id="tr-saldoini" inputmode="decimal" value="${esc(ui.ed.saldoIni)}" required></label></div>` : '';
@@ -92,13 +120,13 @@ function cardDebitos(T) {
 }
 
 // ---------- créditos ----------
+const PUXAR = '<p class="muted" style="margin:0;font-size:.85rem">A lista aparece na próxima leitura do ASAAS.</p>';
 function listaMens(lista, pagas) {
   const itens = lista.filter((x) => x.pago === pagas);
   if (!itens.length) return '<p class="muted" style="margin:0">Ninguém nesta lista.</p>';
   return `<ul class="tr-lista tr-nomes">${itens.map((x) => `<li><span>${esc(x.nome)}${!pagas && x.vencida ? ' <span class="badge re">vencida</span>' : ''}</span>
     <small class="muted">${pagas ? (x.pagoEm ? 'pago ' + dBR(x.pagoEm) : '') : (x.vencimento ? 'vence ' + dBR(x.vencimento) : '')}</small></li>`).join('')}</ul>`;
 }
-const PUXAR = '<p class="muted" style="margin:0;font-size:.85rem">A lista aparece na próxima leitura do ASAAS (⬇️ Puxar).</p>';
 // Quem da corrente (sem a curimba) ficou de fora das mensalidades do mês: sem cobrança, ou sem CPF no Perfil para ligar.
 function listaFora(fora) {
   if (!fora) return PUXAR;
@@ -106,65 +134,67 @@ function listaFora(fora) {
   return `<p class="muted" style="margin:0;font-size:.85rem">${fora.length} fora da contagem das mensalidades:</p>
     <ul class="tr-lista tr-nomes">${fora.map((x) => `<li><span>${esc(x.nome)}</span><small class="muted">${esc(x.motivo)}</small></li>`).join('')}</ul>`;
 }
-// Doações: quantidade e total; quem vê os nomes toca para abrir a lista de quem doou.
-function blocoDoacoes(T, D) {
-  const rot = `${D.quantidade} doaç${D.quantidade === 1 ? 'ão' : 'ões'}`;
+// Linha com quantidade e total; quem vê os nomes toca para abrir a lista de pagamentos (doações ou aporte do ASAAS).
+function linhaPagamentos(T, k, rot, D) {
   if (!T.verNomes || !D.quantidade) return `<div class="tr-tot"><span>${rot}</span><b class="tr-pos">${R(D.total)}</b></div>`;
-  const ab = ui.doacoes;
+  const ab = ui.aberto === k;
   const lista = !ab ? '' : !D.lista ? PUXAR
     : `<ul class="tr-lista tr-nomes">${D.lista.map((x) => `<li><span>${esc(x.nome)}${x.pagoEm ? ` <small class="muted">${dBR(x.pagoEm)}</small>` : ''}</span><b class="tr-pos">${R(x.valor)}</b></li>`).join('')}</ul>`;
-  return `<button type="button" class="tr-tot tr-tot-bt" data-act="trdoacoes" aria-expanded="${ab}"><span>${rot} <span class="seta" aria-hidden="true">${ab ? '▾' : '▸'}</span></span><b class="tr-pos">${R(D.total)}</b></button>${lista}`;
+  return `<button type="button" class="tr-tot tr-tot-bt" data-act="trabrir" data-k="${k}" aria-expanded="${ab}"><span>${rot} <span class="seta" aria-hidden="true">${ab ? '▾' : '▸'}</span></span><b class="tr-pos">${R(D.total)}</b></button>${lista}`;
 }
 
 function blocoAsaas(T) {
   const A = T.asaas;
-  // Valor da mensalidade e descrição das doações: o root muda aqui mesmo, na edição.
-  const mensal = estrutura(T)
-    ? `<label class="field tr-inline">Valor da mensalidade (R$)<input type="text" id="tr-mensal" inputmode="decimal" value="${esc(ui.ed.mensal)}" required></label>`
-    : `<small class="muted">${R(A.valorMensalidade)} · vencimento no mês</small>`;
-  const desc = estrutura(T)
-    ? `<label class="field tr-inline">Descrição das doações no ASAAS<input type="text" id="tr-desc" maxlength="150" value="${esc(ui.ed.desc)}" required></label>`
-    : '<small class="muted">Pix recebidos no mês</small>';
-  if (!A.configurado) return `<div class="tr-sub"><b>Mensalidades e doações</b>${mensal}${desc}</div><p class="muted" style="margin:0">A conta B do ASAAS ainda não está ligada no servidor.</p>`;
-  // Puxar recarrega o mês: escondido durante a edição, para não perder o que foi digitado.
-  const puxar = T.root && !ui.ed ? '<button type="button" class="btn small" data-act="tratualizar">⬇️ Puxar</button>' : '';
-  const lido = `<div class="tr-lido"><span class="muted">${A.atualizadoEm ? 'Lido do ASAAS em ' + quando(A.atualizadoEm) : 'Ainda sem leitura do ASAAS'}${T.root ? ' · sozinho, 1 vez por dia' : ''}</span>${puxar}</div>`;
-  if (!A.mensalidades) {
-    return `<div class="tr-sub"><b>Mensalidades e doações</b>${mensal}${desc}</div>
-      ${A.erro ? `<p class="erro" style="margin:0">${esc(A.erro)}</p>` : ''}${lido}`;
-  }
+  if (!A.configurado) return '<p class="muted" style="margin:0">Mensalidades e doações: a conta B do ASAAS ainda não está ligada no servidor.</p>';
+  const lido = `<p class="muted" style="margin:0;font-size:.8rem">${A.atualizadoEm ? 'Lido do ASAAS em ' + quando(A.atualizadoEm) : 'Ainda sem leitura do ASAAS'}.</p>`;
+  if (!A.mensalidades) return `${A.erro ? `<p class="erro" style="margin:0">${esc(A.erro)}</p>` : ''}${lido}`;
   const M = A.mensalidades;
   const quad = (k, n, rot, cls) => {
-    const ab = ui.mens === k;
+    const ab = ui.aberto === k;
     return T.verNomes
-      ? `<button type="button" class="pf-of-total ${cls}${ab ? ' selecionado' : ''}" data-act="trmens" data-k="${k}" aria-expanded="${ab}"><b>${n}</b><span>${rot}</span></button>`
+      ? `<button type="button" class="pf-of-total ${cls}${ab ? ' selecionado' : ''}" data-act="trabrir" data-k="${k}" aria-expanded="${ab}"><b>${n}</b><span>${rot}</span></button>`
       : `<div class="pf-of-total ${cls}"><b>${n}</b><span>${rot}</span></div>`;
   };
-  return `<div class="tr-sub"><b>Mensalidades</b>${mensal}</div>
+  const lista = !T.verNomes ? '' : ui.aberto === 'corrente' ? listaFora(A.corrente.fora)
+    : ui.aberto === 'pagas' || ui.aberto === 'abertas' ? listaMens(M.lista || [], ui.aberto === 'pagas') : '';
+  const D = A.doacoes;
+  return `<div class="tr-sub"><b>Mensalidades</b><small class="muted">${R(A.valorMensalidade)} · vencimento no mês</small></div>
     <div class="pf-of-totais tr-quads">${quad('pagas', M.pagas, 'Pagas', 'tr-q-ok')}${quad('abertas', M.abertas, 'Em aberto', 'tr-q-ab')}${quad('corrente', A.corrente.total, 'Na corrente', 'tr-q-co')}</div>
-    ${!T.verNomes || !ui.mens ? '' : ui.mens === 'corrente' ? listaFora(A.corrente.fora) : listaMens(M.lista || [], ui.mens === 'pagas')}
+    ${lista}
     <div class="tr-tot"><span>Total pago em mensalidades</span><b class="tr-pos">${R(M.totalPago)}</b></div>
-    <div class="tr-sub"><b>Doações das giras</b>${desc}</div>
-    ${blocoDoacoes(T, A.doacoes)}
+    <div class="tr-sub"><b>Doações das giras</b><small class="muted">Pix recebidos no mês</small></div>
+    ${linhaPagamentos(T, 'doacoes', `${D.quantidade} doaç${D.quantidade === 1 ? 'ão' : 'ões'}`, D)}
     ${A.erro ? `<p class="erro" style="margin:0">${esc(A.erro)}</p>` : ''}${lido}`;
+}
+
+// Aporte Mãe Vê: o que veio do ASAAS (doações dos pagadores do aporte) e o lançado à mão (editável).
+function blocoAporte(T) {
+  const P = T.aporteAsaas;
+  const doAsaas = P && P.quantidade ? linhaPagamentos(T, 'aporte', `Pelo ASAAS · ${P.quantidade} pagamento${P.quantidade === 1 ? '' : 's'}`, P) : '';
+  const lancado = ui.ed
+    ? `<ul class="tr-lista"><li><span>${doAsaas ? 'Lançado à mão' : 'No mês'}</span><input type="text" id="tr-aporte" class="tr-v" inputmode="decimal" value="${esc(ui.ed.aporte)}" aria-label="Aporte Mãe Vê lançado à mão"></li></ul>`
+    : doAsaas ? `<div class="tr-tot"><span>Lançado à mão</span><b class="${T.aporte ? 'tr-pos' : ''}">${R(T.aporte)}</b></div>` : '';
+  const total = T.aporte + aporteDoAsaas(T);
+  return `<div class="tr-sub"><b>Aporte Mãe Vê</b></div>${doAsaas}${lancado}
+    ${doAsaas || !ui.ed ? `<div class="tr-tot"><span>Total do aporte</span><b class="${total ? 'tr-pos' : ''}">${R(total)}</b></div>` : ''}`;
 }
 
 function cardCreditos(T) {
   const temOutros = T.creditosExtras.length || estrutura(T);
   const outros = temOutros ? `<div class="tr-sub"><b>Outros créditos</b></div>${linhas(T, 'creditos', T.creditosExtras, 'tr-pos')}` : '';
-  const aporte = ui.ed
-    ? `<ul class="tr-lista"><li><span><b>Aporte Mãe Vê</b></span><input type="text" id="tr-aporte" class="tr-v" inputmode="decimal" value="${esc(ui.ed.aporte)}" aria-label="Aporte Mãe Vê"></li></ul>`
-    : `<div class="tr-tot"><span><b>Aporte Mãe Vê</b></span><b class="${T.aporte ? 'tr-pos' : ''}">${R(T.aporte)}</b></div>`;
   return `<div class="card tr-bloco tr-cred"><div class="tr-h"><h3>📈 Créditos</h3></div>
-    ${blocoAsaas(T)}${outros}${aporte}
-    <div class="tr-tot tr-tot-g"><span>Total de entradas</span><b class="tr-pos">${R(T.creditos + T.aporte)}</b></div></div>`;
+    ${blocoAsaas(T)}${outros}${blocoAporte(T)}
+    <div class="tr-tot tr-tot-g"><span>Total de entradas</span><b class="tr-pos">${R(T.creditos + T.aporte + aporteDoAsaas(T))}</b></div></div>`;
 }
 
 function janelaConfirmar(T) {
   if (!ui.confirmar) return '';
+  const texto = ui.confirmar === 'busca'
+    ? 'O app passa a buscar no ASAAS com o novo valor da mensalidade, a nova descrição das doações e os pagadores do aporte. Os meses são lidos de novo na próxima abertura.'
+    : `Os valores de <b>${esc(nomeMes(T.mes))}</b> passam a valer para este mês e para os seguintes, até alguém mudar de novo.${T.root ? ' As linhas, o início e o saldo inicial valem para todos os meses.' : ''} O saldo é recalculado.`;
   return `<div class="modal-fundo" role="dialog" aria-modal="true" aria-labelledby="tr-cf-t"><div class="modal">
     <h3 id="tr-cf-t">Salvar as alterações?</h3>
-    <p style="margin:0">Os valores de <b>${esc(nomeMes(T.mes))}</b> passam a valer para este mês e para os seguintes, até alguém mudar de novo.${T.root ? ' As linhas, a mensalidade, a descrição das doações e o saldo inicial valem para todos os meses.' : ''} O saldo é recalculado.</p>
+    <p style="margin:0">${texto}</p>
     <div class="row" style="justify-content:flex-end;gap:8px"><button class="btn" data-act="trconfirmarnao"${ui.salvando ? ' disabled' : ''}>Cancelar</button><button class="btn primary" data-act="trconfirmar"${ui.salvando ? ' disabled' : ''}>${ui.salvando ? 'Salvando…' : 'Confirmar'}</button></div>
   </div></div>`;
 }
@@ -176,50 +206,50 @@ export function render() {
   if (T.carregando) return '<div class="loading">Carregando o mês…</div>';
   const cards = cardTotal(T) + cardDebitos(T) + cardCreditos(T);
   // Em edição, os campos ficam num formulário só (o que foi digitado volta depois de um redesenho).
-  return `<section class="panel tr-tela">${cardTopo(T)}${ui.ed ? `<form id="f-tr-val" class="tr-val" data-rascunho data-id="${esc(T.mes)}" autocomplete="off">${cards}</form>` : cards}${janelaConfirmar(T)}</section>`;
+  return `<section class="panel tr-tela">${T.root ? cardBusca(T) : ''}${cardTopo(T)}${ui.ed ? `<form id="f-tr-val" class="tr-val" data-rascunho data-id="${esc(T.mes)}" autocomplete="off">${cards}</form>` : cards}${janelaConfirmar(T)}</section>`;
 }
 
 // ---------- eventos ----------
 // Guarda o que foi digitado antes de redesenhar.
 function ler() {
   const E = ui.ed;
-  if (!E) return;
-  document.querySelectorAll('#f-tr-val .tr-n').forEach((i) => { const l = E.linhas[i.dataset.t][i.dataset.i]; if (l) l.nome = i.value; });
-  document.querySelectorAll('#f-tr-val .tr-v[data-t]').forEach((i) => { const l = E.linhas[i.dataset.t][i.dataset.i]; if (l) l.valor = i.value; });
-  const v = (id) => document.getElementById(id)?.value;
-  E.aporte = v('tr-aporte') ?? E.aporte;
-  E.mensal = v('tr-mensal') ?? E.mensal;
-  E.desc = v('tr-desc') ?? E.desc;
-  E.inicio = v('tr-inicio') ?? E.inicio;
-  E.saldoIni = v('tr-saldoini') ?? E.saldoIni;
+  if (E) {
+    document.querySelectorAll('#f-tr-val .tr-n').forEach((i) => { const l = E.linhas[i.dataset.t][i.dataset.i]; if (l) l.nome = i.value; });
+    document.querySelectorAll('#f-tr-val .tr-v[data-t]').forEach((i) => { const l = E.linhas[i.dataset.t][i.dataset.i]; if (l) l.valor = i.value; });
+    const v = (id) => document.getElementById(id)?.value;
+    E.aporte = v('tr-aporte') ?? E.aporte;
+    E.inicio = v('tr-inicio') ?? E.inicio;
+    E.saldoIni = v('tr-saldoini') ?? E.saldoIni;
+  }
+  const B = ui.busca;
+  if (B && document.getElementById('f-tr-busca')) {
+    B.mensal = document.getElementById('tr-mensal').value;
+    B.desc = document.getElementById('tr-desc').value;
+    B.pagadores = [...document.querySelectorAll('#f-tr-busca .tr-pg')].map((i) => i.value);
+  }
 }
 function irPara(mes, atualizar = false) {
-  Object.assign(ui, { ed: null, mens: null, doacoes: false });
+  Object.assign(ui, { ed: null, aberto: null });
   estado.transparencia = { ...estado.transparencia, carregando: true };
   avisar();
   carregarTransparencia(mes, atualizar);
 }
-async function salvar() {
+async function salvarValores() {
   const T = estado.transparencia;
   const E = ui.ed;
   const lin = (t) => E.linhas[t].map((l) => ({ nome: l.nome.replace(/\s+/g, ' ').trim(), valor: numero(l.valor) || '0' }));
   const dados = { debitos: lin('debitos'), creditos: lin('creditos'), aporte: numero(E.aporte) || '0' };
   if (T.root) {
-    dados.config = {
-      inicio: E.inicio, saldoInicial: numero(E.saldoIni) || '0', valorMensalidade: numero(E.mensal), descricaoDoacao: E.desc.trim(),
-      campos: { debitos: dados.debitos.map((l) => l.nome), creditos: dados.creditos.map((l) => l.nome) },
-    };
+    dados.config = { inicio: E.inicio, saldoInicial: numero(E.saldoIni) || '0', campos: { debitos: dados.debitos.map((l) => l.nome), creditos: dados.creditos.map((l) => l.nome) } };
     // Linha que já existia e mudou de nome: o servidor leva o nome novo para os outros meses.
     dados.renomes = ['debitos', 'creditos'].flatMap((t) => E.linhas[t].filter((l) => l.de && l.de !== l.nome.replace(/\s+/g, ' ').trim())
       .map((l) => ({ tipo: t, de: l.de, para: l.nome.replace(/\s+/g, ' ').trim() })));
   }
-  ui.salvando = true;
-  avisar();
-  const ok = await acaoTransparencia('mes', dados);
-  ui.salvando = false;
-  ui.confirmar = false;
-  if (ok) { ui.ed = null; toast('Alterações salvas.'); }
-  avisar();
+  return acaoTransparencia('mes', dados);
+}
+function salvarBusca() {
+  const B = ui.busca;
+  return acaoTransparencia('config', { valorMensalidade: numero(B.mensal), descricaoDoacao: B.desc.trim(), pagadoresAporte: B.pagadores.map((n) => n.replace(/\s+/g, ' ').trim()) });
 }
 
 export const cliques = {
@@ -230,24 +260,40 @@ export const cliques = {
     if (m) irPara(m);
   },
   tratualizar() { irPara(estado.transparencia.mes, true); },
-  trmens(el) { ui.mens = ui.mens === el.dataset.k ? null : el.dataset.k; avisar(); },
-  trdoacoes() { ui.doacoes = !ui.doacoes; avisar(); },
+  trabrir(el) { ui.aberto = ui.aberto === el.dataset.k ? null : el.dataset.k; avisar(); },
+  trbusca() {
+    const C = estado.transparencia.config;
+    ui.busca = ui.busca ? null : { mensal: virgula(C.valorMensalidade), desc: C.descricaoDoacao, pagadores: [...(C.pagadoresAporte || [])] };
+    avisar();
+  },
+  trpg() { ler(); ui.busca.pagadores.push(''); avisar(); },
+  trpgtirar(el) { ler(); ui.busca.pagadores.splice(Number(el.dataset.i), 1); avisar(); },
+  trbuscasalvar() { ler(); ui.confirmar = 'busca'; avisar(); },
   treditar() {
     const T = estado.transparencia;
     const L = (lista) => lista.map((l) => ({ nome: l.nome, de: l.nome, valor: virgula(l.valor) }));
     ui.ed = { linhas: { debitos: L(T.debitos), creditos: L(T.creditosExtras) }, aporte: virgula(T.aporte) };
-    if (T.root) {
-      const C = T.config;
-      Object.assign(ui.ed, { mensal: virgula(C.valorMensalidade), desc: C.descricaoDoacao, inicio: C.inicio || T.meses[T.meses.length - 1], saldoIni: virgula(C.saldoInicial) });
-    }
-    ui.mens = null;
-    ui.doacoes = false;
+    if (T.root) Object.assign(ui.ed, { inicio: T.config.inicio || T.meses[T.meses.length - 1], saldoIni: virgula(T.config.saldoInicial) });
+    ui.aberto = null;
     avisar();
   },
   trcancelar() { ui.ed = null; avisar(); },
-  trsalvar() { ler(); ui.confirmar = true; avisar(); },
-  trconfirmarnao() { ui.confirmar = false; avisar(); },
-  trconfirmar() { if (!ui.salvando) salvar(); },
+  trsalvar() { ler(); ui.confirmar = 'valores'; avisar(); },
+  trconfirmarnao() { ui.confirmar = null; avisar(); },
+  async trconfirmar() {
+    if (ui.salvando) return;
+    const qual = ui.confirmar;
+    ui.salvando = true;
+    avisar();
+    const ok = await (qual === 'busca' ? salvarBusca() : salvarValores());
+    ui.salvando = false;
+    ui.confirmar = null;
+    if (ok) {
+      if (qual === 'busca') ui.busca = null; else ui.ed = null;
+      toast('Alterações salvas.');
+    }
+    avisar();
+  },
   trlinha(el) { ler(); ui.ed.linhas[el.dataset.t].push({ nome: '', de: '', valor: '' }); avisar(); },
   trtirar(el) { ler(); ui.ed.linhas[el.dataset.t].splice(Number(el.dataset.i), 1); avisar(); },
 };
@@ -263,4 +309,5 @@ export async function mudou(t) {
 // Enter num campo: pede a confirmação, como o Salvar.
 export function enviar(form) {
   if (form.id === 'f-tr-val') cliques.trsalvar();
+  if (form.id === 'f-tr-busca') cliques.trbuscasalvar();
 }

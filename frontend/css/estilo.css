@@ -1993,3 +1993,6 @@ div.pf-of-total{cursor:default}
 .tr-lin-r input.tr-v{width:100%;text-align:right}
 .tr-inline{margin-top:4px}
 .tr-lido{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;font-size:.8rem}
+.tr-busca{display:grid;gap:8px}
+.tr-busca > small{margin-top:-4px}
+.tr-lin-p{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px;align-items:center}

@@ -549,7 +549,7 @@ main.addEventListener('submit', async (e) => {
     await (await telaDe('usuarios')).salvarApelidoEntidade(e.target);
   } else if (id === 'f-amaci-ori') {
     await (await telaDe('amaci')).enviar(e.target);
-  } else if (id === 'f-tr-val') {
+  } else if (id === 'f-tr-val' || id === 'f-tr-busca') {
     await (await telaDe('transparencia')).enviar(e.target);
   } else if (id.startsWith('f-guia-')) {
     await (await telaDe('guias')).enviar(e.target);
