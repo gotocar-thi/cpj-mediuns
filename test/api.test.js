@@ -359,7 +359,7 @@ test('encerrado não muda com o cadastro; excluído sem nada aberto é apagado d
   assert.equal((await api('GET', '/api/giras', ADMIN)).json.find((x) => x.data === d).retrato[rita.id].nome, 'Retrato Rita', 'apagada vai completa na lista');
 
   // Oferenda encerrada guarda os nomes: renomear não muda; o aluno excluído é apagado e continua nela.
-  const turmaId = (await api('GET', '/api/pessoas?lista=alunos', ADMIN)).json.turmas[0].id;
+  const turmaId = (await api('GET', '/api/pessoas?lista=alunos', ADMIN)).json.turmas.find((t) => t.nome === 'Turma 09').id;
   const al = (await api('POST', '/api/pessoas', ADMIN, { acao: 'alunos', nome: 'Aluno Retrato', turmaId })).json.alunos.find((a) => a.nome === 'Aluno Retrato');
   const of = (await api('POST', '/api/oferendas', ADMIN, {
     acao: 'salvar', responsavelId: RESP(), titulo: 'Oferenda retrato', data: '2038-06-01', porMedium: true, grupos: ['alunos'],
@@ -1649,7 +1649,7 @@ test('evento na gira: remove limpeza e escala, e bloqueia operações de escala'
 test('oferenda por pessoa: escolhe os grupos (funções e alunos); doação por aluno', async () => {
   const of = (b) => api('POST', '/api/oferendas', ADMIN, b);
   const A = (await api('GET', '/api/pessoas?lista=alunos', ADMIN)).json;
-  if (!A.alunos.length) await api('POST', '/api/pessoas', ADMIN, { acao: 'alunos', nome: 'Aluna Oferenda', turmaId: A.turmas[0].id });
+  if (!A.alunos.length) await api('POST', '/api/pessoas', ADMIN, { acao: 'alunos', nome: 'Aluna Oferenda', turmaId: A.turmas.find((t) => t.nome === 'Turma 09').id });
   const alunos = (await api('GET', '/api/pessoas?lista=alunos', ADMIN)).json.alunos;
   const ps = (await api('GET', '/api/pessoas', ADMIN)).json;
   assert.equal((await of({ acao: 'salvar', responsavelId: RESP(), titulo: 'Grupos', data: '2029-05-05', porMedium: true, grupos: ['xyz'] })).status, 400);
