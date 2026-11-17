@@ -46,12 +46,17 @@ if (!html.includes(SCRIPT_MAIN)) throw new Error('index.html sem o script de mai
 const preload = modulos.map((u) => `<link rel="modulepreload" href="${u}">`).join('\n');
 await writeFile(path.join(DIST, 'index.html'), html.replace(SCRIPT_MAIN, preload + '\n' + SCRIPT_MAIN));
 
-// A versão muda só quando algum arquivo do app muda; deploy que mexe só na API não obriga a baixar tudo de novo.
+// A versão muda só quando algum arquivo do app muda; deploy que mexe só na API não obriga a baixar nada.
+// Cada arquivo leva a própria marca (hash do conteúdo): na versão nova, o aparelho baixa só os que mudaram.
 const urls = await listar(DIST);
 const hash = createHash('sha256');
-for (const u of urls) hash.update(u).update(await readFile(arquivo(u)));
+const arquivos = {};
+for (const u of urls) {
+  const conteudo = await readFile(arquivo(u));
+  hash.update(u).update(conteudo);
+  arquivos[u === '/index.html' ? '/' : u] = createHash('sha256').update(conteudo).digest('hex').slice(0, 16);
+}
 const modelo = await readFile(path.join(RAIZ, 'scripts', 'sw-modelo.js'), 'utf8');
-const lista = urls.map((u) => (u === '/index.html' ? '/' : u));
-await writeFile(path.join(DIST, 'sw.js'), modelo.replace('__VERSAO__', hash.digest('hex').slice(0, 16)).replace('__ARQUIVOS__', JSON.stringify(lista)));
+await writeFile(path.join(DIST, 'sw.js'), modelo.replace('__VERSAO__', hash.digest('hex').slice(0, 16)).replace('__ARQUIVOS__', JSON.stringify(arquivos)));
 
-console.log(`Frontend pronto em dist/ (${modulos.length} módulos na abertura, ${lista.length} arquivos no service worker)`);
+console.log(`Frontend pronto em dist/ (${modulos.length} módulos na abertura, ${urls.length} arquivos no service worker)`);
