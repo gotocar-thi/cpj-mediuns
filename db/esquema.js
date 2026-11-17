@@ -9,7 +9,7 @@
 // Estrutura: veja db/ESTRUTURA-ESQUEMA.md para o mapa de versões, domínios e
 // quais migrações foram testadas no Postgres.
 
-export const VERSAO = 131;  // v131: alunos de curimba de fora da corrente viram alunos da turma Curimba
+export const VERSAO = 132;  // v132: oferendas_estado acha o nome de quem doou pelo id (usa o índice)
 
 import { PERFIS_PADRAO } from '../shared/permissoes.js';
 
@@ -5866,5 +5866,41 @@ export const MIGRACOES = [
      where case when nullif(p ->> 'alunoId', '') is not null then a.id = (p ->> 'alunoId')::uuid
                 when nullif(p ->> 'aluno', '') is not null then a.aluno_id = (p ->> 'aluno')::uuid
                 else a.pessoa_id = nullif(p ->> 'pessoaId', '')::uuid end
+   $$`,
+  // ================================================== v132: aba Oferendas mais leve
+  // O nome de quem doou vinha comparando texto ('p:' || pe.id::text), o que não usa o índice: o banco percorria
+  // usuários, pessoas e alunos inteiros a cada doação. Agora busca pelo id (só as chaves u:, p: e a: têm id; a chave fora desse formato não quebra a lista, só fica sem o nome do cadastro).
+  `create or replace function oferendas_estado(p jsonb default '{}'::jsonb)
+   returns jsonb language sql stable as $$
+     select coalesce(jsonb_agg(jsonb_build_object(
+       'id', o.id, 'titulo', o.titulo, 'data', o.data, 'status', o.status, 'publicada', o.publicada, 'abaId', o.aba_id,
+       'responsavelId', o.responsavel_id,
+       'responsavel', case when o.responsavel_id is null then o.retrato ->> 'responsavel'
+                           else coalesce(o.retrato ->> ('p:' || o.responsavel_id::text), (select nome from pessoas where id = o.responsavel_id)) end,
+       'porMedium', o.por_medium, 'noResumo', o.no_resumo,
+       'completaEm', o.completa_em, 'fechada', o.completa_em is not null and o.completa_em <= now() - interval '1 day',
+       'grupos', to_jsonb(o.grupos),
+       'mediuns', coalesce((select jsonb_agg(x.j order by lower(x.nome)) from (
+           select n.nome, jsonb_build_object('pessoaId', om.pessoa_id::text, 'nome', n.nome, 'pagamento', om.pagamento, 'entrega', om.entrega) as j
+           from oferenda_mediuns om left join pessoas pe on pe.id = om.pessoa_id
+           cross join lateral (select coalesce(o.retrato ->> ('p:' || om.pessoa_id::text), pe.nome) as nome) n
+           where om.oferenda_id = o.id and not om.excluido and n.nome is not null
+           union all
+           select n.nome, jsonb_build_object('pessoaId', 'a:' || oa.aluno_id::text, 'nome', n.nome, 'pagamento', oa.pagamento, 'entrega', oa.entrega, 'aluno', true)
+           from oferenda_alunos oa left join alunos al on al.id = oa.aluno_id
+           cross join lateral (select coalesce(o.retrato ->> ('a:' || oa.aluno_id::text), al.nome) as nome) n
+           where oa.oferenda_id = o.id and not oa.excluido and n.nome is not null) x), '[]'::jsonb),
+       'itens', coalesce((select jsonb_agg(jsonb_build_object(
+           'id', i.id, 'nome', i.nome, 'quantidade', i.quantidade, 'unidade', i.unidade, 'entrega', i.entrega, 'entregue', i.entregue,
+           'doacoes', coalesce((select jsonb_agg(jsonb_build_object('chave', d.pessoa_chave,
+                                                                    'nome', coalesce(o.retrato ->> d.pessoa_chave, u.nome, pe.nome, al.nome, d.pessoa_nome),
+                                                                    'quantidade', d.quantidade) order by d.atualizado_em)
+                                from oferenda_doacoes d
+                                left join usuarios u on u.id = case when d.pessoa_chave ~ '^u:[0-9a-f-]{36}$' then substr(d.pessoa_chave, 3)::uuid end
+                                left join pessoas pe on pe.id = case when d.pessoa_chave ~ '^p:[0-9a-f-]{36}$' then substr(d.pessoa_chave, 3)::uuid end
+                                left join alunos al on al.id = case when d.pessoa_chave ~ '^a:[0-9a-f-]{36}$' then substr(d.pessoa_chave, 3)::uuid end
+                                where d.item_id = i.id), '[]'::jsonb)
+         ) order by i.criado_em) from oferenda_itens i where i.oferenda_id = o.id), '[]'::jsonb)
+     ) order by o.data, o.criado_em), '[]'::jsonb) from oferendas o;
    $$`,
 ];

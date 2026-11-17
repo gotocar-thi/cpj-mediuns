@@ -46,9 +46,10 @@ export async function salvarDadosAluno(id, d, eu) {
 }
 
 // Junta ao estado dos alunos os dados e as pendências (só para quem edita Alunos).
-export async function comExtras(estado, eu) {
+// extrasProntos: alunos_extras, quando já veio junto (a leitura da lista busca os dois ao mesmo tempo).
+export async function comExtras(estado, eu, extrasProntos = null) {
   if (!pode(eu, 'alunos:editar') || !estado?.alunos) return estado;
-  const x = await db.rpc('alunos_extras');
+  const x = extrasProntos || await db.rpc('alunos_extras');
   const dados = {};
   for (const a of x.dados) {
     let cpf = '';

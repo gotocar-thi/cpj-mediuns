@@ -1,6 +1,7 @@
 // GET  /api/usuarios               lista quem tem acesso
 // GET  /api/usuarios?lista=perfis   perfis e o que cada um vê/edita por aba
 // GET  /api/usuarios?lista=senhas   pessoas da corrente e se têm senha (PIN)
+// GET  /api/usuarios?lista=tudo     { usuarios, perfis, senhas } numa chamada só (abertura da aba Admin root)
 // POST /api/usuarios   { email, senha, papel, pessoaId }  (root: { nome } no lugar de pessoaId)
 //                      { acao: 'perfil', chave?, nome, abas }  cria ou edita um perfil → perfis
 //                      { acao: 'excluirPerfil', chave }        → perfis
@@ -60,6 +61,10 @@ async function acaoPerfil(b) {
 export default rota({
   GET: async (req) => {
     await exigir(req, 'usuarios:gerenciar');
+    if (req.query.lista === 'tudo') {
+      const [usuarios, perfis, senhas] = await Promise.all([db.rpc('usuarios_listar'), db.rpc('perfis_config'), db.rpc('senhas_listar')]);
+      return { usuarios: semVersao(usuarios), perfis, senhas };
+    }
     if (req.query.lista === 'perfis') return db.rpc('perfis_config');
     if (req.query.lista === 'senhas') return db.rpc('senhas_listar');
     return semVersao(await db.rpc('usuarios_listar'));

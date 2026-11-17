@@ -96,8 +96,8 @@ export default rota({
   GET: async (req) => {
     if (req.query.lista === 'alunos') {
       const eu = await exigir(req, 'alunos:ver');
-      const estado = await db.rpc('alunos_estado');
-      return eu.grupo === 'alunos' ? { ...estado, alunos: estado.alunos.filter((a) => a.id === eu.alunoId) } : comExtras(estado, eu);
+      const [estado, extras] = await Promise.all([db.rpc('alunos_estado'), !eu.grupo && pode(eu, 'alunos:editar') ? db.rpc('alunos_extras') : null]);
+      return eu.grupo === 'alunos' ? { ...estado, alunos: estado.alunos.filter((a) => a.id === eu.alunoId) } : comExtras(estado, eu, extras);
     }
     if (req.query.lista === 'amaci') return amaci(await exigir(req, 'amaci:ver'));
     if (req.query.lista === 'curimba') {

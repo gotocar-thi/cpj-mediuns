@@ -189,8 +189,8 @@ async function dadosDoMe(u, extras = null) {
     extras ? extras.ervasPublicada : db.rpc('ervas_publicada'),
     extras ? extras.guiasPublicada : db.rpc('guias_publicada'),
     extras ? extras.amaciPublicada : db.rpc('amaci_publicada'),
-    // Painel da Transparência: só a corrente (alunos e curimba nunca veem).
-    u.grupo ? false : db.rpc('transparencia_publicada').catch(() => false),
+    // Painel da Transparência: só a corrente (alunos e curimba nunca veem). Na abertura já vem pronto (extras).
+    u.grupo ? false : extras && 'transparenciaPublicada' in extras ? extras.transparenciaPublicada : db.rpc('transparencia_publicada').catch(() => false),
   ]);
   // Sem nenhuma sub-aba visível, a aba Oferendas some para quem não administra.
   // Aba Vídeos publicada: aparece também para quem não tem a aba no perfil.
@@ -239,13 +239,18 @@ const acoes = {
     if (req.method !== 'GET') throw new HttpError(405, 'Método não permitido.');
     const u = await exigir(req);
     const atualizar = !!req.query.atualizar;
+    // Aluno: as listas e o "me" vão ao banco ao mesmo tempo.
     if (u.grupo) {
-      const listas = await listasDoGrupo(u);
-      return atualizar ? listas : { me: await dadosDoMe(u), ...listas };
+      if (atualizar) return listasDoGrupo(u);
+      const [listas, me] = await Promise.all([listasDoGrupo(u), dadosDoMe(u)]);
+      return { me, ...listas };
     }
     // Ao voltar ao app, ?versao= é a que ele já tem: sem mudança, a resposta é só { versao, semMudanca }.
+    // Na abertura, "a Transparência está visível?" vai ao banco junto com as listas (uma ida a menos em fila).
+    const transparencia = atualizar ? null : db.rpc('transparencia_publicada').catch(() => false);
     const { listas, extras } = await listasIniciais(u, { versao: atualizar ? String(req.query.versao || '') : '', me: !atualizar });
-    return atualizar ? listas : { me: await dadosDoMe(u, extras), ...listas };
+    if (atualizar) return listas;
+    return { me: await dadosDoMe(u, extras && { ...extras, transparenciaPublicada: await transparencia }), ...listas };
   },
 
   // Perfil da própria pessoa (todo mundo que está no cadastro da corrente).

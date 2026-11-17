@@ -2634,3 +2634,30 @@ test('turma Curimba: o aluno posto nela entra nas aulas; no UP CPJ as aulas vão
   await api('POST', '/api/pessoas', ADMIN, { acao: 'curimbaExcluirAluno', id: linha.id });
   await api('DELETE', '/api/pessoas/' + pessoa.id, ADMIN);
 });
+
+test('oferendas: o nome de quem doou vem do cadastro; chave fora do formato não quebra a lista', async () => {
+  const of = (b, tok = ADMIN) => api('POST', '/api/oferendas', tok, b);
+  let r = (await of({ acao: 'salvar', responsavelId: RESP(), titulo: 'Nomes das doações', data: '2039-01-01' })).json;
+  const o = r.oferendas.find((x) => x.titulo === 'Nomes das doações');
+  await of({ acao: 'status', id: o.id, status: 'publicado' });
+  r = (await of({ acao: 'item', oferendaId: o.id, nome: 'Flores', quantidade: 20, entrega: '' })).json;
+  const item = r.oferendas.find((x) => x.id === o.id).itens[0];
+  assert.equal((await of({ acao: 'doar', itemId: item.id, quantidade: 1 })).status, 200);
+  assert.equal((await of({ acao: 'doar', itemId: item.id, quantidade: 2 }, await tokenCorrente('Ana'))).status, 200);
+  // Doações antigas: só com o nome digitado e com uma chave fora do formato.
+  sql(`insert into oferenda_doacoes (item_id, pessoa_chave, pessoa_nome, quantidade) values ('${item.id}', 'n:fulano', 'Fulano', 1), ('${item.id}', 'p:antiga', 'Zé Antigo', 1)`);
+  const lido = await api('GET', '/api/oferendas', ADMIN);
+  assert.equal(lido.status, 200, JSON.stringify(lido.json));
+  const nomes = lido.json.oferendas.find((x) => x.id === o.id).itens[0].doacoes.map((d) => [d.nome, d.quantidade]);
+  const admin = (await api('GET', '/api/auth/me', ADMIN)).json.nome;
+  assert.deepEqual(nomes, [[admin, 1], ['Ana', 2], ['Fulano', 1], ['Zé Antigo', 1]]);
+  await of({ acao: 'excluir', id: o.id });
+});
+
+test('Admin root: usuários, perfis e senhas numa chamada só (lista=tudo)', async () => {
+  assert.equal((await api('GET', '/api/usuarios?lista=tudo', USER)).status, 403);
+  const tudo = (await api('GET', '/api/usuarios?lista=tudo', ADMIN)).json;
+  const [u, f, s] = await Promise.all(['', '?lista=perfis', '?lista=senhas'].map((q) => api('GET', '/api/usuarios' + q, ADMIN).then((r) => r.json)));
+  assert.deepEqual(tudo, { usuarios: u, perfis: f, senhas: s });
+  assert.ok(!JSON.stringify(tudo.usuarios).includes('sessaoVersao'), 'sem a versão da sessão, como na lista de sempre');
+});

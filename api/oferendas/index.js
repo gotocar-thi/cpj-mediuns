@@ -25,7 +25,8 @@ import { respostaGuias, acaoGuias, fotoGuia } from '../_lib/guias.js';
 import { webhookAsaas, respostaAsaas, acaoAsaas } from '../_lib/asaas.js';
 
 const STATUS = ['rascunho', 'aguardando', 'publicado', 'encerrado'];
-async function resposta(oferendas, eu) {
+// abas: as sub-abas, quando já vieram junto (a leitura da aba busca as duas em paralelo).
+async function resposta(oferendas, eu, abasProntas = null) {
   const chave = chavePessoa(eu);
   // Bloqueada: só os itens em que a pessoa se comprometeu (para "Seus compromissos"), sem os outros doadores.
   const soMeus = (o) => ({
@@ -33,7 +34,7 @@ async function resposta(oferendas, eu) {
     itens: o.itens.filter((i) => i.doacoes.some((d) => d.chave === chave)).map((i) => ({ ...i, doacoes: i.doacoes.filter((d) => d.chave === chave) })),
     mediuns: (o.mediuns || []).filter((m) => 'p:' + m.pessoaId === chave),
   });
-  const abas = await db.rpc('oferenda_abas_listar');
+  const abas = abasProntas || await db.rpc('oferenda_abas_listar');
   const admin = pode(eu, 'oferendas:gerenciar');
   const ocultas = abasOcultas(abas);
   return {
@@ -76,8 +77,9 @@ export default rota({
     if (req.query.lista === 'guiaFoto') return fotoGuia(req, res);
     if (req.query.lista === 'asaas') return respostaAsaas(await exigir(req));
     const eu = await exigir(req, 'oferendas:doar');
-    // Já inclui os novos cadastrados nas listas por pessoa.
-    return resposta(await db.rpc('oferendas_sincronizar'), eu);
+    // Já inclui os novos cadastrados nas listas por pessoa; as sub-abas vêm ao mesmo tempo (uma ida a menos ao banco).
+    const [oferendas, abas] = await Promise.all([db.rpc('oferendas_sincronizar'), db.rpc('oferenda_abas_listar')]);
+    return resposta(oferendas, eu, abas);
   },
   POST: async (req) => {
     if (req.query.webhook === 'asaas') return webhookAsaas(req);

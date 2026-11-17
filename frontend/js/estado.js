@@ -444,8 +444,8 @@ export async function excluirPessoa(id) {
 // ---------- usuários (admin) ----------
 export async function carregarUsuarios() {
   try {
-    const [u, f, s] = await Promise.all([api('GET', '/usuarios'), api('GET', '/usuarios?lista=perfis'), api('GET', '/usuarios?lista=senhas')]);
-    Object.assign(estado, { usuarios: u, perfisCfg: f, senhas: s });
+    const r = await api('GET', '/usuarios?lista=tudo');   // usuários, perfis e senhas numa chamada só
+    Object.assign(estado, { usuarios: r.usuarios, perfisCfg: r.perfis, senhas: r.senhas });
   } catch (e) { toast(e.message); Object.assign(estado, { usuarios: estado.usuarios || [], perfisCfg: estado.perfisCfg || [], senhas: estado.senhas || [] }); }
   avisar();
 }
@@ -778,7 +778,7 @@ export async function acaoGuias(op, dados = {}) {
 // Aba: quem administra sempre vê; as pessoas com a aba no perfil (e os alunos), quando o admin liga "Visível para todos".
 export const veAmaci = () => pode('amaci:editar') || (pode('amaci:ver') && !!estado.me?.amaciPublicada);
 export async function carregarAmaci() {
-  try { estado.amaci = await api('GET', '/pessoas?lista=amaci'); } catch (e) { estado.amaci = { erro: e.message }; }
+  try { estado.amaci = await api('GET', '/pessoas?lista=amaci'); } catch (e) { estado.amaci = estado.amaci && !estado.amaci.erro ? estado.amaci : { erro: e.message }; }
   avisar();
 }
 export async function acaoAmaci(op, dados = {}) {
@@ -817,7 +817,7 @@ export async function acaoTransparencia(op, dados = {}) {
 
 // ---------- ASAAS (só o root) ----------
 export async function carregarAsaas() {
-  try { estado.asaas = await api('GET', '/oferendas?lista=asaas'); } catch (e) { estado.asaas = { erro: e.message }; }
+  try { estado.asaas = await api('GET', '/oferendas?lista=asaas'); } catch (e) { estado.asaas = estado.asaas && !estado.asaas.erro ? estado.asaas : { erro: e.message }; }
   avisar();
 }
 export async function acaoAsaas(op, dados = {}) {
@@ -834,7 +834,7 @@ export async function acaoAsaas(op, dados = {}) {
 
 // ---------- perfil (orixás e guias) ----------
 export async function carregarPerfil() {
-  try { estado.perfil = await api('GET', '/auth/perfil'); } catch (e) { estado.perfil = { erro: e.message }; }
+  try { estado.perfil = await api('GET', '/auth/perfil'); } catch (e) { estado.perfil = estado.perfil && !estado.perfil.erro ? estado.perfil : { erro: e.message }; }
   avisar();
 }
 
@@ -978,6 +978,39 @@ export function carregarOferendas() {
     avisar();
   })();
   return carregandoOferendas;
+}
+
+// Abrir uma aba: mostra na hora o que já foi baixado e busca de novo por trás; sem nada baixado (ou com erro), a tela
+// carrega como antes. A resposta só entra se ninguém mudou os dados enquanto isso (uma ação na tela, como doar ou
+// salvar, já trouxe a versão mais nova) e se ainda é a mesma sessão. Falhou: fica o que já estava.
+// buscar: devolve os valores novos, na ordem das chaves.
+async function buscarPorTras(chaves, buscar) {
+  const antes = chaves.map((k) => estado[k]);
+  const sessao = token();
+  try {
+    const novos = await buscar();
+    if (token() !== sessao || chaves.some((k, i) => estado[k] !== antes[i])) return;
+    chaves.forEach((k, i) => { estado[k] = novos[i]; });
+    avisar();
+  } catch { /* sem conexão: a tela continua com o que tinha */ }
+}
+export function atualizarAoAbrir(chave, rota) {
+  const atual = estado[chave];
+  if (atual && !atual.erro) buscarPorTras([chave], async () => [await api('GET', rota)]);
+  else estado[chave] = null;
+}
+// Admin root: usuários, perfis e senhas vêm juntos, numa chamada só.
+export function atualizarUsuariosAoAbrir() {
+  if (estado.usuarios && estado.perfisCfg && estado.senhas) {
+    buscarPorTras(['usuarios', 'perfisCfg', 'senhas'], async () => { const r = await api('GET', '/usuarios?lista=tudo'); return [r.usuarios, r.perfis, r.senhas]; });
+  } else estado.usuarios = null;
+}
+
+// Abrir a aba Oferendas: mostra na hora o que já foi baixado e atualiza por trás (a primeira vez, a tela carrega).
+export function atualizarOferendasAoAbrir() {
+  if (estado.oferendas) carregarOferendas();
+  if (estado.iemanja && !estado.iemanja.erro) carregarIemanja();
+  else estado.iemanja = null;   // com erro, tenta de novo do zero
 }
 
 // ---------- aba Iemanjá ----------

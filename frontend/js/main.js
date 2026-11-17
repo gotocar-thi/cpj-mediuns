@@ -2,8 +2,8 @@
 
 import { estadoDoApp, logado, entrar, cadastrar, criarSenhaContato, verificarCpf, entrarCpf, criarSenhaCpf, instalar, sair, trocarSenha, criarSenhaCorrente } from './auth.js';
 import { quandoSessaoExpirar } from './api.js';
-import { estado, prefs, salvarPrefs, pode, visaoAtiva, aoMudar, avisar, carregarTudo, atualizarDoServidor, salvarPerfilAgora, mudarVisaoRoot, veErvas, veOferendas, veGuias, veAmaci, veTransparencia, temPendencia } from './estado.js';
-import { esc, toast, mascaraTel, guardarRascunhos, devolverRascunhos } from './util.js';
+import { estado, prefs, salvarPrefs, pode, visaoAtiva, aoMudar, avisar, carregarTudo, atualizarDoServidor, atualizarOferendasAoAbrir, atualizarAoAbrir, atualizarUsuariosAoAbrir, salvarPerfilAgora, mudarVisaoRoot, veErvas, veOferendas, veGuias, veAmaci, veTransparencia, temPendencia } from './estado.js';
+import { esc, toast, hoje, mascaraTel, guardarRascunhos, devolverRascunhos } from './util.js';
 import { iniciarAtualizacao } from './atualizacao.js';
 import { PIN_NOVO, PIN_NOVO_MSG } from '/shared/permissoes.js';
 import { cpfValido } from '/shared/perfil.js';
@@ -226,28 +226,34 @@ tabs.addEventListener('click', (e) => {
   if (!b) return;
   prefs.tab = b.dataset.tab;
   estado.confirm = null;
-  // Usuários: busca de novo; o bloco Senhas volta minimizado.
-  if (b.dataset.tab === 'usuarios') { estado.usuarios = null; estado.senhasAberto = false; estado.senhaEdit = null; }
-  if (b.dataset.tab === 'ervas') { estado.ervas = null; estado.ervasCompra = null; estado.ervasFechar = false; estado.ervasNova = null; estado.ervasHist = null; }
-  // Busca as oferendas de novo ao abrir a aba (para ver as que o admin acabou de publicar).
-  if (b.dataset.tab === 'oferendas') { estado.oferendas = null; estado.iemanja = null; TELAS.oferendas?.aoAbrirAba(); }
-  // Compras: busca de novo (estoque e pedidos mudam) e a tela volta ao padrão.
-  if (b.dataset.tab === 'guias') { estado.guias = null; TELAS.guias?.limpar(); }
-  // Amaci: busca de novo e volta ao último orixá liberado.
-  if (b.dataset.tab === 'amaci') { estado.amaci = null; TELAS.amaci?.limpar(); }
-  if (b.dataset.tab === 'asaas') { estado.asaas = null; TELAS.asaas?.limpar(); }
-  // Transparência: busca de novo (o ASAAS muda) e volta ao mês atual.
-  if (b.dataset.tab === 'transparencia') { estado.transparencia = null; TELAS.transparencia?.limpar(); }
-  if (b.dataset.tab === 'perfil') estado.perfil = null;
-  // Curimba: busca de novo e fecha as janelas abertas.
-  if (b.dataset.tab === 'curimba') { estado.curimba = null; if (estado.curUi) estado.curUi.confirmar = null; }
-  // Vídeos: busca de novo e todos voltam fechados.
-  if (b.dataset.tab === 'videos') { estado.videos = null; estado.vidUi = null; }
+  // As abas abrem na hora com o que já está no aparelho e buscam de novo por trás (atualizarAoAbrir; a primeira vez
+  // carrega). O que volta ao padrão ao entrar (blocos minimizados, janelas fechadas) continua voltando.
+  // Admin root: o bloco Senhas volta minimizado.
+  if (b.dataset.tab === 'usuarios') { atualizarUsuariosAoAbrir(); estado.senhasAberto = false; estado.senhaEdit = null; }
+  if (b.dataset.tab === 'ervas') { atualizarAoAbrir('ervas', '/ervas'); estado.ervasCompra = null; estado.ervasFechar = false; estado.ervasNova = null; estado.ervasHist = null; }
+  // Oferendas: abre com o que já está no aparelho e busca de novo por trás (para ver as que o admin acabou de publicar).
+  if (b.dataset.tab === 'oferendas') { atualizarOferendasAoAbrir(); TELAS.oferendas?.aoAbrirAba(); }
+  // Compras: estoque e pedidos mudam; a tela volta ao padrão.
+  if (b.dataset.tab === 'guias') { atualizarAoAbrir('guias', '/oferendas?lista=guias'); TELAS.guias?.limpar(); }
+  // Amaci: volta ao último orixá liberado.
+  if (b.dataset.tab === 'amaci') { atualizarAoAbrir('amaci', '/pessoas?lista=amaci'); TELAS.amaci?.limpar(); }
+  if (b.dataset.tab === 'asaas') { atualizarAoAbrir('asaas', '/oferendas?lista=asaas'); TELAS.asaas?.limpar(); }
+  // Transparência: volta ao mês atual (o guardado só serve se já for o do mês atual).
+  if (b.dataset.tab === 'transparencia') {
+    if (estado.transparencia?.mes === hoje().slice(0, 7)) atualizarAoAbrir('transparencia', '/giras?lista=transparencia');
+    else estado.transparencia = null;
+    TELAS.transparencia?.limpar();
+  }
+  if (b.dataset.tab === 'perfil') atualizarAoAbrir('perfil', '/auth/perfil');
+  // Curimba: fecha as janelas abertas.
+  if (b.dataset.tab === 'curimba') { atualizarAoAbrir('curimba', '/pessoas?lista=curimba'); if (estado.curUi) estado.curUi.confirmar = null; }
+  // Vídeos: todos voltam fechados.
+  if (b.dataset.tab === 'videos') { atualizarAoAbrir('videos', '/giras?lista=videos'); estado.vidUi = null; }
   // Fotos: busca de novo (os links das fotos expiram) e os álbuns voltam fechados, a não ser no meio de um envio.
   if (b.dataset.tab === 'fotos') { estado.fotos = null; if (!estado.fotUi?.envio) estado.fotUi = null; }
   // Histórico: o bloco Giras salvas volta minimizado.
-  if (b.dataset.tab === 'hist') { estado.stPerfis = null; estado.salvasAberto = false; }
-  if (b.dataset.tab === 'agenda') estado.stPerfis = null;   // orixá de cabeça do bloco do ano
+  if (b.dataset.tab === 'hist') { atualizarAoAbrir('stPerfis', '/pessoas?lista=perfis'); estado.salvasAberto = false; }
+  if (b.dataset.tab === 'agenda') atualizarAoAbrir('stPerfis', '/pessoas?lista=perfis');   // orixá de cabeça do bloco do ano
   salvarPerfilAgora();
   salvarPrefs();
   render();
