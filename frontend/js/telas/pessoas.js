@@ -10,6 +10,8 @@ import { ICONE_WHATS } from './giraComum.js';
 
 // Ordem das funções exibidas nos totais da Corrente CPJ.
 const ORDEM_FUNCOES = ['medium', 'extra', 'passe', 'cambone', 'senha'].map((k) => FUNCOES.find((f) => f.k === k)).filter(Boolean);
+// Quadradinhos da Corrente: as funções e, por último, a curimba (cadastrada na corrente, fora do sorteio e do total).
+const QUADROS_CORRENTE = [...ORDEM_FUNCOES, { k: CURIMBA, pl: 'Curimba' }];
 const cabDobra = (act, titulo, count, aberto) => `<button class="grp-h dobra" data-act="${act}" aria-expanded="${aberto}" aria-label="${aberto ? 'Minimizar' : 'Expandir'}">
   <h2>${titulo}</h2><span class="count">${count} <span class="seta" aria-hidden="true">${aberto ? '▾' : '▸'}</span></span></button>`;
 
@@ -474,17 +476,22 @@ function renderPessoas() {
     return h + `<div class="card empty"><p class="muted">${editar ? 'Ninguém cadastrado ainda. Digite os nomes acima; pode colar uma lista inteira separada por vírgulas.' : 'Ninguém cadastrado ainda.'}</p></div>${cardTurmas(todas, editar)}${verAlunos ? cardAlunos() : ''}</section>`;
   }
   const funcaoCorrenteAberta = estado.correnteFuncaoAberta;
-  const pessoasPorFuncao = Object.fromEntries(ORDEM_FUNCOES.map((f) => [f.k, ps.filter((p) => p.funcao === f.k)]));
+  const pessoasPorFuncao = Object.fromEntries(QUADROS_CORRENTE.map((f) => [f.k, todas.filter((p) => p.funcao === f.k)]));
+  // A curimba na lista: como no sub-bloco da limpeza (sem função e sem as linhas, que ela não tem).
+  const linhaCorrente = (p) => (!ehCurimba(p) ? linhaPessoa(p, { acoes: editar })
+    : editar ? linhaPessoa(p, { funcao: false })
+      : `<div class="pp"><div class="pp-l1"><span class="nm">${esc(p.nome)}</span>${p.limpeza ? `<span class="badge pp-limp">🧹 Turma ${p.limpeza}</span>` : ''}</div></div>`);
   const correnteListaAberta = pessoasPorFuncao[funcaoCorrenteAberta]?.length ? funcaoCorrenteAberta : null;
   // Ordem: Adicionar, Corrente (com Oferendas pendentes e, embaixo, as licenças), Turmas da limpeza (com Curimba), Alunos.
   h += `<div class="card pp-card fn-corrente corrente-card"><div class="grp-h"><h2><span class="estrela-ouro" aria-hidden="true">★</span> Corrente CPJ</h2><span class="count">${ps.length} pessoa${ps.length === 1 ? '' : 's'}</span></div>
-    <div class="pf-of-totais">${ORDEM_FUNCOES.map((f) => {
+    <div class="pf-of-totais seis">${QUADROS_CORRENTE.map((f) => {
       const abertas = pessoasPorFuncao[f.k];
       const aberta = funcaoCorrenteAberta === f.k;
       // Mesmo quadrado do bloco Oferendas pendentes (pf-of-total): nome em cima, número embaixo.
       return `<button type="button" class="pf-of-total fn-${f.k}${aberta ? ' selecionado' : ''}" data-act="correnteFuncao" data-f="${f.k}" aria-expanded="${aberta}" aria-label="${f.pl}: ${abertas.length} pessoas${aberta ? ', recolher lista' : ', expandir lista'}"${abertas.length ? '' : ' disabled'}><b>${abertas.length}</b><span>${f.k === 'extra' ? 'At. Extra' : f.pl}</span></button>`;
     }).join('')}</div>
-    ${correnteListaAberta ? `<div class="ppl">${pessoasPorFuncao[correnteListaAberta].map((p) => linhaPessoa(p, { acoes: editar })).join('')}</div>` : ''}
+    ${correnteListaAberta === CURIMBA ? '<p class="nota">A curimba não conta presença nem falta, não entra no sorteio nem no total da corrente.</p>' : ''}
+    ${correnteListaAberta ? `<div class="ppl">${pessoasPorFuncao[correnteListaAberta].map(linhaCorrente).join('')}</div>` : ''}
     ${cardOferendasPendentes()}${listaLicencas(ps, editar)}</div>`;   // licença: só a corrente
   h += cardTurmas(todas, editar);
   if (verAlunos) h += cardAlunos();

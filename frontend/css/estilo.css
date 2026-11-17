@@ -1207,6 +1207,7 @@ section.panel.pf-tela{gap:14px}
 .pessoas-tela .corrente-card .pf-c-corrente-oferendas h2{font-size:1.05rem}
 /* Quadradinhos das turmas (limpeza e alunos): quantos couberem por linha */
 .pessoas-tela .pf-of-totais.auto{grid-template-columns:repeat(auto-fit,minmax(64px,1fr))}
+.pessoas-tela .pf-of-totais.seis{grid-template-columns:repeat(3,minmax(0,1fr))}
 .pessoas-tela .lista-aberta{display:grid;gap:10px}
 /* Cada pessoa: linha 1 = nome, selos e botões ✎ / 🗑️; embaixo, "+ médium de passe" e o resumo das entidades */
 .pessoas-tela .ppl{display:grid;gap:6px}

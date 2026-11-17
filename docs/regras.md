@@ -9,7 +9,7 @@ Estado atual das regras da casa e do app. Código: `shared/regras.js` (e demais 
 - **Linhas do cadastro** (`pessoas.linhas`, só Extra/Passe): entidades em que atua na própria função. **"Todas" = todas marcadas. Nenhuma marcada = não apto a nenhuma → cambona em toda gira com entidade.** (v47 deu "Todas" a quem estava vazio.)
 - **Afinidades** (Perfil e aba Pessoas): `afinidade_passe` (Cambone e Extra) e `afinidade_extra` (Passe) — "100% de afinidade e segurança".
 - Turma da limpeza 1–7 (rodízio automático por gira), data de entrada na corrente (só root), licenças (início, fim, motivo).
-- Aba Pessoas: os blocos de Extra e Passe se chamam **Médiuns At. Extra** e **Médiuns de Passe**; nos quadradinhos da Corrente CPJ ficam os nomes curtos (At. Extra, Passe).
+- Aba Pessoas: os blocos de Extra e Passe se chamam **Médiuns At. Extra** e **Médiuns de Passe**; nos quadradinhos da Corrente CPJ ficam os nomes curtos (At. Extra, Passe). O último quadradinho é a **Curimba** (pessoas da corrente com a função curimba; três por linha): tocar abre a lista, com o aviso de que ela não conta presença, não entra no sorteio nem no total do título (o total é da corrente sem a curimba).
 - Aba Pessoas, dentro do bloco da Corrente, acima das licenças e sem moldura ADMIN: **Oferendas pendentes** (só para quem vê o perfil de todos), agrupadas pela função cadastrada.
 - Aba Pessoas: os blocos **Turmas da limpeza** e **Alunos** abrem sempre minimizados (só o título com a contagem); tocar no título abre ou minimiza.
 - Aba Pessoas → **Alunos**: com uma turma aberta, quem edita Alunos tem o botão do **WhatsApp** para compartilhar a lista da turma (nome da turma, total e um aluno por linha, numerados).
