@@ -64,10 +64,17 @@ let instalado = true;
 let ultimoDesenho = '';    // aba + HTML do último desenho (a aba Vídeos não redesenha se nada mudou)
 let arrastoAnamnese = null;
 
-// Sub-abas da aba Gira. Por dentro continuam sendo as telas 'agenda' e 'hist' (cada uma com o seu estado).
-function subabasGira() {
-  const sub = [['agenda', 'Gira'], ['hist', 'Histórico']];
-  return `<div class="subabas subabas-gira" role="tablist" aria-label="Sub-abas da Gira">${sub.map(([k, t]) => `<button class="subaba" role="tab" data-subgira="${k}" aria-selected="${prefs.tab === k}">${t}</button>`).join('')}</div>`;
+// Abas com sub-abas: o botão do topo é o da primeira; as outras viram sub-abas dentro dela. Por dentro continuam
+// sendo telas separadas (cada uma com o seu estado e a sua permissão).
+const GRUPOS_ABAS = [
+  { topo: 'agenda', subs: [['agenda', 'Gira'], ['hist', 'Histórico']] },
+  { topo: 'guias', subs: [['guias', 'Compras'], ['asaas', 'ASAAS']] },
+];
+const grupoDa = (tab) => GRUPOS_ABAS.find((g) => g.subs.some(([k]) => k === tab));
+function barraSubabas(grupo, VE) {
+  const subs = grupo.subs.filter(([k]) => VE[k]);
+  if (subs.length < 2) return '';
+  return `<div class="subabas subabas-topo" role="tablist" aria-label="Sub-abas">${subs.map(([k, t]) => `<button class="subaba" role="tab" data-sub="${k}" aria-selected="${prefs.tab === k}">${t}</button>`).join('')}</div>`;
 }
 
 // ---------- render ----------
@@ -117,25 +124,31 @@ function render() {
     pessoas: pode('pessoas:ver') || pode('alunos:ver'), hist: pode('historico:ver'), perfil: pode('perfil:ver'), curimba: pode('curimba:ver'), videos: pode('videos:ver') || !!estado.me.videosPublicada, fotos: FOTOS_ATIVA && pode('fotos:ver'), gira: true, agenda: true };
   if (visao === 'alunos') VE = { usuarios: false, asaas: false, transparencia: false, ervas: false, oferendas: veOferendas(), guias: veGuias(), amaci: veAmaci(), pessoas: false, hist: false, perfil: true, curimba: false, videos: false, fotos: false, gira: true, agenda: false };
   if (visao === 'curimba') VE = { usuarios: false, asaas: false, transparencia: false, ervas: false, oferendas: false, guias: veGuias(), amaci: false, pessoas: false, hist: false, perfil: false, curimba: false, videos: !!estado.me.videosPublicada, fotos: false, gira: true, agenda: false };
+  // Botão do topo de um grupo que a pessoa não vê (ex.: só o ASAAS, sem Compras): abre a primeira sub-aba que ela vê.
+  const grupoAberto = grupoDa(prefs.tab);
+  if (grupoAberto && prefs.tab === grupoAberto.topo && !VE[prefs.tab]) prefs.tab = grupoAberto.subs.find(([k]) => VE[k])?.[0] || prefs.tab;
   if (!VE[prefs.tab]) prefs.tab = 'gira';
   tabs.hidden = false;
   Object.entries(VE).forEach(([k, v]) => { tabs.querySelector(`[data-tab="${k}"]`).hidden = !v; });
-  // O Histórico é uma sub-aba da aba Gira: o botão dele no topo fica sempre escondido.
-  tabs.querySelector('[data-tab="hist"]').hidden = true;
+  // Sub-abas: o botão delas no topo fica escondido; o do grupo aparece se a pessoa vê alguma sub-aba.
+  for (const g of GRUPOS_ABAS) {
+    g.subs.forEach(([k]) => { if (k !== g.topo) tabs.querySelector(`[data-tab="${k}"]`).hidden = true; });
+    tabs.querySelector(`[data-tab="${g.topo}"]`).hidden = !g.subs.some(([k]) => VE[k]);
+  }
   tabs.querySelector('[data-tab="gira"]').textContent = 'Geral';
   tabs.querySelector('[data-tab="agenda"]').textContent = 'Gira';
   // Perfil: logo depois de Gira; para quem é admin, depois de Pessoas.
   const btPerfil = tabs.querySelector('[data-tab="perfil"]');
   const antes = tabs.querySelector(pode('pessoas:editar') ? '[data-tab="pessoas"]' : '[data-tab="agenda"]');
   if (VE.perfil && antes.nextElementSibling !== btPerfil) antes.after(btPerfil);
-  const abaTopo = prefs.tab === 'hist' ? 'agenda' : prefs.tab;
+  const abaTopo = grupoDa(prefs.tab)?.topo || prefs.tab;
   tabs.querySelectorAll('button').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.tab === abaTopo)));
   renderConta();
 
   const tela = TELAS[prefs.tab];
   if (!tela) { abrirTela(prefs.tab); return; }
-  // Aba Gira: sub-abas Gira e Histórico (o Histórico só para quem tem a permissão).
-  const html = (abaTopo === 'agenda' && VE.hist ? subabasGira() : '') + tela.render();
+  // Sub-abas (Gira | Histórico, Compras | ASAAS): só as que a pessoa vê; com uma só, nem aparece a barra.
+  const html = (grupoDa(prefs.tab) ? barraSubabas(grupoDa(prefs.tab), VE) : '') + tela.render();
   // Aba Vídeos: redesenhar recarrega o vídeo que está tocando; se nada mudou na tela, deixa como está.
   const desenho = prefs.tab + '|' + html;
   if (prefs.tab === 'videos' && desenho === ultimoDesenho) return;
@@ -291,8 +304,9 @@ main.addEventListener('click', async (e) => {
   if (e.target.closest('[data-conta="recarregar-pagina"]')) { location.reload(); return; }
   // Calendário da aba Gira: abre o seletor de data também no computador.
   if (e.target.dataset.act === 'irdata' || e.target.dataset.act === 'iemdata') { try { e.target.showPicker(); } catch { /* o toque já abre */ } return; }
-  const sub = e.target.closest('[data-subgira]');
-  if (sub) { if (sub.dataset.subgira !== prefs.tab) tabs.querySelector(`[data-tab="${sub.dataset.subgira}"]`).click(); return; }
+  // Sub-aba: o mesmo que tocar na aba (cada tela se prepara como sempre).
+  const sub = e.target.closest('[data-sub]');
+  if (sub) { if (sub.dataset.sub !== prefs.tab) tabs.querySelector(`[data-tab="${sub.dataset.sub}"]`).click(); return; }
   if (e.target.closest('[data-conta="voltarlogin"]')) { telaLogin = ''; cadastroDigitado = null; cadastroCpf = null; erroLogin = ''; render(); return; }
   if (e.target.closest('[data-conta="cadastro"]')) { telaLogin = 'cadastro'; cadastroCpf = null; erroLogin = ''; render(); window.scrollTo(0, 0); document.getElementById('c-cpf')?.focus(); return; }
   if (e.target.closest('[data-conta="trocarcpf"]')) { cadastroCpf = null; erroLogin = ''; render(); document.getElementById('c-cpf')?.focus(); return; }
