@@ -2,7 +2,7 @@
 
 import { estadoDoApp, logado, entrar, cadastrar, criarSenhaContato, verificarCpf, entrarCpf, criarSenhaCpf, instalar, sair, trocarSenha, criarSenhaCorrente } from './auth.js';
 import { quandoSessaoExpirar, definirVerComo } from './api.js';
-import { estado, prefs, salvarPrefs, pode, visaoAtiva, aoMudar, avisar, carregarTudo, atualizarDoServidor, atualizarOferendasAoAbrir, atualizarAoAbrir, atualizarUsuariosAoAbrir, salvarPerfilAgora, mudarVisaoRoot, verComoPessoa, ehRootReal, veErvas, veOferendas, veGuias, veAmaci, veTransparencia, vePagamentos, temPendencia } from './estado.js';
+import { estado, prefs, salvarPrefs, pode, visaoAtiva, aoMudar, avisar, carregarTudo, atualizarDoServidor, atualizarOferendasAoAbrir, atualizarAoAbrir, atualizarUsuariosAoAbrir, salvarPerfilAgora, mudarVisaoRoot, verComoPessoa, ehRootReal, veErvas, veOferendas, veGuias, veAmaci, veTransparencia, vePagamentos, veDiario, temPendencia } from './estado.js';
 import { esc, toast, hoje, mascaraTel, guardarRascunhos, devolverRascunhos } from './util.js';
 import { iniciarAtualizacao } from './atualizacao.js';
 import { PIN_NOVO, PIN_NOVO_MSG } from '/shared/permissoes.js';
@@ -30,6 +30,7 @@ const SOB_DEMANDA = {
   amaci: () => import('./telas/amaci.js'),
   asaas: () => import('./telas/asaas.js'),
   pagamentos: () => import('./telas/pagamentos.js'),
+  diario: () => import('./telas/diario.js'),
   transparencia: () => import('./telas/transparencia.js'),
   perfil: () => import('./telas/perfil.js'),
   videos: () => import('./telas/videos.js'),
@@ -133,13 +134,13 @@ function render() {
   const visao = visaoAtiva();
   // Abas que o perfil pode ver.
   let VE = { usuarios: pode('usuarios:gerenciar'), asaas: pode('asaas:ver'), pagamentos: vePagamentos(), transparencia: veTransparencia(), ervas: veErvas(), oferendas: veOferendas(), guias: veGuias(), amaci: veAmaci(),
-    pessoas: pode('pessoas:ver') || pode('alunos:ver'), hist: pode('historico:ver'), perfil: pode('perfil:ver'), curimba: pode('curimba:ver'), videos: pode('videos:ver') || !!estado.me.videosPublicada, fotos: FOTOS_ATIVA && pode('fotos:ver'), gira: true, agenda: true };
-  if (visao === 'alunos') VE = { usuarios: false, asaas: false, pagamentos: vePagamentos(), transparencia: false, ervas: false, oferendas: veOferendas(), guias: veGuias(), amaci: veAmaci(), pessoas: false, hist: false, perfil: true, curimba: false, videos: false, fotos: false, gira: true, agenda: false };
+    pessoas: pode('pessoas:ver') || pode('alunos:ver'), hist: pode('historico:ver'), perfil: pode('perfil:ver'), curimba: pode('curimba:ver'), videos: pode('videos:ver') || !!estado.me.videosPublicada, fotos: FOTOS_ATIVA && pode('fotos:ver'), diario: veDiario(), gira: true, agenda: true };
+  if (visao === 'alunos') VE = { usuarios: false, asaas: false, pagamentos: vePagamentos(), transparencia: false, ervas: false, oferendas: veOferendas(), guias: veGuias(), amaci: veAmaci(), pessoas: false, hist: false, perfil: true, curimba: false, videos: false, fotos: false, diario: veDiario(), gira: true, agenda: false };
   // Consulente: a Geral e as abas que o root marcou no perfil Consulentes (Perfil, Compras, Amaci, Vídeos).
   if (visao === 'alunos' && estado.me.consulente) Object.assign(VE, { oferendas: false, perfil: pode('perfil:ver'), guias: veGuias(), amaci: veAmaci(), videos: pode('videos:ver') || !!estado.me.videosPublicada });
   // Aluno sem turma (cadastro novo pelo login): só a Geral, até a administração colocá-lo numa turma.
-  if (visao === 'alunos' && estado.me.aguardando) VE = { usuarios: false, asaas: false, pagamentos: false, transparencia: false, ervas: false, oferendas: false, guias: false, amaci: false, pessoas: false, hist: false, perfil: false, curimba: false, videos: false, fotos: false, gira: true, agenda: false };
-  if (visao === 'curimba') VE = { usuarios: false, asaas: false, pagamentos: false, transparencia: false, ervas: false, oferendas: false, guias: veGuias(), amaci: false, pessoas: false, hist: false, perfil: false, curimba: false, videos: !!estado.me.videosPublicada, fotos: false, gira: true, agenda: false };
+  if (visao === 'alunos' && estado.me.aguardando) VE = { usuarios: false, asaas: false, pagamentos: false, transparencia: false, ervas: false, oferendas: false, guias: false, amaci: false, pessoas: false, hist: false, perfil: false, curimba: false, videos: false, fotos: false, diario: false, gira: true, agenda: false };
+  if (visao === 'curimba') VE = { usuarios: false, asaas: false, pagamentos: false, transparencia: false, ervas: false, oferendas: false, guias: veGuias(), amaci: false, pessoas: false, hist: false, perfil: false, curimba: false, videos: !!estado.me.videosPublicada, fotos: false, diario: false, gira: true, agenda: false };
   // Botão do topo de um grupo que a pessoa não vê (ex.: só o ASAAS, sem Compras): abre a primeira sub-aba que ela vê.
   const grupoAberto = grupoDa(prefs.tab);
   if (grupoAberto && prefs.tab === grupoAberto.topo && !VE[prefs.tab]) prefs.tab = grupoAberto.subs.find(([k]) => VE[k])?.[0] || prefs.tab;
@@ -230,6 +231,7 @@ quandoSessaoExpirar(() => {
   estado.amaci = null;
   estado.asaas = null;
   estado.transparencia = null;
+  estado.diario = null;
   estado.perfil = null;
   estado.curimba = null;
   estado.videos = null;
@@ -257,6 +259,8 @@ tabs.addEventListener('click', (e) => {
   if (b.dataset.tab === 'amaci') { atualizarAoAbrir('amaci', '/pessoas?lista=amaci'); TELAS.amaci?.limpar(); }
   if (b.dataset.tab === 'asaas') { atualizarAoAbrir('asaas', '/oferendas?lista=asaas'); TELAS.asaas?.limpar(); }
   if (b.dataset.tab === 'pagamentos') { atualizarAoAbrir('pagamentos', '/oferendas?lista=pagamentos'); TELAS.pagamentos?.limpar(); }
+  // Diário: volta ao dia de hoje.
+  if (b.dataset.tab === 'diario') { atualizarAoAbrir('diario', '/pessoas?lista=diario'); TELAS.diario?.limpar(); }
   // Transparência: volta ao mês atual (o guardado só serve se já for o do mês atual).
   if (b.dataset.tab === 'transparencia') {
     if (estado.transparencia?.mes === hoje().slice(0, 7)) atualizarAoAbrir('transparencia', '/giras?lista=transparencia');
@@ -286,7 +290,7 @@ async function cliqueConta(e) {
     sair();
     definirVerComo('');
     Object.assign(estado, { verComo: '', meRoot: null, vcLista: { pessoas: [], alunos: [] } });
-    Object.assign(estado, { me: null, pessoas: [], giras: {}, oferendas: null, infoPessoa: null, pfUi: { abertos: {}, infoBuscaVisivel: false, infoBusca: '' }, recadoTxt: null, tituloTxt: null, usuarios: null, ervas: null, guias: null, amaci: null, asaas: null, transparencia: null, iemanja: null, ervasPara: null, ervasCompra: null, perfil: null, alunos: null, curimba: null, minhaCurimba: null, curUi: null, videos: null, vidUi: null, fotos: null, fotUi: null, fotosPessoa: {}, visaoRoot: 'root', perfisCfg: null, senhas: null, pronto: false, img: null });
+    Object.assign(estado, { me: null, pessoas: [], giras: {}, oferendas: null, infoPessoa: null, pfUi: { abertos: {}, infoBuscaVisivel: false, infoBusca: '' }, recadoTxt: null, tituloTxt: null, usuarios: null, ervas: null, guias: null, amaci: null, asaas: null, transparencia: null, diario: null, iemanja: null, ervasPara: null, ervasCompra: null, perfil: null, alunos: null, curimba: null, minhaCurimba: null, curUi: null, videos: null, vidUi: null, fotos: null, fotUi: null, fotosPessoa: {}, visaoRoot: 'root', perfisCfg: null, senhas: null, pronto: false, img: null });
     erroLogin = '';
     render();
   } else if (b.dataset.conta === 'senha') {
@@ -459,6 +463,8 @@ main.addEventListener('input', (e) => {
   if (prefs.tab === 'guias' && e.target.dataset.guia) TELAS.guias.digitando(e.target);
   // Orientação da aba Amaci: até 10 linhas, guardada para um redesenho não apagar.
   if (prefs.tab === 'amaci' && e.target.id === 'am-ori') TELAS.amaci.digitando(e.target);
+  // Diário: conselho e reflexão guardados enquanto digita (salvam ao sair do campo).
+  if (prefs.tab === 'diario' && e.target.dataset.diario) TELAS.diario.digitando(e.target);
   if (prefs.tab === 'oferendas' && e.target.form?.querySelector('[data-previa]')) TELAS.oferendas?.atualizarPrevia(e.target.form);
 });
 
@@ -623,6 +629,8 @@ main.addEventListener('submit', async (e) => {
     await (await telaDe('amaci')).enviar(e.target);
   } else if (id === 'f-amaci-novo') {
     await (await telaDe('amaci')).enviarNovoAmaci(e.target);
+  } else if (id === 'f-di-erva') {
+    await (await telaDe('diario')).addErva(e.target);
   } else if (id === 'f-tr-val' || id === 'f-tr-busca') {
     await (await telaDe('transparencia')).enviar(e.target);
   } else if (id.startsWith('f-guia-')) {

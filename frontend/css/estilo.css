@@ -2148,3 +2148,61 @@ div.pf-of-total{cursor:default}
 .aguardando-h span{font-size:1.5rem}
 .aguardando h2{margin:0;font-size:1.2rem}
 .aguardando p{margin:0;line-height:1.5}
+
+/* ---------- aba Diário ---------- */
+.di-tela{--di-en-1:#d0453b;--di-en-2:#e07a2e;--di-en-3:#d9b23a;--di-en-4:#7cb85a;--di-en-5:#2f9e6e;--di-lilas:#a58bdc}
+.di-tela h3{margin:0}
+.di-rot{margin:0;font-size:.85rem;font-weight:700;color:var(--muted)}
+.di-chips{display:flex;flex-wrap:wrap;gap:6px}
+.di-chip{border:1px solid var(--line);background:var(--bg);color:var(--ink);border-radius:20px;padding:6px 12px;font:600 .88rem var(--f-body);cursor:pointer}
+.di-chip[aria-pressed="true"]{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
+.di-en{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:6px}
+.di-en-b{border:2px solid var(--line);background:var(--bg);color:var(--ink);border-radius:10px;padding:8px 0;font:700 1rem var(--f-body);cursor:pointer}
+.di-en-1[aria-pressed="true"]{background:var(--di-en-1)}.di-en-2[aria-pressed="true"]{background:var(--di-en-2)}.di-en-3[aria-pressed="true"]{background:var(--di-en-3)}
+.di-en-4[aria-pressed="true"]{background:var(--di-en-4)}.di-en-5[aria-pressed="true"]{background:var(--di-en-5)}
+.di-en-b[aria-pressed="true"]{color:#fff;border-color:transparent}
+.di-en-leg{display:flex;justify-content:space-between;font-size:.75rem;margin-top:-8px}
+.di-txt-h{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.di-mic.ouvindo{border-color:var(--off);color:var(--off)}
+.di-txt textarea{min-height:0;font-family:var(--f-body);font-size:1rem;line-height:1.4}
+.di-cal-h{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.di-cal-h h2{margin:0;font-size:1.1rem;text-align:center;flex:1}
+.di-grade{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px;text-align:center}
+.di-grade>b{font-size:.75rem;color:var(--muted)}
+.di-d{display:flex;flex-direction:column;align-items:center;gap:2px;min-height:44px;padding:4px 0;border:1px solid transparent;border-radius:8px;background:var(--bg);color:var(--ink);font:600 .9rem var(--f-body);cursor:pointer}
+.di-d:disabled{opacity:.35;cursor:default}
+.di-d.hoje{border-color:var(--line)}
+.di-d.agenda span:first-child{color:var(--gold)}
+.di-d.sel{border-color:var(--accent);background:var(--accent-soft)}
+.di-marcas{display:flex;align-items:center;gap:2px;min-height:12px}
+.di-p{display:inline-block;width:8px;height:8px;border-radius:50%}
+.di-p-gira{background:var(--gold)}
+.di-p-dia{background:var(--di-lilas)}
+.di-folha{font-style:normal;font-size:.7rem;line-height:1}
+.di-leg{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:.78rem}
+.di-leg span{display:inline-flex;align-items:center;gap:4px}
+.di-lua{margin:0;font-size:.88rem}
+.di-cab h2{margin:0;font-size:1.1rem}
+.di-cab h2::first-letter{text-transform:uppercase}
+.di-termo-b{display:flex;justify-content:space-between;border-radius:10px;padding:10px 12px;color:#fff;font-weight:700;text-shadow:0 1px 2px rgba(0,0,0,.35)}
+.di-termo-t{margin:0}
+.di-pilula{border-left:4px solid var(--gold)}
+.di-pilula .eyebrow,.di-termo .eyebrow,.di-ori .eyebrow{margin:0}
+.di-pilula-t{margin:0;line-height:1.5}
+.di-pend-l{display:grid;gap:8px;overflow-y:auto}
+.di-pend-i{display:flex;justify-content:space-between;align-items:center;gap:8px;border-bottom:1px solid var(--line);padding-bottom:8px}
+.di-pend-i div{display:grid;gap:2px;min-width:0}
+.di-pend-i b{overflow-wrap:anywhere}
+.di-pend-i .muted{font-size:.8rem}
+.di-ervas{display:flex;flex-wrap:wrap;gap:6px}
+.di-erva{display:inline-flex;align-items:center;gap:4px;border-radius:20px;padding:4px 4px 4px 10px;font-size:.88rem;border:1px solid var(--line);background:var(--bg)}
+.di-erva small{font-size:.7rem;font-weight:700}
+.di-erva button{border:0;background:none;color:var(--muted);font-size:1rem;cursor:pointer;padding:0 6px}
+.di-t-quente{border-color:var(--off);background:var(--off-soft)}.di-t-quente small{color:var(--off)}
+.di-t-morna{border-color:var(--warn);background:var(--warn-soft)}.di-t-morna small{color:var(--warn)}
+.di-t-fria{border-color:var(--accent);background:var(--accent-soft)}.di-t-fria small{color:var(--accent)}
+.di-aviso{margin:0;padding:8px 10px;border-radius:8px;background:var(--off-soft);color:var(--off);font-size:.88rem;font-weight:600}
+.di-add{display:flex;gap:6px}
+.di-add input{flex:1;min-width:0}
+.di-ori{display:grid;gap:6px;padding:10px;border-radius:8px;background:var(--accent-soft)}
+.di-ori p{margin:0}

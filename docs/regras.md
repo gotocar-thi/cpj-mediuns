@@ -230,6 +230,22 @@ Estado atual das regras da casa e do app. Código: `shared/regras.js` (e demais 
 - O **aluno** vê só os orixás liberados para a turma dele (aluno sem turma, nenhum); o servidor manda só esses. Quem não é aluno (corrente, admins) vê os 14.
 - **Recados** (ícone: o logo da Casa do Pai João; no banco e na API continua com o nome "orientação"): texto livre do admin, um por orixá, igual para todas as turmas. Quem escreve é quem administra a aba Amaci (root e Admin). Sem texto, o bloco some para quem não administra (quem administra vê o bloco vazio para poder escrever). Cabem **até 10 linhas (1000 letras)**: o campo mostra 5 linhas e rola o resto (lendo e escrevendo), mostra o limite e a contagem e não deixa passar da 10ª linha. Vazio apaga.
 
+## Diário (aba própria)
+
+- **Diário pessoal** de cada um: só a própria pessoa lê e grava o dela. **Ninguém vê o diário dos outros**, nem o root: no **Ver como** a aba não aparece (o servidor também recusa).
+- **Visível para todos** (interruptor do root, no topo): desligado (começa assim), só o root vê a aba; ligado, a **corrente** e os **alunos** veem. O acesso da curimba (login do grupo, sem pessoa) e o aluno sem turma não veem.
+- No topo: **💊 Pílula de sabedoria** (um conselho do guia de um dia anterior, que troca a cada dia, com a linha: "Em 12/10, seu Preto Velho aconselhou: …") e **🌿 Banhos para tomar** (os banhos anotados e ainda não tomados, do mais recente; **Tomei** marca).
+- **Calendário do mês** (‹ ›, até o mês atual; dia futuro não abre): ponto **dourado** = dia de gira com registro; **lilás** = dia comum com manhã e noite preenchidas; **🌿** = banho tomado. Número dourado = gira na agenda ainda sem registro. Embaixo, a **fase da lua** do dia escolhido (Nova, Crescente, Cheia, Minguante, cada uma começando no dia em que acontece) com uma frase sobre a influência.
+- **Dia de gira**: vem da **agenda** (gira cadastrada ou evento do tipo gira naquele dia); o interruptor **Dia de gira** troca à mão só aquele dia.
+  - **Antes da gira · Chegada**: emoção (Cansado/Drenado, Ansioso, Agitado, Irritado, Triste, Disperso, Em paz, Grato) e energia de 1 a 5.
+  - **Depois da gira · Saída**: emoção, energia e sensação (Leve, Renovado, Sonolento, Eletrizado, Emocionado).
+  - **Orientações do guia**: linha/falange (começa com a da gira da agenda) e **Conselho do guia** (texto, até 2000 letras; **🎤 Falar** dita o texto onde o navegador permite).
+  - **Banho recomendado pelo guia**: ervas (sugestões das apostilas; vale digitar qualquer uma, até 15), cada uma com a **temperatura** (Quente/Descarrego, Morna/Equilíbrio, Fria/Atração; fora da tabela, sem classificação) e **Banho tomado**. Com erva quente, o aviso: banho do pescoço para baixo, não jogar na cabeça.
+- **Dia comum**: **Check-in da manhã** (emoção, sono e sonhos, energia) e **Check-in do fim do dia** (emoção, energia e **reflexão/gratidão/sincronicidades**, opcional, até 1000 letras). **🧭 Orientador**: com um estado pesado (Drenado, Ansioso, Agitado, Irritado, Triste ou Disperso; o da noite vale mais que o da manhã), sugere um banho de manutenção com erva morna — Alecrim (drenado, triste), Manjericão (disperso), Alfazema (agitado, irritado), Camomila (ansioso) — com o fundamento; **Quero esse banho** anota. A pessoa também anota outras ervas.
+- **🌡️ Termômetro de Axé**: com as duas energias do dia, mostra a passagem de cor e o **Delta de Axé** (depois − antes) com uma frase.
+- Toques salvam na hora; os textos salvam ao sair do campo. Dia que fica vazio é apagado. Cadastro apagado de vez (pessoa, aluno ou usuário) leva o diário junto.
+- A **tabela de temperatura das ervas** e os fundamentos do Orientador ficam em `shared/diario.js`; são a classificação usual na Umbanda e a Casa pode ajustar.
+
 ## Outros
 
 - **Blocos de admin** (em todas as abas): moldura dourada com **ADMIN** escrito na borda, o mesmo jeito da aba Perfil. Bloco de admin dentro de outro não repete o rótulo.

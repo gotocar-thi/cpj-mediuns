@@ -20,6 +20,8 @@
 //                              · { op: 'orientacao', orixa, texto }  (só quem administra a aba; veja api/_lib/amaci.js)
 //                              · { op: 'presenca', eventoId, alunoId, status: 'p'|'f'|'' }  (só o admin root) → { presencaAdmin }
 //                              { acao: 'amaciPresenca', eventoId, lat?, lon? }  o aluno confirma a própria presença → { presenca }
+// GET  /api/pessoas?lista=diario  aba Diário: o diário de quem está logado · POST { acao: 'diario', op: 'salvar' | 'publicar' }
+//                              (veja api/_lib/diario.js)
 import { rota, corpo, HttpError, validarData, validarId, hojeBR } from '../_lib/http.js';
 import { exigir } from '../_lib/sessao.js';
 import { db } from '../_lib/db.js';
@@ -28,6 +30,7 @@ import { contagemPerfis, pessoasPorOrixaCabeca } from '../../shared/perfil.js';
 import { pode } from '../../shared/permissoes.js';
 import { amaci, acaoAmaci, presencaAluno } from '../_lib/amaci.js';
 import { dadosAluno, temDados, salvarDadosAluno, comExtras, cpfDoAluno, promoverAluno } from '../_lib/alunos.js';
+import { diario, acaoDiario } from '../_lib/diario.js';
 
 const ACOES_ALUNOS = ['alunos', 'aluno', 'alunoCpf', 'excluirAluno', 'reativarAluno', 'apagarAluno', 'turma', 'excluirTurma', 'promoverAlunoCPJ'];
 const ACOES_CURIMBA = ['curimbaAluno', 'curimbaExcluirAluno', 'curimbaAula', 'curimbaExcluirAula', 'curimbaPresenca'];
@@ -107,6 +110,7 @@ export default rota({
       return { ...(await comExtras(estado, eu, extras)), ...(cadastros ? { cadastros } : {}) };
     }
     if (req.query.lista === 'amaci') return amaci(await exigir(req, 'amaci:ver'));
+    if (req.query.lista === 'diario') return diario(await exigir(req));
     if (req.query.lista === 'curimba') {
       await exigir(req, 'curimba:ver');
       return db.rpc('curimba_estado');
@@ -131,6 +135,7 @@ export default rota({
     const b = corpo(req);
     if (b.acao === 'amaci') return acaoAmaci(await exigir(req, 'amaci:editar'), b);
     if (b.acao === 'amaciPresenca') return presencaAluno(await exigir(req, 'amaci:ver'), b);
+    if (b.acao === 'diario') return acaoDiario(await exigir(req), b);
     if (ACOES_ALUNOS.includes(b.acao)) {
       const eu = await exigir(req, 'alunos:editar');
       if (b.acao === 'promoverAlunoCPJ') await exigir(req, 'pessoas:editar');

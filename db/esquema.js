@@ -9,7 +9,7 @@
 // Estrutura: veja db/ESTRUTURA-ESQUEMA.md para o mapa de versões, domínios e
 // quais migrações foram testadas no Postgres.
 
-export const VERSAO = 144;  // v144: aba Compras mais leve (versão da foto guardada, só as linhas da pessoa)
+export const VERSAO = 145;  // v145: aba Diário (registro pessoal do dia, visível quando o root liga)
 
 import { PERFIS_PADRAO } from '../shared/permissoes.js';
 
@@ -6229,4 +6229,57 @@ export const MIGRACOES = [
        'minhas', asaas_minhas(p))
      from (select guias_estado(case when (p ->> 'admin')::boolean then '{}'::jsonb else jsonb_build_object('chave', p ->> 'chave') end) as e) x
    $$`,
+  // ================================================== v145: aba Diário
+  // Um registro por pessoa e por dia (chave como nas ervas: p:, a:, u:). Os dados do dia vêm limpos do servidor
+  // (shared/diario.js normalizarDia); dia sem nada é apagado. Só a própria pessoa lê e grava.
+  `create table if not exists diario (
+     chave         text not null,
+     data          date not null,
+     dados         jsonb not null default '{}'::jsonb,
+     atualizado_em timestamptz not null default now(),
+     primary key (chave, data)
+   )`,
+  `create or replace function diario_listar(p jsonb)
+   returns jsonb language sql stable as $$
+     select coalesce(jsonb_agg(jsonb_build_object('data', to_char(data, 'YYYY-MM-DD'), 'dados', dados) order by data), '[]'::jsonb)
+       from diario where chave = p ->> 'chave'
+   $$`,
+  `create or replace function diario_salvar(p jsonb)
+   returns jsonb language plpgsql as $$
+   begin
+     if coalesce(p -> 'dados', '{}'::jsonb) = '{}'::jsonb then
+       delete from diario where chave = p ->> 'chave' and data = (p ->> 'data')::date;
+     else
+       insert into diario (chave, data, dados) values (p ->> 'chave', (p ->> 'data')::date, p -> 'dados')
+       on conflict (chave, data) do update set dados = excluded.dados, atualizado_em = now();
+     end if;
+     return jsonb_build_object('data', p ->> 'data', 'dados', coalesce(p -> 'dados', '{}'::jsonb));
+   end;
+   $$`,
+  `create or replace function diario_publicada(p jsonb default '{}'::jsonb)
+   returns jsonb language sql stable as $$
+     select to_jsonb(coalesce((select valor = 'true' from sistema where chave = 'diario_publicada'), false))
+   $$`,
+  `create or replace function diario_publicar(p jsonb)
+   returns jsonb language plpgsql as $$
+   begin
+     insert into sistema (chave, valor) values ('diario_publicada', case when (p ->> 'publicada')::boolean then 'true' else 'false' end)
+     on conflict (chave) do update set valor = excluded.valor;
+     return diario_publicada();
+   end;
+   $$`,
+  // Cadastro apagado de vez (pessoa, aluno ou usuário): o diário dele vai junto.
+  `create or replace function diario_apagar_trg()
+   returns trigger language plpgsql as $$
+   begin
+     delete from diario where chave = tg_argv[0] || old.id::text;
+     return old;
+   end;
+   $$`,
+  `drop trigger if exists diario_pessoa_apagada on pessoas`,
+  `create trigger diario_pessoa_apagada after delete on pessoas for each row execute function diario_apagar_trg('p:')`,
+  `drop trigger if exists diario_aluno_apagado on alunos`,
+  `create trigger diario_aluno_apagado after delete on alunos for each row execute function diario_apagar_trg('a:')`,
+  `drop trigger if exists diario_usuario_apagado on usuarios`,
+  `create trigger diario_usuario_apagado after delete on usuarios for each row execute function diario_apagar_trg('u:')`,
 ];

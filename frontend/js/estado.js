@@ -25,6 +25,7 @@ export const estado = {
   transparencia: null, // aba Transparência (GET /api/giras?lista=transparencia)
   asaas: null,         // aba ASAAS: root e quem tem a aba no perfil (GET /api/oferendas?lista=asaas)
   pagamentos: null,    // sub-aba Pagamentos (Compras): histórico do ASAAS de quem está logado (GET /api/oferendas?lista=pagamentos)
+  diario: null,        // aba Diário: { publicada, root, dias: [{ data, dados }] } de quem está logado (GET /api/pessoas?lista=diario)
   ervasPara: null,     // admin montando o pedido de outra pessoa: { chave?, nome, itens: { ervaId: qtd } }    // 'fornecedor' | 'cobranca' (exportação aberta na aba Ervas)
   pronto: false,
   confirm: null,       // item aguardando "Confirmar"
@@ -884,6 +885,44 @@ export async function publicarPagamentos(publicada) {
   try {
     estado.pagamentos = await api('POST', '/oferendas', { acao: 'pagamentos', op: 'publicar', publicada });
     estado.me = { ...estado.me, pagamentosPublicada: !!estado.pagamentos.publicada };
+    avisar();
+    return true;
+  } catch (e) { toast(e.message); avisar(); return false; }
+}
+// ---------- aba Diário ----------
+// O root sempre; os outros (corrente e alunos), quando o root liga Visível para todos. É pessoal: não abre no Ver como
+// nem no acesso da curimba (sem pessoa).
+export const veDiario = () => !estado.me?.aguardando && !estado.verComo && estado.me?.grupo !== 'curimba' && visaoAtiva() !== 'curimba'
+  && (pode('usuarios:gerenciar') || !!estado.me?.diarioPublicada);
+export async function carregarDiario() {
+  try { estado.diario = await api('GET', '/pessoas?lista=diario'); } catch (e) { estado.diario = { erro: e.message }; }
+  avisar();
+}
+// Grava o dia inteiro (o servidor limpa e devolve o que ficou). Falhou: o dia volta ao que estava.
+export async function salvarDiaDiario(data, dados) {
+  const D = estado.diario;
+  if (!D?.dias) return false;
+  const antes = D.dias.find((x) => x.data === data);
+  const trocar = (dia) => { D.dias = [...D.dias.filter((x) => x.data !== data), ...(dia && Object.keys(dia.dados || {}).length ? [dia] : [])].sort((a, b) => a.data.localeCompare(b.data)); };
+  trocar({ data, dados });
+  avisar();
+  estado.salvando++;
+  try {
+    trocar(await api('POST', '/pessoas', { acao: 'diario', op: 'salvar', data, dados }));
+    return true;
+  } catch (e) {
+    trocar(antes);
+    toast(e.message);
+    return false;
+  } finally {
+    estado.salvando--;
+    avisar();
+  }
+}
+export async function publicarDiario(publicada) {
+  try {
+    estado.diario = await api('POST', '/pessoas', { acao: 'diario', op: 'publicar', publicada });
+    estado.me = { ...estado.me, diarioPublicada: !!estado.diario.publicada };
     avisar();
     return true;
   } catch (e) { toast(e.message); avisar(); return false; }

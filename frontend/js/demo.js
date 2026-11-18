@@ -9,6 +9,7 @@ import { TIPOS_EVENTO } from '/shared/eventos.js';
 import { calcularPedidos } from '/shared/ervas.js';
 import { normalizarPerfil, contagemPerfis, pessoasPorOrixaCabeca } from '/shared/perfil.js';
 import { pctItens } from '/shared/iemanja.js';
+import { normalizarDia } from '/shared/diario.js';
 
 import { DEMO_EMAIL, AVISO_DEMO } from './auth.js';
 import { criarCompras } from './demoCompras.js';
@@ -222,6 +223,28 @@ function amaci() {
   };
 }
 
+// Aba Diário: alguns dias de exemplo do próprio root (um dia de gira com conselho e banho pendente, um dia comum).
+let diarioPublicado = false;
+const diarioDias = [
+  { data: dia(-6), dados: { gira: true, antes: { emo: 'drenado', energia: 2 }, depois: { emo: 'paz', energia: 4, sensacao: 'leve' }, linha: 'preto-velho',
+    conselho: 'Firma o teu pensamento antes de dormir e não carrega o que não é teu.', banho: { ervas: ['arruda', 'alecrim', 'manjericão'], feito: false, origem: 'guia' } } },
+  { data: dia(-2), dados: { antes: { emo: 'ansioso', energia: 2, sono: 'agitado' }, depois: { emo: 'grato', energia: 3 }, reflexao: 'Encontrei um amigo antigo bem quando pensava nele.',
+    banho: { ervas: ['Camomila'], feito: true, origem: 'orientador' } } },
+];
+const diarioDemo = () => {
+  if (vcAtual) throw new ErroDemo(403, 'O Diário é pessoal: não abre no "Ver como".');
+  return { publicada: diarioPublicado, root: true, dias: copia(diarioDias) };
+};
+function acaoDiarioDemo(b) {
+  if (b.op === 'publicar') { diarioPublicado = !!b.publicada; return diarioDemo(); }
+  const dados = normalizarDia(b.dados);
+  const i = diarioDias.findIndex((x) => x.data === b.data);
+  if (i >= 0) diarioDias.splice(i, 1);
+  if (Object.keys(dados).length) diarioDias.push({ data: b.data, dados });
+  diarioDias.sort((a, x) => a.data.localeCompare(x.data));
+  return { data: b.data, dados };
+}
+
 // Sub-aba Pagamentos: cobranças inventadas no formato do ASAAS (as duas contas), de quem está logado.
 let pagPublicada = false;
 function pagamentosDemo() {
@@ -299,15 +322,15 @@ function me() {
   if (vcAtual.startsWith('p:')) {
     const p = db.pessoas.find((x) => x.id === vcAtual.slice(2));
     return { id: null, nome: p?.nome || '', email: '', papel: 'corrente', papelNome: 'Corrente', pessoaId: p?.id || null, permissoes: permissoesDe('corrente', ABAS_CORRENTE),
-      corrente: true, temSenha: true, ...PUBLICADAS, pagamentosPublicada: pagPublicada, iemanjaAba: true, iemanjaPublica: true };
+      corrente: true, temSenha: true, ...PUBLICADAS, pagamentosPublicada: pagPublicada, diarioPublicada: diarioPublicado, iemanjaAba: true, iemanjaPublica: true };
   }
   if (vcAtual.startsWith('a:')) {
     const a = db.alunos.find((x) => x.id === vcAtual.slice(2));
     return { id: null, nome: a?.nome || '', email: '', papel: 'alunos', papelNome: 'Aluno', grupo: 'alunos', pessoaId: null, permissoes: PERMISSOES_GRUPO.alunos,
-      temSenha: true, ...PUBLICADAS, pagamentosPublicada: pagPublicada, iemanjaAba: false, iemanjaPublica: false };
+      temSenha: true, ...PUBLICADAS, pagamentosPublicada: pagPublicada, diarioPublicada: diarioPublicado, iemanjaAba: false, iemanjaPublica: false };
   }
   return { id: 'u-demo', nome: 'Teste CPJ', email: DEMO_EMAIL, papel: 'root', papelNome: 'Admin root', pessoaId: EU_ID,
-    permissoes: PERMISSOES_ROOT, corrente: false, ...PUBLICADAS, pagamentosPublicada: pagPublicada, iemanjaAba: true, iemanjaPublica: true };
+    permissoes: PERMISSOES_ROOT, corrente: false, ...PUBLICADAS, pagamentosPublicada: pagPublicada, diarioPublicada: diarioPublicado, iemanjaAba: true, iemanjaPublica: true };
 }
 const pessoaVc = () => (vcAtual.startsWith('p:') ? vcAtual.slice(2) : vcAtual ? null : EU_ID);
 
@@ -412,6 +435,7 @@ function lerGet(caminho, q) {
     if (lista === 'minhaCurimba') return null;
     if (lista === 'perfis') { const t = todosPerfis(); return { ...contagemPerfis(t), cabecaNomes: pessoasPorOrixaCabeca(t) }; }
     if (lista === 'amaci') return amaci();
+    if (lista === 'diario') return diarioDemo();
   }
   if (caminho === '/usuarios') {
     const usuarios = [{ id: 'u-demo', nome: 'Teste CPJ', email: DEMO_EMAIL, papel: 'root', papelNome: 'Admin root', pessoaId: EU_ID }];
@@ -510,6 +534,7 @@ function escrever(metodo, caminho, b) {
   if (caminho === '/oferendas' && b?.acao === 'asaas') return compras.acaoAsaas(b);
   if (caminho === '/oferendas' && b?.acao === 'iemanja') return acaoIemanja(b);
   if (caminho === '/oferendas' && b?.acao === 'pagamentos') { pagPublicada = !!b.publicada; return pagamentosDemo(); }
+  if (caminho === '/pessoas' && b?.acao === 'diario') return acaoDiarioDemo(b);
   // Bloquear / liberar o acesso do aluno (Editar aluno): só esse campo funciona na demonstração.
   if (caminho === '/pessoas' && b?.acao === 'aluno' && 'bloqueado' in b && Object.keys(b).length === 3) {
     const a = db.alunos.find((x) => x.id === b.id);

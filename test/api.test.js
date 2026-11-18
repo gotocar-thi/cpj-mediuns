@@ -2946,3 +2946,25 @@ test('cadastros pelo login: novo vira consulente; o consulente vê só o que o p
     if (chaveAntes === undefined) delete process.env.CPF_CHAVE; else process.env.CPF_CHAVE = chaveAntes;
   }
 });
+
+test('diário: só o root vê até ligar; cada um lê e grava só o seu, com os dados limpos', async () => {
+  const pub = (publicada, tok = ADMIN) => api('POST', '/api/pessoas', tok, { acao: 'diario', op: 'publicar', publicada });
+  const ler = (tok) => api('GET', '/api/pessoas?lista=diario', tok);
+  const salvar = (tok, data, dados) => api('POST', '/api/pessoas', tok, { acao: 'diario', op: 'salvar', data, dados });
+  const ana = await tokenCorrente('Ana');
+  assert.equal((await pub(true, ana)).status, 403, 'só o root liga');
+  assert.equal((await pub(false)).json.publicada, false);
+  assert.equal((await ler(ana)).status, 403);
+  assert.equal((await ler(ADMIN)).status, 200);
+  assert.equal((await pub(true)).json.publicada, true);
+  assert.equal((await api('GET', '/api/auth/me', ana)).json.diarioPublicada, true);
+  const r = await salvar(ana, '2024-03-02', { antes: { emo: 'ansioso', energia: 9 }, lixo: 1, banho: { ervas: ['arruda', ''] } });
+  assert.equal(r.status, 200, JSON.stringify(r.json));
+  assert.deepEqual(r.json.dados, { antes: { emo: 'ansioso' }, banho: { ervas: ['arruda'], feito: false, origem: 'guia' } });
+  assert.equal((await salvar(ana, '2999-01-01', { antes: { emo: 'paz' } })).status, 400, 'dia que ainda não chegou');
+  assert.deepEqual((await ler(ana)).json.dias.map((d) => d.data), ['2024-03-02']);
+  assert.equal((await ler(ADMIN)).json.dias.some((d) => d.data === '2024-03-02'), false, 'o root não vê o diário dos outros');
+  await salvar(ana, '2024-03-02', {});
+  assert.equal((await ler(ana)).json.dias.length, 0, 'dia vazio é apagado');
+  await pub(false);
+});
