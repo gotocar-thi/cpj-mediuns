@@ -204,9 +204,12 @@ function formItem(I) {
       <label class="btn small">📷 ${temFoto ? 'Trocar foto' : 'Pôr foto'}<input type="file" accept="image/*" data-act="guiafoto" hidden></label>
       ${temFoto ? '<button type="button" class="btn link" data-act="guiatirafoto">Remover</button>' : ''}</div>
     <div class="row gi-nums">
-      <label class="field">Quantidade disponível<input type="number" id="gi-qtd" data-guia="quantidade" min="0" max="9999" inputmode="numeric" value="${esc(I.quantidade)}" required></label>
-      <label class="field">Valor (R$)<input type="text" id="gi-valor" data-guia="valor" inputmode="decimal" placeholder="0,00" value="${esc(I.valor)}" required></label>
+      ${I.doacao ? '' : `<label class="field">Quantidade disponível<input type="number" id="gi-qtd" data-guia="quantidade" min="0" max="9999" inputmode="numeric" value="${esc(I.quantidade)}" required></label>`}
+      ${I.doacao
+        ? `<label class="field">Valor sugerido (R$)<input type="text" id="gi-valor" data-guia="valor" inputmode="decimal" placeholder="opcional" value="${esc(Number(String(I.valor).replace(',', '.')) > 0 ? I.valor : '')}"></label>`
+        : `<label class="field">Valor (R$)<input type="text" id="gi-valor" data-guia="valor" inputmode="decimal" placeholder="0,00" value="${esc(I.valor)}" required></label>`}
     </div>
+    ${I.doacao ? '<p class="muted" style="margin:0;font-size:.85rem">Doação: quem pede digita o valor; o sugerido aparece no campo. Sem quantidade nem estoque.</p>' : ''}
     <label class="of-sw"><input type="checkbox" role="switch" data-act="guiaitemvisform" ${I.visivel ? 'checked' : ''}><span class="of-sw-t" aria-hidden="true"></span><b>Visível</b></label>
     <label class="of-sw"><input type="checkbox" role="switch" data-act="guiaitemcpjform" ${I.cpj ? 'checked' : ''}><span class="of-sw-t" aria-hidden="true"></span><b>CPJ</b> <span class="muted">— produto e preço só para a corrente</span></label>
     <label class="of-sw"><input type="checkbox" role="switch" data-act="guiaitemdoacaoform" ${I.doacao ? 'checked' : ''}><span class="of-sw-t" aria-hidden="true"></span><b>Doação</b> <span class="muted">— o Pix vai para a conta B do ASAAS</span></label>
@@ -230,7 +233,7 @@ function grupoAdmin(g) {
       <button class="btn primary" type="submit">${rot('grupo', 'Salvar', 'Salvando…')}</button><button type="button" class="btn" data-act="guiarenomear" data-id="">Cancelar</button></form>`;
   }
   h += g.itens.length ? `<div class="gi-lista">${g.itens.map((i) => `<div class="gi-item gi-adm${i.visivel ? '' : ' oculto'}">${fotoItem(i, 'gi-foto', true)}
-      <div class="gi-info"><b>${esc(i.descricao)}${seloCpj(i)}${i.doacao ? ' <span class="badge new" title="Cobrado na conta B do ASAAS">Doação</span>' : ''}</b><span class="gi-valor">${R(i.valor)}</span><span class="muted gi-disp">${plural(i.quantidade, 'disponível', 'disponíveis')}</span>
+      <div class="gi-info"><b>${esc(i.descricao)}${seloCpj(i)}${i.doacao ? ' <span class="badge new" title="Cobrado na conta B do ASAAS">Doação</span>' : ''}</b><span class="gi-valor">${i.doacao ? (Number(i.valor) > 0 ? `${R(i.valor)} <small class="muted">sugerido</small>` : 'Valor livre') : R(i.valor)}</span><span class="muted gi-disp">${i.doacao ? 'Doação · sem estoque' : plural(i.quantidade, 'disponível', 'disponíveis')}</span>
         <label class="of-sw"><input type="checkbox" role="switch" data-act="guiaitemvis" data-id="${i.id}" ${i.visivel ? 'checked' : ''}><span class="of-sw-t" aria-hidden="true"></span><span class="muted">Visível</span></label></div>
       <div class="gi-acao gi-acao-adm"><button class="btn small" data-act="guiaeditaritem" data-id="${i.id}" aria-label="Editar ${esc(i.descricao)}">✎</button>
         ${estado.confirm === 'gi:' + i.id ? `<button class="btn small danger" data-act="guiaexcluiritem" data-id="${i.id}">${rot('excluirItem', 'Excluir?', 'Excluindo…')}</button>` : `<button class="btn small danger" data-act="askdel" data-k="gi:${i.id}" aria-label="Excluir ${esc(i.descricao)}">✕</button>`}</div>
@@ -562,7 +565,8 @@ export async function enviar(form) {
   } else if (form.id === 'f-guia-item') {
     const I = ui.item;
     if (!I) return;
-    const dados = { descricao: I.descricao, quantidade: I.quantidade, valor: I.valor, visivel: I.visivel, cpj: !!I.cpj, doacao: !!I.doacao };
+    // Doação: sem quantidade (fica 0) e o valor é só a sugestão (vazio = sem sugestão).
+    const dados = { descricao: I.descricao, quantidade: I.doacao ? 0 : I.quantidade, valor: I.doacao ? (String(I.valor ?? '').trim() || '0') : I.valor, visivel: I.visivel, cpj: !!I.cpj, doacao: !!I.doacao };
     if (I.foto !== undefined) dados.foto = I.foto;
     if (I.id) dados.id = I.id; else dados.grupoId = I.grupoId;
     if (await fazer('item', dados)) { toast(I.id ? 'Item salvo.' : 'Item cadastrado.'); ui.item = null; avisar(); }
@@ -681,7 +685,7 @@ export const mudancas = {
   async guiaitemvis(t) { if (!(await fazer('item', { id: t.dataset.id, visivel: t.checked }))) t.checked = !t.checked; },
   guiaitemvisform(t) { if (ui.item) ui.item.visivel = t.checked; },
   guiaitemcpjform(t) { if (ui.item) ui.item.cpj = t.checked; },
-  guiaitemdoacaoform(t) { if (ui.item) ui.item.doacao = t.checked; },
+  guiaitemdoacaoform(t) { if (ui.item) { ui.item.doacao = t.checked; avisar(); } },
   guiaqtd(t) { ui.qtd[t.dataset.id] = Number(t.value); },
   guiaexportar(t) { ui.exportar = t.value; avisar(); },
   // Trocar o grupo leva ao pedido mais recente dele (o aberto, se houver).
