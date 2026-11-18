@@ -36,27 +36,29 @@ export async function amaci(eu, dados) {
   };
 }
 
-// Presença: o aluno recebe os amacis da turma dele (eventos do tipo Amaci, com a turma marcada no tipo) e a situação
-// de cada um; o root, os amacis até hoje com os alunos das turmas marcadas e as marcações.
+// Presença: amaci é todo evento cujo tipo tem "Amaci" no nome (T09 - Amaci, T10 - Amaci…); as turmas de cada um são as
+// marcadas no tipo. O aluno recebe os amacis da turma dele e a situação de cada um; o root, os amacis até hoje (com as
+// turmas de cada um), os alunos dessas turmas e as marcações.
 async function presencaAmaci(eu) {
   const hoje = hojeBR();
   if (eu.grupo === 'alunos') {
     const P = await db.rpc('amaci_presencas_dados', { alunoId: eu.alunoId });
-    const daTurma = !!eu.turmaId && P.turmas.includes(eu.turmaId);
     const st = Object.fromEntries(P.presencas.map((x) => [x.eventoId, x.status]));
-    const amacis = daTurma ? P.eventos.map((e) => ({ ...e, status: st[e.id] || null })) : [];
+    const amacis = P.eventos.filter((e) => !!eu.turmaId && e.turmas.includes(eu.turmaId))
+      .map(({ id, data, nome }) => ({ id, data, nome, status: st[id] || null }));
     return { presenca: { hoje, amacis, pct: pctAmaci(amacis, hoje) } };
   }
   if (!ehRoot(eu)) return {};
   const [P, al] = await Promise.all([db.rpc('amaci_presencas_dados'), db.rpc('alunos_estado')]);
   const marcas = {};
   P.presencas.forEach((x) => { (marcas[x.eventoId] ||= {})[x.alunoId] = x.status; });
+  const comAmaci = new Set(P.eventos.flatMap((e) => e.turmas));
   return {
     presencaAdmin: {
       hoje,
       amacis: P.eventos.filter((e) => e.data <= hoje).reverse(),
-      turmas: al.turmas.filter((t) => P.turmas.includes(t.id)),
-      alunos: al.alunos.filter((a) => P.turmas.includes(a.turmaId)),
+      turmas: al.turmas.filter((t) => comAmaci.has(t.id)),
+      alunos: al.alunos.filter((a) => comAmaci.has(a.turmaId)),
       marcas,
     },
   };
@@ -68,7 +70,7 @@ export async function presencaAluno(eu, b) {
   const eventoId = validarId(b.eventoId, 'Amaci');
   const P = await db.rpc('amaci_presencas_dados', { alunoId: eu.alunoId });
   const ev = P.eventos.find((e) => e.id === eventoId);
-  if (!ev || !eu.turmaId || !P.turmas.includes(eu.turmaId)) throw new HttpError(404, 'Amaci não encontrado para a sua turma.');
+  if (!ev || !eu.turmaId || !ev.turmas.includes(eu.turmaId)) throw new HttpError(404, 'Amaci não encontrado para a sua turma.');
   if (ev.data !== hojeBR()) throw new HttpError(409, 'A presença só pode ser confirmada no dia do amaci.');
   if (!noTerreiro(Number(b.lat), Number(b.lon))) throw new HttpError(403, 'Você precisa estar no Terreiro Pai João para confirmar a presença.');
   await db.rpc('amaci_presenca_marcar', { eventoId, alunoId: eu.alunoId, status: 'p', por: 'aluno' });

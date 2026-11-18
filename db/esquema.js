@@ -9,7 +9,7 @@
 // Estrutura: veja db/ESTRUTURA-ESQUEMA.md para o mapa de versões, domínios e
 // quais migrações foram testadas no Postgres.
 
-export const VERSAO = 135;  // v135: presença dos alunos no amaci
+export const VERSAO = 136;  // v136: amaci = tipo de evento com "Amaci" no nome (T09 - Amaci…); Amaci só com as turmas que têm a aba
 
 import { PERFIS_PADRAO } from '../shared/permissoes.js';
 
@@ -4067,14 +4067,6 @@ export const MIGRACOES = [
      atualizado_em timestamptz not null default now()
    )`,
   // Toda turma cadastrada aparece (sem linha em amaci_turmas = nenhum orixá liberado).
-  `create or replace function amaci_estado(p jsonb default '{}'::jsonb)
-   returns jsonb language sql stable as $$
-     select jsonb_build_object(
-       'publicada', amaci_publicada(),
-       'turmas', coalesce((select jsonb_agg(jsonb_build_object('id', t.id, 'nome', t.nome, 'orixas', coalesce(a.orixas, '[]'::jsonb)) order by lower(t.nome))
-                           from turmas_alunos t left join amaci_turmas a on a.turma_id = t.id), '[]'::jsonb),
-       'orientacoes', coalesce((select jsonb_object_agg(o.orixa, o.texto) from amaci_orientacoes o where o.texto <> ''), '{}'::jsonb))
-   $$`,
   `create or replace function amaci_publicar(p jsonb)
    returns jsonb language plpgsql as $$
    begin
@@ -5982,17 +5974,6 @@ export const MIGRACOES = [
      em         timestamptz not null default now(),
      primary key (evento_id, aluno_id)
    )`,
-  // p = { alunoId? } — os eventos Amaci, as turmas marcadas no tipo Amaci e as presenças (de um aluno, ou de todos).
-  `create or replace function amaci_presencas_dados(p jsonb default '{}'::jsonb)
-   returns jsonb language sql stable as $$
-     select jsonb_build_object(
-       'turmas', coalesce((select to_jsonb(turmas) from eventos_tipos where chave = 'amaci'), '[]'::jsonb),
-       'eventos', coalesce((select jsonb_agg(jsonb_build_object('id', e.id, 'data', e.data, 'nome', e.nome) order by e.data, lower(e.nome))
-                            from eventos e where e.tipo = 'amaci'), '[]'::jsonb),
-       'presencas', coalesce((select jsonb_agg(jsonb_build_object('eventoId', x.evento_id, 'alunoId', x.aluno_id, 'status', x.status))
-                              from amaci_presencas x
-                             where nullif(p ->> 'alunoId', '') is null or x.aluno_id = (p ->> 'alunoId')::uuid), '[]'::jsonb))
-   $$`,
   // p = { eventoId, alunoId, status: 'p'|'f'|null (apaga), por }
   `create or replace function amaci_presenca_marcar(p jsonb)
    returns jsonb language plpgsql as $$
@@ -6006,5 +5987,33 @@ export const MIGRACOES = [
      end if;
      return jsonb_build_object('ok', true);
    end;
+   $$`,
+  // ================================================== v136: tipos de evento por turma (T09 - Amaci…) e turmas com acesso à aba
+  // É amaci todo evento cujo tipo tem "Amaci" no nome (o tipo fixo Amaci e os criados por turma, como "T09 - Amaci");
+  // as turmas de cada amaci são as marcadas no tipo do evento.
+  // p = { alunoId? } — os amacis (cada um com as turmas do tipo) e as presenças (de um aluno, ou de todos).
+  `create or replace function amaci_presencas_dados(p jsonb default '{}'::jsonb)
+   returns jsonb language sql stable as $$
+     select jsonb_build_object(
+       'eventos', coalesce((select jsonb_agg(jsonb_build_object('id', e.id, 'data', e.data, 'nome', e.nome, 'tipoNome', t.nome, 'turmas', to_jsonb(t.turmas))
+                                             order by e.data, lower(e.nome))
+                            from eventos e join eventos_tipos t on t.chave = e.tipo
+                           where t.chave = 'amaci' or t.nome ilike '%amaci%'), '[]'::jsonb),
+       'presencas', coalesce((select jsonb_agg(jsonb_build_object('eventoId', x.evento_id, 'alunoId', x.aluno_id, 'status', x.status))
+                              from amaci_presencas x
+                             where nullif(p ->> 'alunoId', '') is null or x.aluno_id = (p ->> 'alunoId')::uuid), '[]'::jsonb))
+   $$`,
+  // A turma escondida Consulentes só entra (na configuração e nos orixás liberados) quando o perfil Consulentes tem a aba
+  // Amaci marcada (Ver ou Editar) no Admin root; as outras turmas de alunos sempre têm a aba.
+  `create or replace function amaci_estado(p jsonb default '{}'::jsonb)
+   returns jsonb language sql stable as $$
+     select jsonb_build_object(
+       'publicada', amaci_publicada(),
+       'turmas', coalesce((select jsonb_agg(jsonb_build_object('id', t.id, 'nome', t.nome, 'orixas', coalesce(a.orixas, '[]'::jsonb)) order by lower(t.nome))
+                           from turmas_alunos t left join amaci_turmas a on a.turma_id = t.id
+                          where t.id is distinct from turma_consulentes_id()
+                             or coalesce((select (abas -> 'amaci' ->> 'ver')::boolean or (abas -> 'amaci' ->> 'editar')::boolean
+                                          from perfis where chave = 'consulente'), false)), '[]'::jsonb),
+       'orientacoes', coalesce((select jsonb_object_agg(o.orixa, o.texto) from amaci_orientacoes o where o.texto <> ''), '{}'::jsonb))
    $$`,
 ];

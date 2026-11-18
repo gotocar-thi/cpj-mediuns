@@ -155,11 +155,12 @@ function cardPresencaAdmin(A) {
   const cab = `<div class="am-padm-h"><button class="grp-h dobra am-cfg-h" data-act="ampresadm" aria-expanded="${ui.presAdm}"><h2><span aria-hidden="true">✅</span> Presenças</h2>
     <span class="am-turma-x"><span class="seta" aria-hidden="true">${ui.presAdm ? '▴' : '▾'}</span></span></button>${sel}</div>`;
   if (!ui.presAdm) return `<div class="card adm am-adm">${cab}</div>`;
-  if (!turma) return `<div class="card adm am-adm">${cab}<p class="muted" style="margin:0">Marque as turmas no tipo Amaci (Admin root → Eventos) para os alunos aparecerem aqui.</p></div>`;
-  if (!P.amacis.length) return `<div class="card adm am-adm">${cab}<p class="muted" style="margin:0">Nenhum evento do tipo Amaci realizado ainda.</p></div>`;
+  if (!turma) return `<div class="card adm am-adm">${cab}<p class="muted" style="margin:0">Cadastre um tipo de evento com Amaci no nome (ex.: T09 - Amaci), marque a turma nele (Admin root → Eventos) e os alunos aparecem aqui.</p></div>`;
+  const amacis = P.amacis.filter((ev) => !ev.turmas || ev.turmas.includes(turma.id));
+  if (!amacis.length) return `<div class="card adm am-adm">${cab}<p class="muted" style="margin:0">Nenhum amaci da ${esc(turma.nome)} realizado ainda.</p></div>`;
   const alunos = P.alunos.filter((a) => a.turmaId === turma.id);
   if (!alunos.length) return `<div class="card adm am-adm">${cab}<p class="muted" style="margin:0">Nenhum aluno cadastrado na ${esc(turma.nome)}.</p></div>`;
-  const corpo = P.amacis.map((ev) => {
+  const corpo = amacis.map((ev) => {
     const m = P.marcas[ev.id] || {};
     const grupos = { p: alunos.filter((a) => m[a.id] === 'p'), a: alunos.filter((a) => m[a.id] !== 'p') };
     const quad = (k, rot, cls) => {

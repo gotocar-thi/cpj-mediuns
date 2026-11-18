@@ -1853,6 +1853,7 @@ test('amaci: Visível para todos; orixás liberados por turma; o aluno vê só o
   assert.equal(r0.publicada, false);
   assert.equal(r0.orixas.length, 14, 'quem administra vê os 14');
   assert.ok(r0.turmas.some((t) => t.id === t09));
+  assert.ok(!r0.turmas.some((t) => t.nome === 'Consulentes'), 'Consulentes sem a aba Amaci no perfil: a turma não aparece');
   assert.equal((await am(USER)).status, 403);
   assert.equal((await am(aluno)).status, 403);
   assert.equal((await acao(USER, { op: 'publicar', publicada: true })).status, 403);
@@ -1922,6 +1923,15 @@ test('amaci: presença do aluno no dia e no terreiro; o root marca presença ou 
   assert.equal((await am(aluno)).presenca.amacis.find((a) => a.id === antigo.id).status, null, 'vazio apaga');
   for (const e of [antigo, deHoje]) await api('POST', '/api/giras', ADMIN, { acao: 'excluirEvento', id: e.id });
   await api('POST', '/api/giras', ADMIN, { acao: 'eventoTipo', chave: 'amaci', nome: 'Amaci', turmas: [] });
+  // Tipo criado por turma ("T09 - Amaci"): conta como amaci, com as turmas do próprio tipo.
+  const tipos = (await api('POST', '/api/giras', ADMIN, { acao: 'eventoTipo', nome: 'Teste T09 - Amaci', turmas: [t09] })).json.tipos;
+  const t09Amaci = tipos.find((t) => t.nome === 'Teste T09 - Amaci').chave;
+  await api('POST', '/api/giras', ADMIN, { acao: 'evento', data: hoje, nome: 'Amaci da T09', tipo: t09Amaci });
+  const daT09 = (await evs()).find((e) => e.nome === 'Amaci da T09');
+  assert.deepEqual((await am(aluno)).presenca.amacis.map((a) => a.nome), ['Amaci da T09']);
+  assert.equal((await confirmar({ eventoId: daT09.id, ...NO_TERREIRO })).json.presenca.pct, 100);
+  await api('POST', '/api/giras', ADMIN, { acao: 'excluirEvento', id: daT09.id });
+  await api('POST', '/api/giras', ADMIN, { acao: 'excluirEventoTipo', chave: t09Amaci });
   await api('POST', '/api/pessoas', ADMIN, { acao: 'amaci', op: 'publicar', publicada: false });
 });
 

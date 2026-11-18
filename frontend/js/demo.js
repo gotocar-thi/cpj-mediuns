@@ -202,14 +202,14 @@ function marcarAmaci(eventoId, alunoId, status) {
 }
 function amaci() {
   const hoje = dia(0);
-  const evs = db.eventos.filter((e) => e.tipo === 'amaci').sort((a, b) => a.data.localeCompare(b.data));
+  const evs = db.eventos.filter((e) => e.tipo === 'amaci').sort((a, b) => a.data.localeCompare(b.data)).map((e) => ({ ...e, turmas: [id(501)] }));
   const amacis = evs.map((e) => ({ id: e.id, data: e.data, nome: e.nome, status: presAmaci[e.id]?.[ALUNO_DEMO] || null }));
   const feitos = amacis.filter((a) => a.data <= hoje);
   return {
     ...copia(AMACI_DEMO), turmaNome: 'Turma 1',
     presenca: { hoje, amacis, pct: feitos.length ? Math.round((feitos.filter((a) => a.status === 'p').length / feitos.length) * 100) : null },
     presencaAdmin: {
-      hoje, amacis: evs.filter((e) => e.data <= hoje).reverse().map(({ id: i, data, nome }) => ({ id: i, data, nome })),
+      hoje, amacis: evs.filter((e) => e.data <= hoje).reverse().map(({ id: i, data, nome, turmas }) => ({ id: i, data, nome, turmas })),
       turmas: copia(db.turmas), alunos: copia(db.alunos), marcas: copia(presAmaci),
     },
   };
