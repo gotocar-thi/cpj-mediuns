@@ -4,6 +4,7 @@ Estado atual das regras da casa e do app. Código: `shared/regras.js` (e demais 
 
 ## Pessoas
 
+- O cadastro fica no bloco **👥 Pessoas** da aba **Perfil** (a aba Pessoas saiu do menu); onde este documento fala em "aba Pessoas", é esse bloco.
 - Funções: `medium`, `extra` (At. Extra), `passe`, `cambone`, `senha`, `curimba` (fora da presença/sorteio), além de **alunos** (tabela separada, por turma; a turma **Curimba** é a dos alunos de curimba que não são da corrente).
 - Médium pode ter **"+ médium de passe"** (`experiente`).
 - **Linhas do cadastro** (`pessoas.linhas`, só Extra/Passe): entidades em que atua na própria função. **"Todas" = todas marcadas. Nenhuma marcada = não apto a nenhuma → cambona em toda gira com entidade.** (v47 deu "Todas" a quem estava vazio.)
@@ -118,7 +119,7 @@ Estado atual das regras da casa e do app. Código: `shared/regras.js` (e demais 
 
 ## Perfil
 
-- **👥 Pessoas** (logo abaixo da moldura ADMIN, para quem vê a aba Pessoas): a aba Pessoas dentro do Perfil, funcionando igual e com as **mesmas permissões** (quem só consulta, só consulta; o servidor confere cada ação). Começa **aberto** mostrando só a **Corrente CPJ** (funções e Turmas da limpeza); de **Oferendas pendentes** para baixo (licenças, Adicionar, Alunos, Cadastros pelo login) fica atrás do **Ver mais** (e **Ver menos** recolhe). A aba Pessoas continua no menu, com tudo à vista.
+- **👥 Pessoas** (logo abaixo da moldura ADMIN PERFIL): é onde fica todo o cadastro da corrente e dos alunos — a **aba Pessoas saiu do menu**. Aparece para quem tem permissão de ver Pessoas ou Alunos no perfil de acesso, funcionando igual e com as **mesmas permissões** (quem só consulta, só consulta; o servidor confere cada ação); quem tem essa permissão sem a do Perfil vê a aba Perfil só com este bloco. Ao entrar na aba, vem **aberto** até o **Ver mais**: **Corrente CPJ** (as funções) e **Oferendas pendentes**; o **Ver mais** mostra Turmas da limpeza, licenças, Adicionar, Alunos e Cadastros pelo login (**Ver menos** recolhe).
 - Informações (nome, nascimento, celular, contato), afinidades por função, **Orixás, guias e oferendas** (um bloco com as seções Orixás e Guias e o total de oferendas feitas; selo geral "preenchido" só com tudo escolhido e todas as oferendas feitas; tudo escolhido mas falta oferenda = selo laranja "pendências"), Guias de atendimento (nome do guia por linha), Guias da corrente.
 - **Alunos**: veem só os próprios blocos **Informações** (com a foto) e **Orixás, guias e oferendas**. O Perfil só abre com senha (sessões antigas do login só pelo nome criam em **🔒 Criar senha**, 6 a 8 números). Só o aluno vê esses dados; quem esquece a senha pede ao root (🔑 na lista de Alunos, em Pessoas). **UP CPJ** (um botão na turma aberta do bloco Alunos, em Pessoas) põe uma caixinha em cada aluno; no **Confirmar**, os marcados vão para a corrente como Cambone, levando perfil, foto, senha e CPF (o CPF é cifrado de novo para a pessoa da corrente na mesma operação; sem a `CPF_CHAVE`, o UP CPJ recusa em vez de perder o CPF) (**Cancelar** desiste).
 - **Corrente** sem senha (sessões antigas do login só pelo nome): a aba aparece, mas o Perfil (e a Anamnese) só abre depois de **🔒 Criar senha**; sem senha, uma janela avisa que precisa criar a senha para ver o perfil. O backend também recusa.

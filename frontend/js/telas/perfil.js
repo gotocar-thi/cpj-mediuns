@@ -28,8 +28,8 @@ function card(k, titulo, count, padrao, corpo, dobra = admin(), adm = false) {
 }
 
 // ---------- Pessoas (abaixo da moldura ADMIN PERFIL) ----------
-// A aba Pessoas dentro de um bloco que começa aberto, só com a Corrente (o resto no "Ver mais" da própria tela);
-// aparece para quem vê a aba Pessoas.
+// A antiga aba Pessoas (saiu do menu) dentro de um bloco que começa aberto, com a Corrente e as Oferendas pendentes
+// (o resto no "Ver mais" da própria tela); aparece para quem tem permissão de ver Pessoas ou Alunos (vePessoas).
 // Os toques e as mudanças dentro dele vão para a tela Pessoas (main.js, pelo data-tela).
 let telaPessoas = null;
 function cardPessoas() {
@@ -604,6 +604,8 @@ function renderSemSenha() {
 export function render() {
   if (soAluno()) return renderAluno();
   if (estado.me?.corrente && !estado.me.temSenha && visaoAtiva() !== 'root') return renderSemSenha();
+  // Quem tem Pessoas/Alunos no perfil de acesso, mas não o Perfil: a aba abre só com o bloco Pessoas.
+  if (!pode('perfil:ver')) return `<section class="panel pf-tela">${cardPessoas()}</section>`;
   if (estado.perfil === null) { carregarPerfil(); return `<div class="loading">Carregando perfil…</div>`; }
   if (estado.perfil.erro) return `<div class="card"><h2>Perfil</h2><p class="muted" style="margin:0">${esc(estado.perfil.erro)}</p></div>`;
   const { eu, todos } = estado.perfil;

@@ -134,16 +134,17 @@ function render() {
   const visao = visaoAtiva();
   // Abas que o perfil pode ver.
   let VE = { usuarios: pode('usuarios:gerenciar'), asaas: pode('asaas:ver'), pedidos: vePedidos(), transparencia: veTransparencia(), ervas: veErvas(), oferendas: veOferendas(), guias: veGuias(), amaci: veAmaci(),
-    pessoas: vePessoas(), hist: pode('historico:ver'), perfil: pode('perfil:ver'), curimba: pode('curimba:ver'), videos: pode('videos:ver') || !!estado.me.videosPublicada, fotos: FOTOS_ATIVA && pode('fotos:ver'), diario: veDiario(), gira: true, agenda: true };
-  if (visao === 'alunos') VE = { usuarios: false, asaas: false, pedidos: false, transparencia: false, ervas: false, oferendas: veOferendas(), guias: veGuias(), amaci: veAmaci(), pessoas: false, hist: false, perfil: true, curimba: false, videos: false, fotos: false, diario: veDiario(), gira: true, agenda: false };
+    hist: pode('historico:ver'), perfil: pode('perfil:ver') || vePessoas(), curimba: pode('curimba:ver'), videos: pode('videos:ver') || !!estado.me.videosPublicada, fotos: FOTOS_ATIVA && pode('fotos:ver'), diario: veDiario(), gira: true, agenda: true };
+  if (visao === 'alunos') VE = { usuarios: false, asaas: false, pedidos: false, transparencia: false, ervas: false, oferendas: veOferendas(), guias: veGuias(), amaci: veAmaci(), hist: false, perfil: true, curimba: false, videos: false, fotos: false, diario: veDiario(), gira: true, agenda: false };
   // Consulente: a Geral e as abas que o root marcou no perfil Consulentes (Perfil, Compras, Amaci, Vídeos).
   if (visao === 'alunos' && estado.me.consulente) Object.assign(VE, { oferendas: false, perfil: pode('perfil:ver'), guias: veGuias(), amaci: veAmaci(), videos: pode('videos:ver') || !!estado.me.videosPublicada });
   // Aluno sem turma (cadastro novo pelo login): só a Geral, até a administração colocá-lo numa turma.
-  if (visao === 'alunos' && estado.me.aguardando) VE = { usuarios: false, asaas: false, pedidos: false, transparencia: false, ervas: false, oferendas: false, guias: false, amaci: false, pessoas: false, hist: false, perfil: false, curimba: false, videos: false, fotos: false, diario: false, gira: true, agenda: false };
-  if (visao === 'curimba') VE = { usuarios: false, asaas: false, pedidos: false, transparencia: false, ervas: false, oferendas: false, guias: veGuias(), amaci: false, pessoas: false, hist: false, perfil: false, curimba: false, videos: !!estado.me.videosPublicada, fotos: false, diario: false, gira: true, agenda: false };
+  if (visao === 'alunos' && estado.me.aguardando) VE = { usuarios: false, asaas: false, pedidos: false, transparencia: false, ervas: false, oferendas: false, guias: false, amaci: false, hist: false, perfil: false, curimba: false, videos: false, fotos: false, diario: false, gira: true, agenda: false };
+  if (visao === 'curimba') VE = { usuarios: false, asaas: false, pedidos: false, transparencia: false, ervas: false, oferendas: false, guias: veGuias(), amaci: false, hist: false, perfil: false, curimba: false, videos: !!estado.me.videosPublicada, fotos: false, diario: false, gira: true, agenda: false };
   // Botão do topo de um grupo que a pessoa não vê (ex.: só o ASAAS, sem Compras): abre a primeira sub-aba que ela vê.
   const grupoAberto = grupoDa(prefs.tab);
   if (grupoAberto && prefs.tab === grupoAberto.topo && !VE[prefs.tab]) prefs.tab = grupoAberto.subs.find(([k]) => VE[k])?.[0] || prefs.tab;
+  if (prefs.tab === 'pessoas') prefs.tab = 'perfil';   // a aba Pessoas virou o bloco Pessoas do Perfil
   if (!VE[prefs.tab]) prefs.tab = 'gira';
   tabs.hidden = false;
   Object.entries(VE).forEach(([k, v]) => { tabs.querySelector(`[data-tab="${k}"]`).hidden = !v; });
@@ -154,9 +155,9 @@ function render() {
   }
   tabs.querySelector('[data-tab="gira"]').textContent = 'Geral';
   tabs.querySelector('[data-tab="agenda"]').textContent = 'Gira';
-  // Perfil: logo depois de Gira; para quem é admin, depois de Pessoas.
+  // Perfil: logo depois do Diário (a aba Pessoas virou o bloco Pessoas do Perfil).
   const btPerfil = tabs.querySelector('[data-tab="perfil"]');
-  const antes = tabs.querySelector(pode('pessoas:editar') ? '[data-tab="pessoas"]' : '[data-tab="agenda"]');
+  const antes = tabs.querySelector('[data-tab="diario"]');
   if (VE.perfil && antes.nextElementSibling !== btPerfil) antes.after(btPerfil);
   const abaTopo = grupoDa(prefs.tab)?.topo || prefs.tab;
   tabs.querySelectorAll('button').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.tab === abaTopo)));
@@ -267,7 +268,8 @@ tabs.addEventListener('click', (e) => {
     else estado.transparencia = null;
     TELAS.transparencia?.limpar();
   }
-  if (b.dataset.tab === 'perfil') atualizarAoAbrir('perfil', '/auth/perfil');
+  // Perfil: o bloco Pessoas volta aberto, mostrando até o "Ver mais" (o resto recolhido).
+  if (b.dataset.tab === 'perfil') { if (pode('perfil:ver')) atualizarAoAbrir('perfil', '/auth/perfil'); estado.pessoasMais = false; if (estado.pfUi) delete estado.pfUi.abertos.pessoas; }
   // Curimba: fecha as janelas abertas.
   if (b.dataset.tab === 'curimba') { atualizarAoAbrir('curimba', '/pessoas?lista=curimba'); if (estado.curUi) estado.curUi.confirmar = null; }
   // Vídeos: todos voltam fechados.

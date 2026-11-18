@@ -419,8 +419,9 @@ function janelaExcluir() {
   </div></div>`;
 }
 
-// embutida: dentro do bloco Pessoas da aba Perfil. Ali aparece só a Corrente (funções e turmas da limpeza); de Oferendas
-// pendentes para baixo fica recolhido atrás do "Ver mais" (estado.pessoasMais).
+// embutida: dentro do bloco Pessoas da aba Perfil (a aba Pessoas saiu do menu). Ali aparecem a Corrente (as funções)
+// e as Oferendas pendentes; Turmas da limpeza, licenças, Adicionar, Alunos e Cadastros ficam atrás do "Ver mais"
+// (estado.pessoasMais).
 export function render({ embutida = false } = {}) {
   return renderPessoas(embutida).replace(/<\/section>$/, janelaExcluir() + '</section>');
 }
@@ -460,8 +461,8 @@ function renderPessoas(embutida = false) {
     }).join('')}</div>
     ${correnteListaAberta === CURIMBA ? '<p class="nota">A curimba não conta presença nem falta, não entra no sorteio nem no total da corrente.</p>' : ''}
     ${correnteListaAberta ? `<div class="ppl">${pessoasPorFuncao[correnteListaAberta].map(linhaCorrente).join('')}</div>` : ''}
-    ${blocoTurmas(todas, editar)}`;
-  const resto = `${cardOferendasPendentes()}${listaLicencas(ps, editar)}${add}`;   // licença: só a corrente
+${cardOferendasPendentes()}`;
+  const resto = `${blocoTurmas(todas, editar)}${listaLicencas(ps, editar)}${add}`;   // licença: só a corrente
   const fim = (verAlunos ? cardAlunos() : '') + cardCadastrosLogin();   // Cadastros pelo login: o último bloco da aba
   if (embutida && !estado.pessoasMais) return h + `<button type="button" class="btn small pp-vermais" data-act="pessoasmais">Ver mais ▾</button></div></section>`;
   h += resto + (embutida ? '<button type="button" class="btn small pp-vermais" data-act="pessoasmais">Ver menos ▴</button>' : '') + '</div>' + fim;

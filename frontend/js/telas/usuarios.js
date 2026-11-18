@@ -117,7 +117,7 @@ function formNovoUsuario(chave) {
     ${root ? '<label class="field" id="u-nome-campo">Nome (sem pessoa da corrente)<input type="text" id="u-nome" maxlength="80"></label>' : ''}
     <label class="field">E-mail<input type="email" id="u-email" required autocomplete="off"></label>
     <label class="field">Senha inicial<input type="password" id="u-senha" required minlength="8" autocomplete="new-password"></label>
-    <p class="muted" style="margin:0;font-size:.82rem">O nome vem do cadastro em Pessoas (quem não está lá pode ser cadastrado aqui mesmo). Passe o e-mail e a senha inicial para a pessoa; ela pode trocar a senha depois.</p>
+    <p class="muted" style="margin:0;font-size:.82rem">O nome vem do cadastro em Perfil → Pessoas (quem não está lá pode ser cadastrado aqui mesmo). Passe o e-mail e a senha inicial para a pessoa; ela pode trocar a senha depois.</p>
     <div class="row" style="gap:6px"><button class="btn primary small" type="submit">Dar acesso</button><button class="btn small" type="button" data-act="pfnovocancelar">Cancelar</button></div>
   </form>`;
 }
@@ -133,8 +133,8 @@ function grupoPerfil(f, usuarios, buscando) {
   if (!aberto) return h + '</div>';
   if (corrente) {
     h += f.chave === 'corrente'
-      ? '<p class="muted" style="margin:0;font-size:.85rem">O acesso da corrente: quem está em Pessoas entra com e-mail, celular ou CPF e a senha de números.</p>'
-      : '<p class="muted" style="margin:0;font-size:.85rem">Quem se cadastrou pelo login e foi posto em Consulentes (Pessoas → Cadastros pelo login). Entra com e-mail, celular ou CPF e a senha.</p>';
+      ? '<p class="muted" style="margin:0;font-size:.85rem">O acesso da corrente: quem está em Perfil → Pessoas entra com e-mail, celular ou CPF e a senha de números.</p>'
+      : '<p class="muted" style="margin:0;font-size:.85rem">Quem se cadastrou pelo login e foi posto em Consulentes (Perfil → Pessoas → Cadastros pelo login). Entra com e-mail, celular ou CPF e a senha.</p>';
   } else {
     h += usuarios.length ? `<div class="pf-pessoas">${usuarios.map(linhaUsuario).join('')}</div>` : '<p class="muted" style="margin:0;font-size:.88rem">Ninguém neste perfil.</p>';
     if (!buscando) {
@@ -427,5 +427,5 @@ export async function enviarFormulario() {
     estado.novoUsuarioPerfil = null;
     toast(`${nome} agora tem acesso.`);
     avisar();
-  } catch (e) { toast(nova ? `${nome} foi cadastrada em Pessoas, mas o usuário não foi criado: ${e.message}` : e.message); avisar(); }
+  } catch (e) { toast(nova ? `${nome} foi cadastrada em Perfil → Pessoas, mas o usuário não foi criado: ${e.message}` : e.message); avisar(); }
 }
