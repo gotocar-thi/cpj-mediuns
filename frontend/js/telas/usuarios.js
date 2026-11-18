@@ -4,6 +4,7 @@
 import { SEM_CADASTRO, ABAS, ABAS_CONSULENTE, PERFIS_SISTEMA, PIN_NOVO, PIN_NOVO_MSG, normalizarAbas } from '/shared/permissoes.js';
 import { estado, pessoasOrd, carregarUsuarios, carregarPerfil, criarUsuario, atualizarUsuario, excluirUsuario, atualizarPessoa, adicionarPessoas, acaoUsuarios, salvarApelidosEntidade, salvarConfigCasa, avisar } from '../estado.js';
 import { esc, toast, ajustarRolagem } from '../util.js';
+import { emDemo } from '../auth.js';
 import { renderAjustesPerfil, formSenha } from './perfil.js';
 import { blocosEventos, blocoTipos, cliques as cliquesEventos } from './eventos.js';
 import { cardGiraAntiga, cliquesGiraAntiga, mudancasGiraAntiga, corpoBackup, cliquesBackup } from './historico.js';
@@ -260,7 +261,7 @@ export const cliques = {
     if (inp) { inp.focus(); if (inp.tagName === 'INPUT') inp.select(); }
   },
   cancelauren() { estado.renomearUsuario = null; avisar(); },
-  dobrarroot(el) { const k = el.dataset.k; if (abertosRoot.has(k)) abertosRoot.delete(k); else abertosRoot.add(k); avisar(); },
+  dobrarroot(el) { if (emDemo()) { toast('Modo demonstração: os blocos do Admin root não abrem.'); return; } const k = el.dataset.k; if (abertosRoot.has(k)) abertosRoot.delete(k); else abertosRoot.add(k); avisar(); },
   editaralias(el) {
     const index = Number(el.dataset.index);
     const alias = estado.entidadesApelidos?.[index];

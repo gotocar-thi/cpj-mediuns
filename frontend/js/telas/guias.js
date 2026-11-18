@@ -604,7 +604,7 @@ export const cliques = {
     if (ui.ocupado) return;
     ui.ocupado = 'atualizar';
     avisar();
-    try { await carregarGuias(); } finally { ui.ocupado = null; avisar(); }
+    try { await carregarGuias(true); } finally { ui.ocupado = null; avisar(); }
   },
   guiapixcopiar(el) {
     const t = document.getElementById('gp-cc-' + el.dataset.id);

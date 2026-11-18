@@ -6,6 +6,7 @@ import { POSICOES_ORIXA, POSICOES_GUIA, GUIAS, NOME_GUIA_MAX, respondeu, lerNasc
   ANAMNESE_TIPOS, ANAMNESE_PERGUNTA_MAX, ANAMNESE_TEXTO_MAX, ANAMNESE_SIMNAO, ANAMNESE_TIPO_LABEL, anamnesePreenchida, respostasPorPessoa, textoAnamnese, valorAnamnese } from '/shared/perfil.js';
 import { estado, pode, visaoAtiva, avisar, carregarPerfil, mudarPerfil, salvarAfinidade, carregarFoto, salvarFoto, salvarInfoDe, carregarAnamnese, acaoAnamnese, lerCpf, salvarCpf } from '../estado.js';
 import { esc, toast, iniciais, baixar, hoje } from '../util.js';
+import { emDemo } from '../auth.js';
 import { ICONE_WHATS } from './giraComum.js';
 
 const GUIA_LABEL = Object.fromEntries(GUIAS);
@@ -739,6 +740,7 @@ export const cliques = {
   },
   pfdobra(el) {
     const k = el.dataset.k;
+    if (emDemo() && k.startsWith('anamnese')) { toast('Modo demonstração: a anamnese não abre.'); return; }
     if (k === 'anamnese-adm') {
       U().abertos[k] = el.getAttribute('aria-expanded') !== 'true';
       U().anamneseGrupo = null;

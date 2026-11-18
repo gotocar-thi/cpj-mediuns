@@ -758,8 +758,9 @@ export async function acaoErvas(acao, dados = {}) {
 // Aba: quem administra sempre vê; as pessoas com a aba no perfil, quando o admin liga "Visível para todos".
 // Alunos e curimba também pedem (shared/permissoes.js PERMISSOES_GRUPO), só com a aba visível para todos.
 export const veGuias = () => pode('guias:gerenciar') || (pode('guias:pedir') && !!estado.me?.guiasPublicada);
-export async function carregarGuias() {
-  try { estado.guias = await api('GET', '/oferendas?lista=guias'); } catch (e) { toast(e.message); estado.guias = estado.guias || { grupos: [], pedidos: [], meus: [], aberto: null }; }
+// conferir: o "Já paguei, atualizar" (o servidor ignora; o modo demonstração simula ali o aviso de pagamento do ASAAS).
+export async function carregarGuias(conferir = false) {
+  try { estado.guias = await api('GET', '/oferendas?lista=guias' + (conferir ? '&conferir=1' : '')); } catch (e) { toast(e.message); estado.guias = estado.guias || { grupos: [], pedidos: [], meus: [], aberto: null }; }
   avisar();
 }
 export async function acaoGuias(op, dados = {}) {

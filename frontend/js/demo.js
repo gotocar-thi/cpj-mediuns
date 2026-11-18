@@ -8,8 +8,10 @@ import { PERMISSOES_ROOT, PERFIS_PADRAO } from '/shared/permissoes.js';
 import { TIPOS_EVENTO } from '/shared/eventos.js';
 import { calcularPedidos } from '/shared/ervas.js';
 import { normalizarPerfil, contagemPerfis, pessoasPorOrixaCabeca } from '/shared/perfil.js';
+import { pctItens } from '/shared/iemanja.js';
 
 import { DEMO_EMAIL, AVISO_DEMO } from './auth.js';
+import { criarCompras } from './demoCompras.js';
 
 class ErroDemo extends Error {
   constructor(status, message) { super(message); this.status = status; }
@@ -106,11 +108,113 @@ db.oferendas = [{
   responsavelId: id(1), porMedium: false, noResumo: false, mediuns: [], grupos: [],
   itens: [
     { id: id(1111), nome: 'Milho verde', quantidade: 10, unidade: 'un', entrega: '', entregue: false, doacoes: [{ chave: 'p:' + id(5), nome: 'Beatriz Souza', quantidade: 4 }] },
-    { id: id(1112), nome: 'Frutas variadas', quantidade: 3, unidade: 'kg', entrega: '', entregue: false, doacoes: [] },
+    { id: id(1112), nome: 'Frutas variadas', quantidade: 3, unidade: 'kg', entrega: '', entregue: false, doacoes: [{ chave: 'p:' + EU_ID, nome: 'Teste CPJ', quantidade: 2 }] },
     { id: id(1113), nome: 'Vela verde', quantidade: 7, unidade: 'un', entrega: '', entregue: false, doacoes: [{ chave: 'p:' + id(2), nome: 'Rafael Moura', quantidade: 7 }] },
   ],
 }];
-const ABAS_OFERENDA = [{ id: id(1150), nome: 'Oferendas', visivel: true, detalhes: '', ordem: 0 }];
+const ABAS_OFERENDA = [{ id: id(1150), nome: 'Oferendas', visivel: true, detalhes: '', ordem: 0 }, { id: 'iemanja', nome: 'Iemanjá', iemanja: true, visivel: true, ordem: 1 }];
+
+// Oferenda de Iemanjá: a pessoa de teste está no Grupo 1 e já assumiu itens (vista de quem participa, sem ser admin do evento).
+const EU_CHAVE = 'p:' + EU_ID;
+const nomeP = (n) => db.pessoas.find((p) => p.id === id(n)).nome;
+const membro = (n) => ({ chave: 'p:' + id(n), nome: nomeP(n), fixo: false, lista: 'Corrente' });
+const itemIem = (n, nome, categoria, quantidade, unidade, doacoes = []) => ({ id: id(n), nome, categoria, quantidade, unidade, entrega: '', entregue: false, doacoes });
+const doa = (n, quantidade) => ({ chave: 'p:' + id(n), nome: nomeP(n), quantidade });
+const iemanja = {
+  id: id(1301), nome: 'Oferenda a Iemanjá', data: dia(proximoSabado + 42), visivel: true, sorteado: true, encerradoEm: null,
+  fora: [], listas: [], categorias: ['Flores', 'Velas', 'Frutas', 'Barco'], admin: false,
+  detalhes: 'Saída do terreiro às 5h30. Todos de branco.\nCada grupo monta o seu barquinho na praia.',
+  grupos: [
+    { id: id(1310), ordem: 1, nome: 'Grupo 1', responsavelId: id(2), responsavel: 'Rafael Moura', meu: true, abre: true,
+      membros: [membro(9), membro(2), membro(6), membro(11)],
+      itens: [
+        itemIem(1321, 'Rosas brancas', 'Flores', 24, 'un', [doa(9, 12), doa(6, 12)]),
+        itemIem(1322, 'Velas azul claro', 'Velas', 14, 'un', [doa(2, 7)]),
+        itemIem(1323, 'Uvas verdes', 'Frutas', 2, 'kg', [doa(9, 1)]),
+        itemIem(1324, 'Barquinho de madeira', 'Barco', 1, 'un', []),
+      ] },
+    { id: id(1311), ordem: 2, nome: 'Grupo 2', responsavelId: id(1), responsavel: 'Mãe Lúcia', meu: false, abre: false, membros: [],
+      itens: [itemIem(1331, 'Palmas brancas', 'Flores', 12, 'un', [doa(1, 12)]), itemIem(1332, 'Perfume de alfazema', 'Barco', 2, 'un', [])] },
+  ],
+};
+const transportesIem = [
+  { id: id(1340), eventoId: id(1301), descricao: 'Van 1 · saída 5h30', responsavelId: id(2), responsavel: 'Rafael Moura',
+    pessoas: [{ chave: EU_CHAVE, nome: 'Teste CPJ', lista: 'Corrente', pago: true, pulseira: false }, { chave: 'p:' + id(6), nome: 'Carla Mendes', lista: 'Corrente', pago: false, pulseira: false }] },
+];
+function respostaIemanja() {
+  const ev = copia(iemanja);
+  ev.grupos = ev.grupos.map((g) => ({ ...g, pct: pctItens(g.itens), ...(g.abre ? {} : { itens: [] }) }));
+  return { eventos: [{ ...ev, transportes: copia(transportesIem) }], root: false, eu: { chave: EU_CHAVE }, publica: true };
+}
+function acaoIemanja(b) {
+  if (b.op !== 'assumir') throw new ErroDemo(400, AVISO_DEMO);
+  const g = iemanja.grupos.find((x) => x.itens.some((i) => i.id === b.itemId));
+  if (!g?.meu) throw new ErroDemo(403, 'Só quem é do grupo assume este item.');
+  const i = g.itens.find((x) => x.id === b.itemId);
+  const q = Math.max(0, Number(b.quantidade) || 0);
+  i.doacoes = i.doacoes.filter((d) => d.chave !== EU_CHAVE);
+  if (q) i.doacoes.push(doa(9, q));
+  return respostaIemanja();
+}
+
+// Amaci: a visão de quem aprende, com um orixá liberado (Pai Oxalá). Texto literal de api/_lib/amaciDados.js.
+const AMACI_DEMO = {
+  publicada: true, liberados: ['oxala'],
+  orixas: [{
+    k: 'oxala',
+    ervas: [
+      'Boldo, hortelã, manjericão, alecrim, sálvia, rosas brancas, mão de Deus, cipó cruz, alfazema, aniz estrelado, macela, camomila, malva, abre caminho.',
+      'Outra opção: banho de água de coco - purificadora.',
+      'Banho da cabeça aos pés.',
+    ],
+    velas: [
+      'Velas Brancas (também pode ser usado velas douradas e pratas). Ideal fazer feixe de velas (Fazer 5 pontos de velas).',
+    ],
+    pontos: [
+      { img: 'oxala.png', legenda: 'Espaço Mágico ou Ponto Riscado de Pai Oxalá' },
+      { img: 'oxala-2.png', legenda: 'Cristalino e Ígneo' },
+      { img: 'oxala-3.png', legenda: 'Vegetal e Ígneo' },
+      { img: 'oxala-4.png', legenda: 'Espaço Mágico Equilibrador' },
+      { img: 'oxala-5.png', legenda: 'Espaço Mágico Equilibrador' },
+    ],
+    fatores: [
+      'Congregador (principal) – espaço de terreiro é a “prova viva” deste fator.',
+      'Acalmador.',
+      'Passificador.',
+      'Tranquilizador.',
+      'Harmonizador.',
+      'Curadora.',
+    ],
+    orientacao: 'Exemplo de recado: tragam o banho pronto em garrafa e uma vela branca.',
+  }],
+};
+
+// Painel da Transparência: valores inventados, na visão da corrente (sem editar, sem nomes).
+function transparencia(mesPedido) {
+  const meses = [0, 1, 2].map((n) => { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - n); return iso(d).slice(0, 7); });
+  const mes = meses.includes(mesPedido) ? mesPedido : meses[0];
+  const k = meses.indexOf(mes);
+  const debitos = [{ nome: 'Aluguel', valor: 2200 }, { nome: 'Contador', valor: 300 }, { nome: 'Luz', valor: 95.4 }, { nome: 'Água', valor: 82.1 }, { nome: 'Velas (mês)', valor: 260 }];
+  const r2 = (v) => Math.round(v * 100) / 100;
+  const totalDebitos = r2(debitos.reduce((s, d) => s + d.valor, 0));
+  const pagas = [9, 11, 10][k];
+  const totalPago = pagas * 110;
+  const doacoes = { quantidade: [14, 18, 11][k], total: [620, 815.5, 480][k] };
+  const aporteAsaas = { quantidade: 1, total: 1500 };
+  const creditos = r2(totalPago + doacoes.total);
+  const resultado = r2(creditos + aporteAsaas.total - totalDebitos);
+  const saldoAnterior = [2140.3, 1935.8, 1700][k];
+  return {
+    publicada: true, editar: false, root: false, verNomes: false, config: null, meses, mes,
+    debitos, totalDebitos, creditosExtras: [], aporte: 0, aporteAsaas, herdado: null,
+    asaas: {
+      configurado: true, atualizadoEm: new Date().toISOString(),
+      mensalidades: { pagas, abertas: 12 - pagas, totalPago }, doacoes, valorMensalidade: 110, corrente: { total: 12 },
+    },
+    creditos, resultado, saldoAnterior, saldo: r2(saldoAnterior + resultado), saldoParcial: false,
+  };
+}
+
 
 // Giras: três já encerradas (sorteadas e fechadas pelas mesmas regras do app) e a próxima, ainda em aberto.
 function montarGiras() {
@@ -137,7 +241,7 @@ const girasOrdenadas = () => copia([...db.giras].sort((a, b) => b.data.localeCom
 const me = () => ({
   id: 'u-demo', nome: 'Teste CPJ', email: DEMO_EMAIL, papel: 'root', papelNome: 'Admin root', pessoaId: EU_ID,
   permissoes: PERMISSOES_ROOT, corrente: false, videosPublicada: true, ervasPublicada: true, guiasPublicada: true,
-  amaciPublicada: true, transparenciaPublicada: true, oferendasPublica: true, iemanjaAba: false, iemanjaPublica: false,
+  amaciPublicada: true, transparenciaPublicada: true, oferendasPublica: true, iemanjaAba: true, iemanjaPublica: true,
 });
 
 const oracoes = () => db.oracoes.map(({ autor, reacoes, ...o }) => ({
@@ -171,9 +275,18 @@ function ervas() {
   };
 }
 
-const oferendas = () => ({ oferendas: copia(db.oferendas), eu: { chave: 'u:demo', nome: 'Teste CPJ' }, abas: copia(ABAS_OFERENDA), publica: true });
+const compras = criarCompras({ euChave: 'p:' + EU_ID, euNome: 'Teste CPJ', pessoas: db.pessoas, ErroDemo });
 
-const SEM_DADOS = 'Demonstração: esta aba usa integrações (ASAAS, armazenamento) e fica sem dados aqui.';
+function doar(b) {
+  const i = db.oferendas.flatMap((o) => o.itens).find((x) => x.id === b.itemId);
+  if (!i) throw new ErroDemo(404, 'Item não encontrado.');
+  const q = Math.max(0, Number(b.quantidade) || 0);
+  i.doacoes = i.doacoes.filter((d) => d.chave !== 'p:' + EU_ID);
+  if (q) i.doacoes.push({ chave: 'p:' + EU_ID, nome: 'Teste CPJ', quantidade: q });
+  return oferendas();
+}
+const oferendas = () => ({ oferendas: copia(db.oferendas), eu: { chave: 'p:' + EU_ID, nome: 'Teste CPJ' }, abas: copia(ABAS_OFERENDA), publica: true });
+
 
 function lerGet(caminho, q) {
   const lista = q.get('lista');
@@ -199,7 +312,7 @@ function lerGet(caminho, q) {
     if (lista === 'conduta') return { ativa: true, relatos: [] };
     if (lista === 'atrasos') return { configurado: false, contas: {}, root: true, atrasos: [] };
     if (lista === 'fotos') return { albuns: [], fotos: [], usado: 0, limite: 0, configurado: false };
-    if (lista === 'transparencia') throw new ErroDemo(400, SEM_DADOS);
+    if (lista === 'transparencia') return transparencia(q.get('mes') || '');
   }
   const mGira = caminho.match(/^\/giras\/(\d{4}-\d{2}-\d{2})$/);
   if (mGira) return copia(giraDe(mGira[1]) || giraVazia(mGira[1]));
@@ -209,7 +322,7 @@ function lerGet(caminho, q) {
     if (lista === 'curimba') return copia(db.curimba);
     if (lista === 'minhaCurimba') return null;
     if (lista === 'perfis') { const t = todosPerfis(); return { ...contagemPerfis(t), cabecaNomes: pessoasPorOrixaCabeca(t) }; }
-    if (lista === 'amaci') return { publicada: false, liberados: [], orixas: [], admin: true, turmas: db.turmas.map((t) => ({ ...t, orixas: [] })) };
+    if (lista === 'amaci') return copia(AMACI_DEMO);
   }
   if (caminho === '/usuarios') {
     const usuarios = [{ id: 'u-demo', nome: 'Teste CPJ', email: DEMO_EMAIL, papel: 'root', papelNome: 'Admin root', pessoaId: EU_ID }];
@@ -222,8 +335,9 @@ function lerGet(caminho, q) {
   if (caminho === '/ervas') return lista === 'historico' ? [] : ervas();
   if (caminho === '/oferendas') {
     if (!lista) return oferendas();
-    if (lista === 'guias') return { admin: true, publicada: true, grupos: [], pedidos: [], meus: [] };
-    if (lista === 'iemanja' || lista === 'asaas') throw new ErroDemo(400, SEM_DADOS);
+    if (lista === 'guias') return compras.lerGuias({ atualizar: !!q.get('conferir') });
+    if (lista === 'asaas') return compras.asaas();
+    if (lista === 'iemanja') return respostaIemanja();
   }
   throw new ErroDemo(404, 'Demonstração: sem dados para esta tela.');
 }
@@ -294,6 +408,10 @@ function escrever(metodo, caminho, b) {
     return oracoes();
   }
   if (caminho === '/giras' && b?.acao === 'excluirOracao') { db.oracoes = db.oracoes.filter((x) => x.id !== b.id); return oracoes(); }
+  if (caminho === '/oferendas' && b?.acao === 'guias') return compras.acaoGuias(b);
+  if (caminho === '/oferendas' && b?.acao === 'asaas') return compras.acaoAsaas(b);
+  if (caminho === '/oferendas' && b?.acao === 'iemanja') return acaoIemanja(b);
+  if (caminho === '/oferendas' && b?.acao === 'doar') return doar(b);
   if (caminho === '/auth/perfil' && b?.perfil) {
     db.perfis[EU_ID] = normalizarPerfil(b.perfil);
     return perfil().eu;
