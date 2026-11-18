@@ -165,7 +165,11 @@ function podeVer(eu, publicada) {
 
 export async function transparencia(eu, query) {
   if (eu.grupo) throw new HttpError(403, 'Este acesso não tem o Painel da Transparência.');
-  const E = await db.rpc('transparencia_estado');
+  // O estado vem com a leitura inteira só do mês pedido (dos outros, os totais do saldo); a corrente vai junto.
+  const pedido = MES.test(String(query.mes || '')) ? query.mes : mesAtual();
+  const correntePromessa = db.rpc('transparencia_corrente');
+  correntePromessa.catch(() => {});   // se a aba for recusada abaixo, o erro desta consulta não fica solto
+  let E = await db.rpc('transparencia_estado', { mes: pedido });
   const cfg = configDe(E);
   if (!podeVer(eu, !!cfg.publicada)) throw new HttpError(403, 'O Painel da Transparência não está visível no momento.');
   const root = pode(eu, 'usuarios:gerenciar');
@@ -174,6 +178,8 @@ export async function transparencia(eu, query) {
   const disponiveis = [];
   for (let m = atual; m >= inicio && disponiveis.length < 240; m = somarMes(m, -1)) disponiveis.push(m);
   const mes = MES.test(String(query.mes || '')) && disponiveis.includes(query.mes) ? query.mes : atual;
+  // Mês pedido fora do intervalo (antes do início ou no futuro): busca de novo com a leitura inteira do mês que vale.
+  if (mes !== pedido) E = await db.rpc('transparencia_estado', { mes });
 
   // ASAAS: o mês escolhido (no Puxar, ou se a leitura é de antes das 9h de hoje) e, para o saldo, os meses desde o início
   // que nunca foram lidos (alguns por pedido).
@@ -213,9 +219,9 @@ export async function transparencia(eu, query) {
   const linha = lidos.get(mes);
   const dados = linha?.dados || null;
   const verNomes = pode(eu, 'asaas:ver');
-  // Corrente (sem a curimba): o total vai para todos; quem ficou de fora das mensalidades do mês (sem cobrança, ou sem
+  // Corrente (com a curimba que tem turma da limpeza): o total vai para todos; quem ficou de fora das mensalidades do mês (sem cobrança, ou sem
   // CPF no Perfil para ligar ao ASAAS) só para quem vê os nomes. Leitura antiga, sem a ligação por CPF: null (Puxar).
-  const pessoas = await db.rpc('transparencia_corrente');
+  const pessoas = await correntePromessa;
   let fora = null;
   if (verNomes && dados?.ligadoPorCpf) {
     const comMensalidade = new Set(dados.mensalidades.lista.map((x) => x.pessoaId).filter(Boolean));

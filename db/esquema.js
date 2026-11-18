@@ -9,7 +9,7 @@
 // Estrutura: veja db/ESTRUTURA-ESQUEMA.md para o mapa de versões, domínios e
 // quais migrações foram testadas no Postgres.
 
-export const VERSAO = 139;  // v139: bloquear o acesso do aluno ao app (aba Pessoas → Alunos)
+export const VERSAO = 140;  // v140: Transparência — a curimba com turma da limpeza conta na corrente; abertura mais leve
 
 import { PERFIS_PADRAO } from '../shared/permissoes.js';
 
@@ -5579,15 +5579,6 @@ export const MIGRACOES = [
    returns jsonb language sql stable as $$
      select to_jsonb(coalesce((select (valor::jsonb ->> 'publicada')::boolean from sistema where chave = 'transparencia'), false))
    $$`,
-  `create or replace function transparencia_estado(p jsonb default '{}'::jsonb)
-   returns jsonb language sql stable as $$
-     select jsonb_build_object(
-       'config', coalesce((select valor::jsonb from sistema where chave = 'transparencia'), '{}'::jsonb),
-       'meses', coalesce((select jsonb_agg(jsonb_build_object('mes', mes, 'debitos', debitos, 'creditos', creditos, 'aporte', aporte::float8,
-                  'atualizadoEm', atualizado_em, 'por', por) order by mes) from transparencia_meses), '[]'::jsonb),
-       'asaas', coalesce((select jsonb_agg(jsonb_build_object('mes', mes, 'dados', dados, 'atualizadoEm', atualizado_em) order by mes)
-                  from transparencia_asaas), '[]'::jsonb))
-   $$`,
   // p = { config }: troca a configuração inteira (o backend já conferiu os campos).
   `create or replace function transparencia_config_salvar(p jsonb)
    returns jsonb language plpgsql as $$
@@ -5626,13 +5617,6 @@ export const MIGRACOES = [
    where chave = 'transparencia' and (valor like '%"Luz (média)"%' or valor like '%"Água (média)"%')`,
   `update transparencia_meses set debitos = replace(replace(debitos::text, '"Luz (média)"', '"Luz"'), '"Água (média)"', '"Água"')::jsonb
    where debitos::text like '%"Luz (média)"%' or debitos::text like '%"Água (média)"%'`,
-  // A corrente para o quadradinho do painel: quem está ativo (sem a curimba) e se tem CPF no Perfil (para ligar ao ASAAS).
-  `create or replace function transparencia_corrente(p jsonb default '{}'::jsonb)
-   returns jsonb language sql stable as $$
-     select coalesce(jsonb_agg(jsonb_build_object('id', pe.id, 'nome', pe.nome,
-              'temCpf', exists (select 1 from pessoas_cpf c where c.pessoa_id = pe.id)) order by lower(pe.nome)), '[]'::jsonb)
-       from pessoas pe where pe.saida is null and pe.funcao <> 'curimba'
-   $$`,
   // Campo renomeado pelo root (na edição da própria tela): o nome novo vai para os valores de todos os meses lançados.
   // p = { tipo: 'debitos' | 'creditos', de, para }.
   `create or replace function transparencia_renomear(p jsonb)
@@ -6077,5 +6061,30 @@ export const MIGRACOES = [
      if not found then raise exception 'Aluno não encontrado.'; end if;
      return alunos_estado();
    end;
+   $$`,
+  // ================================================== v140: Transparência — a curimba que está na corrente conta
+  // O quadradinho Na corrente (e a lista de quem ficou fora das mensalidades) passa a contar a curimba que tem turma da
+  // limpeza; a curimba sem turma da limpeza continua fora.
+  `create or replace function transparencia_corrente(p jsonb default '{}'::jsonb)
+   returns jsonb language sql stable as $$
+     select coalesce(jsonb_agg(jsonb_build_object('id', pe.id, 'nome', pe.nome,
+              'temCpf', exists (select 1 from pessoas_cpf c where c.pessoa_id = pe.id)) order by lower(pe.nome)), '[]'::jsonb)
+       from pessoas pe where pe.saida is null and (pe.funcao <> 'curimba' or pe.limpeza is not null)
+   $$`,
+  // Abertura mais leve: a leitura do ASAAS vem inteira (com as listas de nomes) só no mês pedido (p.mes); dos outros meses,
+  // só os totais que o saldo usa e o formato (para saber se já foi lido).
+  `create or replace function transparencia_estado(p jsonb default '{}'::jsonb)
+   returns jsonb language sql stable as $$
+     select jsonb_build_object(
+       'config', coalesce((select valor::jsonb from sistema where chave = 'transparencia'), '{}'::jsonb),
+       'meses', coalesce((select jsonb_agg(jsonb_build_object('mes', mes, 'debitos', debitos, 'creditos', creditos, 'aporte', aporte::float8,
+                  'atualizadoEm', atualizado_em, 'por', por) order by mes) from transparencia_meses), '[]'::jsonb),
+       'asaas', coalesce((select jsonb_agg(jsonb_build_object('mes', a.mes, 'atualizadoEm', a.atualizado_em, 'dados',
+                  case when a.mes = coalesce(p ->> 'mes', '') then a.dados
+                       else jsonb_build_object('formato', a.dados -> 'formato',
+                              'mensalidades', jsonb_build_object('totalPago', a.dados -> 'mensalidades' -> 'totalPago'),
+                              'doacoes', jsonb_build_object('total', a.dados -> 'doacoes' -> 'total'),
+                              'aporte', case when a.dados ? 'aporte' then jsonb_build_object('total', a.dados -> 'aporte' -> 'total') end) end)
+                  order by a.mes) from transparencia_asaas a), '[]'::jsonb))
    $$`,
 ];

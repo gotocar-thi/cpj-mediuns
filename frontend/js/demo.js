@@ -242,7 +242,8 @@ function transparencia(mesPedido) {
     debitos, totalDebitos, creditosExtras: [], aporte: 0, aporteAsaas, herdado: null,
     asaas: {
       configurado: true, atualizadoEm: new Date().toISOString(),
-      mensalidades: { pagas, abertas: 12 - pagas, totalPago }, doacoes, valorMensalidade: 110, corrente: { total: 12 },
+      mensalidades: { pagas, abertas: 12 - pagas, totalPago }, doacoes, valorMensalidade: 110,
+      corrente: { total: db.pessoas.filter((p) => !p.saida && (p.funcao !== 'curimba' || p.limpeza)).length },   // com a curimba que tem turma da limpeza
     },
     creditos, resultado, saldoAnterior, saldo: r2(saldoAnterior + resultado), saldoParcial: false,
   };

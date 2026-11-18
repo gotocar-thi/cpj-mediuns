@@ -128,7 +128,7 @@ function listaMens(lista, pagas) {
   return `<ul class="tr-lista tr-nomes">${itens.map((x) => `<li><span>${esc(x.nome)}${!pagas && x.vencida ? ' <span class="badge re">vencida</span>' : ''}</span>
     <small class="muted">${pagas ? (x.pagoEm ? 'pago ' + dBR(x.pagoEm) : '') : (x.vencimento ? 'vence ' + dBR(x.vencimento) : '')}</small></li>`).join('')}</ul>`;
 }
-// Quem da corrente (sem a curimba) ficou de fora das mensalidades do mês: sem cobrança, ou sem CPF no Perfil para ligar.
+// Quem da corrente (com a curimba que tem turma da limpeza) ficou de fora das mensalidades do mês: sem cobrança, ou sem CPF no Perfil para ligar.
 function listaFora(fora) {
   if (!fora) return PUXAR;
   if (!fora.length) return '<p class="muted" style="margin:0">Toda a corrente tem mensalidade neste mês.</p>';
