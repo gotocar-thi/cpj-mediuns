@@ -57,7 +57,10 @@ const db = {
   perfis: {},
   eventos: [
     { id: id(301), data: dia(proximoSabado), nome: 'Gira de Caboclo', tipo: 'gira' },
-    { id: id(302), data: dia(proximoSabado + 14), nome: 'Amaci da turma 1', tipo: 'amaci' },
+    { id: id(302), data: dia(proximoSabado + 14), nome: 'Amaci de Logunã', tipo: 'amaci' },
+    { id: id(304), data: dia(-28), nome: 'Amaci de Oxalá (1ª aula)', tipo: 'amaci' },
+    { id: id(305), data: dia(-14), nome: 'Amaci de Oxalá (2ª aula)', tipo: 'amaci' },
+    { id: id(306), data: dia(0), nome: 'Amaci de Oxalá (3ª aula)', tipo: 'amaci' },
     { id: id(303), data: dia(proximoSabado + 2), nome: 'Mutirão de limpeza do terreiro', tipo: 'aviso' },
   ],
   oracoes: [
@@ -188,6 +191,29 @@ const AMACI_DEMO = {
     orientacao: 'Exemplo de recado: tragam o banho pronto em garrafa e uma vela branca.',
   }],
 };
+
+// Presença no amaci. Na visão Alunos (seletor Visão do root), a pessoa de teste aparece como aluna da Turma 1
+// (ALUNO_DEMO); na visão Root, o bloco Presença nos amacis lista os alunos das duas turmas.
+const ALUNO_DEMO = 'demo-aluno';
+const presAmaci = { [id(304)]: { [ALUNO_DEMO]: 'p', [id(601)]: 'p', [id(602)]: 'f', [id(603)]: 'p' }, [id(305)]: { [id(601)]: 'p', [id(603)]: 'p' } };
+function marcarAmaci(eventoId, alunoId, status) {
+  presAmaci[eventoId] ||= {};
+  if (status) presAmaci[eventoId][alunoId] = status; else delete presAmaci[eventoId][alunoId];
+}
+function amaci() {
+  const hoje = dia(0);
+  const evs = db.eventos.filter((e) => e.tipo === 'amaci').sort((a, b) => a.data.localeCompare(b.data));
+  const amacis = evs.map((e) => ({ id: e.id, data: e.data, nome: e.nome, status: presAmaci[e.id]?.[ALUNO_DEMO] || null }));
+  const feitos = amacis.filter((a) => a.data <= hoje);
+  return {
+    ...copia(AMACI_DEMO), turmaNome: 'Turma 1',
+    presenca: { hoje, amacis, pct: feitos.length ? Math.round((feitos.filter((a) => a.status === 'p').length / feitos.length) * 100) : null },
+    presencaAdmin: {
+      hoje, amacis: evs.filter((e) => e.data <= hoje).reverse().map(({ id: i, data, nome }) => ({ id: i, data, nome })),
+      turmas: copia(db.turmas), alunos: copia(db.alunos), marcas: copia(presAmaci),
+    },
+  };
+}
 
 // Painel da Transparência: valores inventados, na visão da corrente (sem editar, sem nomes).
 function transparencia(mesPedido) {
@@ -322,7 +348,7 @@ function lerGet(caminho, q) {
     if (lista === 'curimba') return copia(db.curimba);
     if (lista === 'minhaCurimba') return null;
     if (lista === 'perfis') { const t = todosPerfis(); return { ...contagemPerfis(t), cabecaNomes: pessoasPorOrixaCabeca(t) }; }
-    if (lista === 'amaci') return copia(AMACI_DEMO);
+    if (lista === 'amaci') return amaci();
   }
   if (caminho === '/usuarios') {
     const usuarios = [{ id: 'u-demo', nome: 'Teste CPJ', email: DEMO_EMAIL, papel: 'root', papelNome: 'Admin root', pessoaId: EU_ID }];
@@ -411,6 +437,13 @@ function escrever(metodo, caminho, b) {
   if (caminho === '/oferendas' && b?.acao === 'guias') return compras.acaoGuias(b);
   if (caminho === '/oferendas' && b?.acao === 'asaas') return compras.acaoAsaas(b);
   if (caminho === '/oferendas' && b?.acao === 'iemanja') return acaoIemanja(b);
+  if (caminho === '/pessoas' && b?.acao === 'amaciPresenca') {
+    const ev = db.eventos.find((e) => e.id === b.eventoId && e.tipo === 'amaci');
+    if (!ev || ev.data !== dia(0)) throw new ErroDemo(409, 'A presença só pode ser confirmada no dia do amaci.');
+    marcarAmaci(ev.id, ALUNO_DEMO, 'p');
+    return amaci();
+  }
+  if (caminho === '/pessoas' && b?.acao === 'amaci' && b.op === 'presenca') { marcarAmaci(b.eventoId, b.alunoId, b.status); return amaci(); }
   if (caminho === '/oferendas' && b?.acao === 'doar') return doar(b);
   if (caminho === '/auth/perfil' && b?.perfil) {
     db.perfis[EU_ID] = normalizarPerfil(b.perfil);

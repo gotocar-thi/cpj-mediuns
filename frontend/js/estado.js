@@ -783,6 +783,18 @@ export async function carregarAmaci() {
   try { estado.amaci = await api('GET', '/pessoas?lista=amaci'); } catch (e) { estado.amaci = estado.amaci && !estado.amaci.erro ? estado.amaci : { erro: e.message }; }
   avisar();
 }
+// O aluno confirma a própria presença no amaci de hoje, com a localização do celular (a API confere se está no terreiro).
+export async function confirmarPresencaAmaci(eventoId, lat, lon) {
+  try {
+    estado.amaci = await api('POST', '/pessoas', { acao: 'amaciPresenca', eventoId, lat, lon });
+    avisar();
+    return true;
+  } catch (e) {
+    toast(e.message);
+    avisar();
+    return false;
+  }
+}
 export async function acaoAmaci(op, dados = {}) {
   try {
     estado.amaci = await api('POST', '/pessoas', { acao: 'amaci', op, ...dados });

@@ -3,13 +3,15 @@
 // O admin libera, por turma de alunos, quais orixás ela vê (cada turma está numa etapa do curso).
 // O aluno recebe só os orixás liberados para a turma dele; quem não é aluno (corrente, admins) vê os 14.
 // O recado (texto livre do admin; no banco, "orientação") é um por orixá, igual para todas as turmas.
-import { validarId, HttpError } from './http.js';
+import { validarId, HttpError, hojeBR } from './http.js';
 import { db } from './db.js';
 import { pode } from '../../shared/permissoes.js';
-import { ORIXA_KEYS, ordenarOrixas, limparOrientacao, ORIENTACAO_LINHAS, ORIENTACAO_LETRAS } from '../../shared/amaci.js';
+import { ORIXA_KEYS, ordenarOrixas, limparOrientacao, ORIENTACAO_LINHAS, ORIENTACAO_LETRAS, noTerreiro, pctAmaci } from '../../shared/amaci.js';
 import { AMACI } from './amaciDados.js';
 
 const ehAdmin = (eu) => pode(eu, 'amaci:editar');
+// Presença no amaci: quem marca presença ou falta de qualquer aluno é o admin root.
+const ehRoot = (eu) => pode(eu, 'usuarios:gerenciar');
 
 // Orixás que a pessoa pode ver. turmas = [{ id, nome, orixas }].
 export function liberadosPara(eu, turmas) {
@@ -30,7 +32,47 @@ export async function amaci(eu, dados) {
     publicada: !!d.publicada, liberados, ...(turmaNome !== undefined ? { turmaNome } : {}),
     orixas: liberados.map((k) => ({ k, ...AMACI[k], orientacao: orientacoes[k] || '' })),
     ...(admin ? { admin: true, turmas: d.turmas.map((t) => ({ ...t, orixas: ordenarOrixas(t.orixas) })) } : {}),
+    ...(await presencaAmaci(eu)),
   };
+}
+
+// Presença: o aluno recebe os amacis da turma dele (eventos do tipo Amaci, com a turma marcada no tipo) e a situação
+// de cada um; o root, os amacis até hoje com os alunos das turmas marcadas e as marcações.
+async function presencaAmaci(eu) {
+  const hoje = hojeBR();
+  if (eu.grupo === 'alunos') {
+    const P = await db.rpc('amaci_presencas_dados', { alunoId: eu.alunoId });
+    const daTurma = !!eu.turmaId && P.turmas.includes(eu.turmaId);
+    const st = Object.fromEntries(P.presencas.map((x) => [x.eventoId, x.status]));
+    const amacis = daTurma ? P.eventos.map((e) => ({ ...e, status: st[e.id] || null })) : [];
+    return { presenca: { hoje, amacis, pct: pctAmaci(amacis, hoje) } };
+  }
+  if (!ehRoot(eu)) return {};
+  const [P, al] = await Promise.all([db.rpc('amaci_presencas_dados'), db.rpc('alunos_estado')]);
+  const marcas = {};
+  P.presencas.forEach((x) => { (marcas[x.eventoId] ||= {})[x.alunoId] = x.status; });
+  return {
+    presencaAdmin: {
+      hoje,
+      amacis: P.eventos.filter((e) => e.data <= hoje).reverse(),
+      turmas: al.turmas.filter((t) => P.turmas.includes(t.id)),
+      alunos: al.alunos.filter((a) => P.turmas.includes(a.turmaId)),
+      marcas,
+    },
+  };
+}
+
+// O aluno confirma a própria presença: só no dia do amaci da turma dele e dentro do terreiro.
+export async function presencaAluno(eu, b) {
+  if (eu.grupo !== 'alunos') throw new HttpError(403, 'Só o aluno confirma a própria presença.');
+  const eventoId = validarId(b.eventoId, 'Amaci');
+  const P = await db.rpc('amaci_presencas_dados', { alunoId: eu.alunoId });
+  const ev = P.eventos.find((e) => e.id === eventoId);
+  if (!ev || !eu.turmaId || !P.turmas.includes(eu.turmaId)) throw new HttpError(404, 'Amaci não encontrado para a sua turma.');
+  if (ev.data !== hojeBR()) throw new HttpError(409, 'A presença só pode ser confirmada no dia do amaci.');
+  if (!noTerreiro(Number(b.lat), Number(b.lon))) throw new HttpError(403, 'Você precisa estar no Terreiro Pai João para confirmar a presença.');
+  await db.rpc('amaci_presenca_marcar', { eventoId, alunoId: eu.alunoId, status: 'p', por: 'aluno' });
+  return amaci(eu);
 }
 
 export async function acaoAmaci(eu, b) {
@@ -48,6 +90,16 @@ export async function acaoAmaci(eu, b) {
     const texto = limparOrientacao(b.texto);
     if (texto === null) throw new HttpError(400, `O recado pode ter até ${ORIENTACAO_LINHAS} linhas (${ORIENTACAO_LETRAS} letras).`);
     return amaci(eu, await db.rpc('amaci_orientacao', { orixa: b.orixa, texto }));
+  }
+  if (b.op === 'presenca') {
+    if (!ehRoot(eu)) throw new HttpError(403, 'Só o admin root marca a presença dos alunos.');
+    if (!['p', 'f', ''].includes(b.status ?? '')) throw new HttpError(400, 'Situação inválida.');
+    const eventoId = validarId(b.eventoId, 'Amaci');
+    const alunoId = validarId(b.alunoId, 'Aluno');
+    const P = await db.rpc('amaci_presencas_dados');
+    if (!P.eventos.some((e) => e.id === eventoId)) throw new HttpError(404, 'Amaci não encontrado.');
+    await db.rpc('amaci_presenca_marcar', { eventoId, alunoId, status: b.status || null, por: 'root' });
+    return amaci(eu);
   }
   throw new HttpError(400, 'Ação inválida.');
 }

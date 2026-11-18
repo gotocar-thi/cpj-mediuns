@@ -9,7 +9,7 @@
 // Estrutura: veja db/ESTRUTURA-ESQUEMA.md para o mapa de versões, domínios e
 // quais migrações foram testadas no Postgres.
 
-export const VERSAO = 134;  // v134: consulentes (cadastros pelo login na turma escondida Consulentes) e o perfil Consulentes
+export const VERSAO = 135;  // v135: presença dos alunos no amaci
 
 import { PERFIS_PADRAO } from '../shared/permissoes.js';
 
@@ -5970,5 +5970,41 @@ export const MIGRACOES = [
                    'celular', coalesce(a.perfil -> 'info' ->> 'celular', ''), 'email', coalesce(a.perfil -> 'info' ->> 'email', ''))
                    order by lower(a.nome))
                  from alunos a where a.saida is null and a.turma_id = turma_consulentes_id()), '[]'::jsonb))
+   $$`,
+  // ================================================== v135: presença dos alunos no amaci (aba Amaci)
+  // Um registro por evento do tipo Amaci e aluno: 'p' presente, 'f' falta; sem registro = ausente.
+  // O aluno marca a própria presença no dia, dentro do terreiro (a API confere); o admin root marca presença ou falta.
+  `create table if not exists amaci_presencas (
+     evento_id  uuid not null references eventos (id) on delete cascade,
+     aluno_id   uuid not null references alunos (id) on delete cascade,
+     status     text not null check (status in ('p', 'f')),
+     por        text not null default '',
+     em         timestamptz not null default now(),
+     primary key (evento_id, aluno_id)
+   )`,
+  // p = { alunoId? } — os eventos Amaci, as turmas marcadas no tipo Amaci e as presenças (de um aluno, ou de todos).
+  `create or replace function amaci_presencas_dados(p jsonb default '{}'::jsonb)
+   returns jsonb language sql stable as $$
+     select jsonb_build_object(
+       'turmas', coalesce((select to_jsonb(turmas) from eventos_tipos where chave = 'amaci'), '[]'::jsonb),
+       'eventos', coalesce((select jsonb_agg(jsonb_build_object('id', e.id, 'data', e.data, 'nome', e.nome) order by e.data, lower(e.nome))
+                            from eventos e where e.tipo = 'amaci'), '[]'::jsonb),
+       'presencas', coalesce((select jsonb_agg(jsonb_build_object('eventoId', x.evento_id, 'alunoId', x.aluno_id, 'status', x.status))
+                              from amaci_presencas x
+                             where nullif(p ->> 'alunoId', '') is null or x.aluno_id = (p ->> 'alunoId')::uuid), '[]'::jsonb))
+   $$`,
+  // p = { eventoId, alunoId, status: 'p'|'f'|null (apaga), por }
+  `create or replace function amaci_presenca_marcar(p jsonb)
+   returns jsonb language plpgsql as $$
+   begin
+     if coalesce(p ->> 'status', '') = '' then
+       delete from amaci_presencas where evento_id = (p ->> 'eventoId')::uuid and aluno_id = (p ->> 'alunoId')::uuid;
+     else
+       insert into amaci_presencas (evento_id, aluno_id, status, por)
+       values ((p ->> 'eventoId')::uuid, (p ->> 'alunoId')::uuid, p ->> 'status', coalesce(p ->> 'por', ''))
+       on conflict (evento_id, aluno_id) do update set status = excluded.status, por = excluded.por, em = now();
+     end if;
+     return jsonb_build_object('ok', true);
+   end;
    $$`,
 ];

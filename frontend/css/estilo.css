@@ -1916,12 +1916,27 @@ section.panel.gi-tela{gap:12px}
 .iem-resumo-bt{justify-self:end;min-height:38px;padding:4px 14px}
 
 /* Aba Amaci: seletor de orixás e blocos (pontos riscados sobre fundo claro, como pemba no chão) */
-.am-topo{gap:12px}
-.am-topo h2{margin-top:2px}
-.am-turma-nome{display:block;font-size:.85rem;margin-top:4px}
-.am-sel{display:flex;flex-wrap:wrap;gap:6px}
-.am-sel-b{border:1px solid var(--line);background:var(--bg);color:var(--ink);border-radius:20px;padding:6px 12px;min-height:36px;font:600 .88rem var(--f-body);cursor:pointer}
-.am-sel-b[aria-selected="true"]{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.am-cab{gap:12px}
+.am-cab-info{list-style:none;margin:0;padding:10px 0 0;border-top:1px solid var(--line);display:grid;gap:6px;font-size:.95rem}
+.am-cab-info li{display:flex;gap:8px;align-items:baseline;overflow-wrap:anywhere}
+.am-cab-info .am-hoje{color:var(--ok)}
+.am-filtro{display:flex;align-items:center;gap:8px;padding:10px 12px}
+.am-filtro select{flex:1;min-width:0;font-weight:700}
+.am-filtro-n{font-size:.8rem;white-space:nowrap}
+.am-pres{gap:10px}
+.am-pres-barra{height:8px;border-radius:8px;background:var(--line);overflow:hidden}
+.am-pres-barra span{display:block;height:100%;background:var(--ok)}
+.am-pres-l{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.am-pres-l li{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:var(--bg)}
+.am-pres-n{display:grid;gap:2px;min-width:0}
+.am-pres-hoje{border-color:var(--ok)!important}
+.am-pres-acao{display:flex;gap:8px;align-items:center;flex:1 1 100%}
+.am-pres-acao select{flex:1;min-width:0}
+.am-pres-nota{font-size:.82rem;margin:0}
+.am-pres-ts{display:grid;gap:10px;padding:2px 12px 12px}
+.am-pres-t{display:grid;gap:6px}
+.am-pres-a{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:.92rem}
+.am-pres-a select{width:auto;min-width:120px}
 /* Amaci: cada bloco com a sua cor (faixa à esquerda e fundo do ícone) e o título separado do texto por uma linha. */
 .am-tela{gap:16px}
 .am-bloco{gap:12px;border-left:4px solid var(--am-cor,var(--line))}

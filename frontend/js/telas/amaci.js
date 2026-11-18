@@ -1,10 +1,14 @@
 // Tela "Amaci": a pessoa escolhe um orixá e vê, sempre nesta ordem, o nome, os recados, ervas, velas, ponto riscado e fatores.
 // O seletor só traz os orixás liberados para a turma de quem está logado (o servidor já manda só esses)
 // e abre no último liberado. Quem administra liga "Visível para todos", libera os orixás por turma e escreve os recados.
+// Cabeçalho: o orixá e, para o aluno, quem está logado, a turma, a data de hoje e o amaci do dia (ou o próximo), pelos
+// eventos do tipo Amaci. Presença: o aluno confirma no dia, no terreiro (localização do celular); o admin root marca
+// presença ou falta de cada aluno.
 
-import { estado, pode, carregarAmaci, acaoAmaci, avisar } from '../estado.js';
-import { esc, toast } from '../util.js';
-import { ORIXAS, ordenarOrixas, ultimoLiberado, ORIENTACAO_LINHAS, ORIENTACAO_LETRAS, ORIENTACAO_VISIVEIS } from '/shared/amaci.js';
+import { estado, pode, visaoAtiva, carregarAmaci, acaoAmaci, confirmarPresencaAmaci, avisar } from '../estado.js';
+import { esc, toast, hoje, dLong, dDM } from '../util.js';
+import { emDemo } from '../auth.js';
+import { ORIXAS, ordenarOrixas, ultimoLiberado, ORIENTACAO_LINHAS, ORIENTACAO_LETRAS, ORIENTACAO_VISIVEIS, TERREIRO, noTerreiro } from '/shared/amaci.js';
 
 const NOME = Object.fromEntries(ORIXAS.map((o) => [o.k, o]));
 
@@ -14,15 +18,26 @@ const ui = {
   config: false,        // bloco ⚙️ Configuração do admin aberto (começa minimizado)
   turmas: new Set(),    // turmas abertas no bloco do admin
   editando: null,       // recado em edição: { orixa, texto }
+  pres: false,          // bloco Presença do aluno aberto
+  escolha: {},          // amaci de hoje → 'p' (Presente) ou 'a' (Ausente, o padrão)
+  confirmando: false,   // pegando a localização / enviando
+  presAdm: false,       // bloco Presença nos amacis do root aberto
+  presEv: new Set(),    // amacis abertos no bloco do root
 };
 export function limpar() {
   ui.sel = '';
   ui.config = false;
   ui.turmas.clear();
   ui.editando = null;
+  ui.pres = false;
+  ui.escolha = {};
+  ui.presAdm = false;
+  ui.presEv.clear();
 }
 
 const admin = () => pode('amaci:editar') && !!estado.amaci?.admin;
+const ehAluno = () => visaoAtiva() === 'alunos';
+const plural = (n, um, varios) => `${n} ${n === 1 ? um : varios}`;
 // Item: texto ou [título, [subitens]] (como na apostila).
 const lista = (itens) => `<ul class="am-lista">${itens.map((t) => (Array.isArray(t) ? `<li>${esc(t[0])}${lista(t[1])}</li>` : `<li>${esc(t)}</li>`)).join('')}</ul>`;
 const linhas = (s) => (s ? s.split('\n').length : 0);
@@ -53,9 +68,92 @@ function cardAdmin(A) {
 }
 
 // ---------- pessoa ----------
-function seletor(A, sel) {
+// Cabeçalho: ícone e título (o orixá escolhido); para o aluno, quem está logado, a turma, hoje e o amaci do dia.
+function cardCabecalho(A, info) {
+  const titulo = info ? `<span class="eyebrow">Amaci · ${esc(info.trono)}</span><h2>${esc(info.nome)}</h2>` : '<span class="eyebrow">Casa do Pai João</span><h2>Amaci</h2>';
+  let extra = '';
+  if (ehAluno()) {
+    const P = A.presenca || { hoje: hoje(), amacis: [] };
+    const doDia = P.amacis.find((a) => a.data === P.hoje);
+    const prox = P.amacis.find((a) => a.data > P.hoje);
+    const aula = doDia ? `<b>Hoje tem amaci</b> · ${esc(doDia.nome)}`
+      : prox ? `Próximo amaci: <b>${dDM(prox.data)}</b> · ${esc(prox.nome)}` : 'Nenhum amaci marcado na aba Eventos.';
+    extra = `<ul class="am-cab-info">
+      <li><span aria-hidden="true">👤</span><span>${esc(estado.me?.nome || '')}</span></li>
+      <li><span aria-hidden="true">🎓</span><span>${A.turmaNome ? esc(A.turmaNome) : 'Sem turma'}</span></li>
+      <li><span aria-hidden="true">📅</span><span>${esc(dLong(P.hoje))}</span></li>
+      <li class="${doDia ? 'am-hoje' : ''}"><span aria-hidden="true">✨</span><span>${aula}</span></li></ul>`;
+  }
+  return `<div class="card am-cab"><div class="am-nome"><span class="am-ico am-ico-g" aria-hidden="true">🙏</span><div>${titulo}</div></div>${extra}</div>`;
+}
+
+// Filtro numa linha só: anterior, a lista dos orixás liberados e o próximo. Com um orixá só, não aparece.
+function cardFiltro(A, sel) {
   if (A.orixas.length < 2) return '';
-  return `<div class="am-sel" role="tablist" aria-label="Escolher orixá">${A.orixas.map((o) => `<button role="tab" class="am-sel-b" data-act="amsel" data-k="${o.k}" aria-selected="${o.k === sel}">${esc(NOME[o.k].curto)}</button>`).join('')}</div>`;
+  const libs = A.orixas.map((o) => o.k);
+  const i = libs.indexOf(sel);
+  return `<div class="card am-filtro">
+    <button class="btn small pp-ico" data-act="amsel" data-k="${libs[i - 1] || ''}" aria-label="Orixá anterior"${i <= 0 ? ' disabled' : ''}>‹</button>
+    <select id="am-orixa" data-act="amescolher" aria-label="Escolher orixá">${A.orixas.map((o) => `<option value="${o.k}"${o.k === sel ? ' selected' : ''}>${esc(NOME[o.k].curto)}</option>`).join('')}</select>
+    <button class="btn small pp-ico" data-act="amsel" data-k="${libs[i + 1] || ''}" aria-label="Próximo orixá"${i >= libs.length - 1 ? ' disabled' : ''}>›</button>
+    <span class="muted am-filtro-n">${libs.length} de ${ORIXAS.length}</span>
+  </div>`;
+}
+
+// ---------- presença ----------
+const SITUACAO = { p: ['Presente', 'pleno'], f: ['Falta', 're'] };
+const selo = (st) => { const [t, c] = SITUACAO[st] || ['Ausente', '']; return `<span class="badge ${c}">${t}</span>`; };
+
+function linhaPresenca(a, hojeData) {
+  const n = `<span class="am-pres-n"><b>${esc(a.nome)}</b><small class="muted">${a.data === hojeData ? 'Hoje · ' : ''}${dDM(a.data)}</small></span>`;
+  if (a.data !== hojeData || a.status === 'p') return `<li>${n}${selo(a.status)}</li>`;
+  const e = ui.escolha[a.id] || 'a';
+  return `<li class="am-pres-hoje">${n}<div class="am-pres-acao">
+    <select data-act="amescolha" data-id="${a.id}" aria-label="Sua presença em ${esc(a.nome)}"><option value="a"${e === 'a' ? ' selected' : ''}>Ausente</option><option value="p"${e === 'p' ? ' selected' : ''}>Presente</option></select>
+    <button class="btn primary small" data-act="amconfirmar" data-id="${a.id}"${ui.confirmando ? ' disabled' : ''}>${ui.confirmando ? 'Conferindo…' : 'Confirmar'}</button></div></li>`;
+}
+
+// Aluno: o percentual nos amacis já realizados e, aberto, cada amaci com a situação; o de hoje dá para confirmar.
+function cardPresenca(A) {
+  const P = A.presenca;
+  if (!ehAluno() || !P) return '';
+  const feitos = P.amacis.filter((a) => a.data <= P.hoje).reverse();
+  const presentes = feitos.filter((a) => a.status === 'p').length;
+  const pct = feitos.length ? Math.round((presentes / feitos.length) * 100) : null;
+  const cab = `<button class="grp-h dobra" data-act="ampres" aria-expanded="${ui.pres}"><h2><span aria-hidden="true">✅</span> Presença</h2>
+    <span class="count">${pct === null ? 'sem amaci ainda' : `${pct}% · ${presentes} de ${feitos.length}`} <span class="seta" aria-hidden="true">${ui.pres ? '▾' : '▸'}</span></span></button>`;
+  if (!ui.pres) return `<div class="card am-pres">${cab}</div>`;
+  const barra = pct === null ? '' : `<div class="am-pres-barra" role="img" aria-label="${pct}% de presença"><span style="width:${pct}%"></span></div>`;
+  const lista = feitos.length ? `<ul class="am-pres-l">${feitos.map((a) => linhaPresenca(a, P.hoje)).join('')}</ul>` : '<p class="muted" style="margin:0">Nenhum amaci realizado ainda.</p>';
+  return `<div class="card am-pres">${cab}${barra}${lista}
+    <p class="muted am-pres-nota">No dia do amaci, escolha Presente e toque em Confirmar dentro do terreiro: o app confere a localização do celular.</p></div>`;
+}
+
+// Root: cada amaci realizado, com os alunos das turmas marcadas no tipo Amaci; marca presença, falta ou nada (ausente).
+function cardPresencaAdmin(A) {
+  const P = A.presencaAdmin;
+  if (!P || !pode('usuarios:gerenciar')) return '';
+  const cab = `<button class="grp-h dobra am-cfg-h" data-act="ampresadm" aria-expanded="${ui.presAdm}"><h2><span aria-hidden="true">✅</span> Presença nos amacis</h2>
+    <span class="am-turma-x">${ui.presAdm ? '' : `<small>${plural(P.amacis.length, 'amaci realizado', 'amacis realizados')}</small>`}<span class="seta" aria-hidden="true">${ui.presAdm ? '▴' : '▾'}</span></span></button>`;
+  if (!ui.presAdm) return `<div class="card adm am-adm">${cab}</div>`;
+  if (!P.turmas.length) return `<div class="card adm am-adm">${cab}<p class="muted" style="margin:0">Marque as turmas no tipo Amaci (Admin root → Eventos) para os alunos aparecerem aqui.</p></div>`;
+  if (!P.amacis.length) return `<div class="card adm am-adm">${cab}<p class="muted" style="margin:0">Nenhum evento do tipo Amaci realizado ainda.</p></div>`;
+  const corpo = P.amacis.map((ev) => {
+    const m = P.marcas[ev.id] || {};
+    const aberto = ui.presEv.has(ev.id);
+    const pres = P.alunos.filter((a) => m[a.id] === 'p').length;
+    const turmas = !aberto ? '' : P.turmas.map((t) => {
+      const al = P.alunos.filter((a) => a.turmaId === t.id);
+      if (!al.length) return '';
+      return `<div class="am-pres-t"><b>${esc(t.nome)}</b>${al.map((a) => `<label class="am-pres-a"><span>${esc(a.nome)}</span>
+        <select data-act="ampresmarcar" data-ev="${ev.id}" data-aluno="${a.id}" aria-label="Presença de ${esc(a.nome)} em ${esc(ev.nome)}">
+          <option value=""${!m[a.id] ? ' selected' : ''}>Ausente</option><option value="p"${m[a.id] === 'p' ? ' selected' : ''}>Presente</option><option value="f"${m[a.id] === 'f' ? ' selected' : ''}>Falta</option></select></label>`).join('')}</div>`;
+    }).join('');
+    return `<div class="am-turma"><button class="am-turma-h" data-act="ampresev" data-id="${ev.id}" aria-expanded="${aberto}">
+      <b>${esc(ev.nome)}</b><span class="am-turma-x">${dDM(ev.data)} · ${pres}/${P.alunos.length}<span class="seta" aria-hidden="true">${aberto ? '▴' : '▾'}</span></span></button>
+      ${aberto ? `<div class="am-pres-ts">${turmas}</div>` : ''}</div>`;
+  }).join('');
+  return `<div class="card adm am-adm">${cab}${corpo}</div>`;
 }
 
 // Bloco de conteúdo: ícone na frente do título e o texto da apostila. Sem conteúdo, o bloco não aparece.
@@ -102,18 +200,15 @@ export function render() {
   if (A.erro) return `<div class="card"><p class="erro">${esc(A.erro)}</p><button class="btn" data-act="amrecarregar">Tentar de novo</button></div>`;
   let h = '<section class="panel am-tela">';
   if (admin()) h += cardAdmin(A);
+  h += cardPresencaAdmin(A);
   if (!A.orixas.length) {
     const turma = A.turmaNome ? `da ${esc(A.turmaNome)}` : 'da sua turma';
-    return h + `<div class="card"><h2>Amaci</h2><p class="muted" style="margin:0">Nenhum orixá liberado ainda para os alunos ${turma}.</p></div></section>`;
+    return h + cardCabecalho(A, null) + cardPresenca(A) + `<div class="card"><p class="muted" style="margin:0">Nenhum orixá liberado ainda para os alunos ${turma}.</p></div></section>`;
   }
   const libs = A.orixas.map((o) => o.k);
   const sel = libs.includes(ui.sel) ? ui.sel : ultimoLiberado(libs);
   const o = A.orixas.find((x) => x.k === sel);
-  const info = NOME[sel];
-  h += `<div class="card am-topo">
-    ${seletor(A, sel)}
-    <div class="am-nome"><span class="am-ico am-ico-g" aria-hidden="true">🙏</span><div><span class="eyebrow">Amaci · ${esc(info.trono)}</span><h2>${esc(info.nome)}</h2>${A.turmaNome ? `<span class="muted am-turma-nome">${esc(A.turmaNome)} · ${libs.length} de ${ORIXAS.length} orixás liberados</span>` : ''}</div></div>
-  </div>`;
+  h += cardCabecalho(A, NOME[sel]) + cardPresenca(A) + cardFiltro(A, sel);
   h += blocoOrientacao(o);
   if (o.ervas.length) h += bloco('am-c-erva', '🌿', 'Ervas', lista(o.ervas));
   if (o.velas.length) h += bloco('am-c-vela', '🕯️', 'Velas', lista(o.velas));
@@ -143,7 +238,34 @@ export async function enviar(form) {
 }
 
 export const cliques = {
-  amsel(el) { ui.sel = el.dataset.k; ui.editando = null; avisar(); },
+  amsel(el) { if (!el.dataset.k) return; ui.sel = el.dataset.k; ui.editando = null; avisar(); },
+  ampres() { ui.pres = !ui.pres; avisar(); },
+  ampresadm() { ui.presAdm = !ui.presAdm; avisar(); },
+  ampresev(el) { const id = el.dataset.id; if (ui.presEv.has(id)) ui.presEv.delete(id); else ui.presEv.add(id); avisar(); },
+  async amconfirmar(el) {
+    const id = el.dataset.id;
+    if ((ui.escolha[id] || 'a') !== 'p') { toast('Escolha Presente para confirmar.'); return; }
+    ui.confirmando = true;
+    avisar();
+    try {
+      let lat, lon;
+      if (emDemo()) {
+        ({ lat, lon } = TERREIRO);
+        toast('Demonstração: localização simulada no terreiro.');
+      } else {
+        if (!navigator.geolocation) { toast('Este aparelho não informa a localização.'); return; }
+        const pos = await new Promise((ok, erro) => navigator.geolocation.getCurrentPosition(ok, erro, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }));
+        ({ latitude: lat, longitude: lon } = pos.coords);
+        if (!noTerreiro(lat, lon)) { toast('Você precisa estar no Terreiro Pai João para confirmar a presença.'); return; }
+      }
+      if (await confirmarPresencaAmaci(id, lat, lon)) { delete ui.escolha[id]; toast('Presença confirmada. Bom amaci!'); }
+    } catch (e) {
+      toast(e?.code === 1 ? 'Permita a localização para confirmar a presença.' : 'Não deu para pegar a localização. Tente de novo.');
+    } finally {
+      ui.confirmando = false;
+      avisar();
+    }
+  },
   amconfig() { ui.config = !ui.config; avisar(); },
   amturma(el) {
     const id = el.dataset.id;
@@ -151,7 +273,7 @@ export const cliques = {
     avisar();
   },
   amoried() {
-    const k = document.querySelector('.am-sel-b[aria-selected="true"]')?.dataset.k || ui.sel || ultimoLiberado(estado.amaci.liberados);
+    const k = document.getElementById('am-orixa')?.value || ui.sel || ultimoLiberado(estado.amaci.liberados);
     const o = estado.amaci.orixas.find((x) => x.k === k);
     ui.sel = k;
     ui.editando = { orixa: k, texto: o?.orientacao || '' };
@@ -162,6 +284,11 @@ export const cliques = {
 };
 
 export const mudancas = {
+  amescolher(t) { ui.sel = t.value; ui.editando = null; avisar(); },
+  amescolha(t) { ui.escolha[t.dataset.id] = t.value; },
+  async ampresmarcar(t) {
+    if (await acaoAmaci('presenca', { eventoId: t.dataset.ev, alunoId: t.dataset.aluno, status: t.value })) toast('Presença salva.');
+  },
   async ampub(t) {
     if (await acaoAmaci('publicar', { publicada: t.checked })) toast(t.checked ? 'Aba Amaci visível para todos.' : 'Aba Amaci escondida: só quem administra vê.');
     else t.checked = !t.checked;

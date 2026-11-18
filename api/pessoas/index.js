@@ -18,13 +18,15 @@
 // GET  /api/pessoas?lista=amaci  aba Amaci: os orixás liberados para quem está logado (+ turmas, para quem administra)
 // POST /api/pessoas            { acao: 'amaci', op: 'publicar', publicada } · { op: 'turma', turmaId, orixas: [..] }
 //                              · { op: 'orientacao', orixa, texto }  (só quem administra a aba; veja api/_lib/amaci.js)
+//                              · { op: 'presenca', eventoId, alunoId, status: 'p'|'f'|'' }  (só o admin root)
+//                              { acao: 'amaciPresenca', eventoId, lat, lon }  o aluno confirma a própria presença (no dia, no terreiro)
 import { rota, corpo, HttpError, validarData, validarId, hojeBR } from '../_lib/http.js';
 import { exigir } from '../_lib/sessao.js';
 import { db } from '../_lib/db.js';
 import { FUNCAO_KEYS } from '../../shared/regras.js';
 import { contagemPerfis, pessoasPorOrixaCabeca } from '../../shared/perfil.js';
 import { pode } from '../../shared/permissoes.js';
-import { amaci, acaoAmaci } from '../_lib/amaci.js';
+import { amaci, acaoAmaci, presencaAluno } from '../_lib/amaci.js';
 import { dadosAluno, temDados, salvarDadosAluno, comExtras, cpfDoAluno, promoverAluno } from '../_lib/alunos.js';
 
 const ACOES_ALUNOS = ['alunos', 'aluno', 'alunoCpf', 'excluirAluno', 'reativarAluno', 'apagarAluno', 'turma', 'excluirTurma', 'promoverAlunoCPJ'];
@@ -126,6 +128,7 @@ export default rota({
   POST: async (req) => {
     const b = corpo(req);
     if (b.acao === 'amaci') return acaoAmaci(await exigir(req, 'amaci:editar'), b);
+    if (b.acao === 'amaciPresenca') return presencaAluno(await exigir(req, 'amaci:ver'), b);
     if (ACOES_ALUNOS.includes(b.acao)) {
       const eu = await exigir(req, 'alunos:editar');
       if (b.acao === 'promoverAlunoCPJ') await exigir(req, 'pessoas:editar');

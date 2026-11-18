@@ -38,3 +38,21 @@ export function limparOrientacao(v) {
   if (s.split('\n').length > ORIENTACAO_LINHAS || s.length > ORIENTACAO_LETRAS) return null;
   return s;
 }
+
+// Presença no amaci: o aluno confirma no dia, dentro do Terreiro Pai João (Rua Osmar Fregona, 137 - Jardim Prudência, São Paulo).
+// O raio cobre a imprecisão do GPS do celular dentro do terreiro.
+export const TERREIRO = { lat: -23.657490334040926, lon: -46.66805779097073 };
+export const RAIO_TERREIRO_M = 200;
+// Distância em metros entre dois pontos (fórmula de haversine).
+export function distanciaM(a, b) {
+  const rad = (g) => (g * Math.PI) / 180;
+  const dLat = rad(b.lat - a.lat), dLon = rad(b.lon - a.lon);
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(dLon / 2) ** 2;
+  return 2 * 6371000 * Math.asin(Math.sqrt(h));
+}
+export const noTerreiro = (lat, lon) => Number.isFinite(lat) && Number.isFinite(lon) && distanciaM(TERREIRO, { lat, lon }) <= RAIO_TERREIRO_M;
+// Percentual de presença: presentes ÷ amacis já realizados (até hoje). Sem amaci realizado, null.
+export function pctAmaci(amacis, hoje) {
+  const feitos = amacis.filter((a) => a.data <= hoje);
+  return feitos.length ? Math.round((feitos.filter((a) => a.status === 'p').length / feitos.length) * 100) : null;
+}

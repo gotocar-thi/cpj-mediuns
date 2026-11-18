@@ -1881,6 +1881,50 @@ test('amaci: Visível para todos; orixás liberados por turma; o aluno vê só o
   await acao(ADMIN, { op: 'publicar', publicada: false });
 });
 
+test('amaci: presença do aluno no dia e no terreiro; o root marca presença ou falta; percentual', async () => {
+  const hoje = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date());
+  const t09 = (await api('GET', '/api/pessoas?lista=alunos', ADMIN)).json.turmas.find((t) => t.nome === 'Turma 09').id;
+  await api('POST', '/api/pessoas', ADMIN, { acao: 'alunos', nome: 'Aluno da Presença', turmaId: t09 });
+  const aluno = await tokenAluno('aluno da presença');
+  const alunoId = (await api('GET', '/api/pessoas?lista=alunos', ADMIN)).json.alunos.find((a) => a.nome === 'Aluno da Presença').id;
+  await api('POST', '/api/pessoas', ADMIN, { acao: 'amaci', op: 'publicar', publicada: true });
+  const evs = async () => (await api('GET', '/api/giras?lista=eventos', ADMIN)).json;
+  await api('POST', '/api/giras', ADMIN, { acao: 'evento', data: '2020-01-04', nome: 'Amaci antigo', tipo: 'amaci' });
+  await api('POST', '/api/giras', ADMIN, { acao: 'evento', data: hoje, nome: 'Amaci de hoje', tipo: 'amaci' });
+  const antigo = (await evs()).find((e) => e.nome === 'Amaci antigo');
+  const deHoje = (await evs()).find((e) => e.nome === 'Amaci de hoje');
+  const am = async (t) => (await api('GET', '/api/pessoas?lista=amaci', t)).json;
+  const confirmar = (dados) => api('POST', '/api/pessoas', aluno, { acao: 'amaciPresenca', ...dados });
+  const NO_TERREIRO = { lat: -23.6576, lon: -46.6681 };
+  // Turma não marcada no tipo Amaci: o aluno não tem amacis nem confirma.
+  assert.deepEqual((await am(aluno)).presenca.amacis, []);
+  assert.equal((await confirmar({ eventoId: deHoje.id, ...NO_TERREIRO })).status, 404);
+  await api('POST', '/api/giras', ADMIN, { acao: 'eventoTipo', chave: 'amaci', nome: 'Amaci', turmas: [t09] });
+  const p0 = (await am(aluno)).presenca;
+  assert.deepEqual(p0.amacis.filter((a) => a.nome.startsWith('Amaci ')).map((a) => [a.nome, a.status]), [['Amaci antigo', null], ['Amaci de hoje', null]]);
+  assert.equal(p0.pct, 0, 'sem registro = ausente');
+  // Fora do terreiro, em outro dia ou sem coordenadas: recusa.
+  assert.equal((await confirmar({ eventoId: deHoje.id, lat: -23.55, lon: -46.63 })).status, 403);
+  assert.equal((await confirmar({ eventoId: deHoje.id })).status, 403);
+  assert.equal((await confirmar({ eventoId: antigo.id, ...NO_TERREIRO })).status, 409);
+  assert.equal((await api('POST', '/api/pessoas', USER, { acao: 'amaciPresenca', eventoId: deHoje.id, ...NO_TERREIRO })).status, 403, 'só aluno');
+  const p1 = (await confirmar({ eventoId: deHoje.id, ...NO_TERREIRO })).json.presenca;
+  assert.equal(p1.amacis.find((a) => a.id === deHoje.id).status, 'p');
+  assert.equal(p1.pct, 50);
+  // O root marca falta e presença; o aluno não usa a op do admin.
+  assert.equal((await api('POST', '/api/pessoas', aluno, { acao: 'amaci', op: 'presenca', eventoId: antigo.id, alunoId, status: 'p' })).status, 403);
+  assert.equal((await api('POST', '/api/pessoas', ADMIN, { acao: 'amaci', op: 'presenca', eventoId: antigo.id, alunoId, status: 'x' })).status, 400);
+  const adm = (await api('POST', '/api/pessoas', ADMIN, { acao: 'amaci', op: 'presenca', eventoId: antigo.id, alunoId, status: 'p' })).json.presencaAdmin;
+  assert.equal(adm.marcas[antigo.id][alunoId], 'p');
+  assert.ok(adm.alunos.some((a) => a.id === alunoId));
+  assert.equal((await am(aluno)).presenca.pct, 100);
+  await api('POST', '/api/pessoas', ADMIN, { acao: 'amaci', op: 'presenca', eventoId: antigo.id, alunoId, status: '' });
+  assert.equal((await am(aluno)).presenca.amacis.find((a) => a.id === antigo.id).status, null, 'vazio apaga');
+  for (const e of [antigo, deHoje]) await api('POST', '/api/giras', ADMIN, { acao: 'excluirEvento', id: e.id });
+  await api('POST', '/api/giras', ADMIN, { acao: 'eventoTipo', chave: 'amaci', nome: 'Amaci', turmas: [] });
+  await api('POST', '/api/pessoas', ADMIN, { acao: 'amaci', op: 'publicar', publicada: false });
+});
+
 test('gestão de conduta e risco: interruptor do root; só o root lê; quem abriu edita até ser lido e vê só a resposta publicada', async () => {
   const ana = await entrarComSenha('Ana');
   const lista = async (t) => (await api('GET', '/api/giras?lista=conduta', t)).json.relatos;
