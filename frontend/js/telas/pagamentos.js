@@ -1,14 +1,14 @@
 // Sub-aba "Pagamentos" (aba Compras): o histórico de cobranças do ASAAS de quem está logado, pelo CPF do Perfil
-// (api/_lib/pagamentos.js), agrupado pelo mês de vencimento. Cada cobrança traz um campo de texto com tudo o que o ASAAS
-// devolve. O root liga "Visível para todos"; desligado, só ele vê a sub-aba.
+// (api/_lib/pagamentos.js), agrupado pelo mês de vencimento. Cada cobrança vem minimizada (descrição, valor e situação);
+// tocar abre Descrição, Valor, Forma de pagamento e Vencimento. O root liga "Visível para todos"; desligado, só ele vê.
 
 import { estado, carregarPagamentos, publicarPagamentos, avisar } from '../estado.js';
 import { esc, toast } from '../util.js';
 import { centavos, reais } from '/shared/ervas.js';
 
 const R = (v) => reais(centavos(v));
-const ui = { meses: new Set(), iniciado: false, atualizando: false };
-export function limpar() { ui.meses.clear(); ui.iniciado = false; }
+const ui = { meses: new Set(), iniciado: false, atualizando: false, aberta: null };   // aberta: id da cobrança aberta (uma por vez)
+export function limpar() { ui.meses.clear(); ui.iniciado = false; ui.aberta = null; }
 
 const MESES = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
 const nomeMes = (m) => `${MESES[Number(m.slice(5, 7)) - 1]} de ${m.slice(0, 4)}`.replace(/^./, (c) => c.toUpperCase());
@@ -22,34 +22,6 @@ const STATUS = {
   DUNNING_REQUESTED: ['Negativação pedida', 're'], DUNNING_RECEIVED: ['Recuperada', 'pleno'], AWAITING_RISK_ANALYSIS: ['Em análise', 'new'],
 };
 const FORMA = { PIX: 'Pix', BOLETO: 'Boleto', CREDIT_CARD: 'Cartão de crédito', DEBIT_CARD: 'Cartão de débito', UNDEFINED: 'A definir', TRANSFER: 'Transferência', DEPOSIT: 'Depósito' };
-const CONTA = { A: 'Compras (conta A)', B: 'Mensalidades e outras (conta B)' };
-// Nome de cada campo do ASAAS; os que não estão aqui aparecem com o nome original.
-const CAMPOS = {
-  conta: 'Conta', id: 'Código no ASAAS', description: 'Descrição', value: 'Valor', netValue: 'Valor líquido', originalValue: 'Valor original',
-  interestValue: 'Juros cobrados', status: 'Situação', billingType: 'Forma de pagamento', dueDate: 'Vencimento', originalDueDate: 'Vencimento original',
-  paymentDate: 'Pago em', clientPaymentDate: 'Pagamento informado pelo cliente', confirmedDate: 'Confirmado em', creditDate: 'Creditado em',
-  estimatedCreditDate: 'Previsão de crédito', dateCreated: 'Criada em', invoiceUrl: 'Fatura', bankSlipUrl: 'Boleto', transactionReceiptUrl: 'Comprovante',
-  invoiceNumber: 'Número da fatura', nossoNumero: 'Nosso número', externalReference: 'Referência', customer: 'Cliente no ASAAS', subscription: 'Assinatura',
-  installment: 'Parcelamento', installmentNumber: 'Parcela', deleted: 'Excluída', anticipated: 'Antecipada', anticipable: 'Pode antecipar',
-  postalService: 'Correios', discount: 'Desconto', fine: 'Multa', interest: 'Juros', refunds: 'Estornos', pixTransaction: 'Transação Pix',
-  pixQrCodeId: 'QR Code Pix', lastInvoiceViewedDate: 'Fatura vista em', lastBankSlipViewedDate: 'Boleto visto em', object: 'Tipo',
-};
-const ORDEM = Object.keys(CAMPOS);
-function valorCampo(k, v) {
-  if (k === 'conta') return CONTA[v] || v;
-  if (k === 'status') return STATUS[v]?.[0] ? `${STATUS[v][0]} (${v})` : v;
-  if (k === 'billingType') return FORMA[v] ? `${FORMA[v]} (${v})` : v;
-  if (['value', 'netValue', 'originalValue', 'interestValue'].includes(k) && typeof v === 'number') return R(v);
-  if (typeof v === 'boolean') return v ? 'sim' : 'não';
-  if (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}/.test(v) && /date|Date/.test(k)) return dBR(v) + (v.length > 10 ? v.slice(10) : '');
-  if (typeof v === 'object') return JSON.stringify(v);
-  return String(v);
-}
-// Tudo o que o ASAAS mandou da cobrança, uma linha por campo (os conhecidos primeiro, na ordem acima).
-function texto(c) {
-  const ks = [...ORDEM.filter((k) => k in c), ...Object.keys(c).filter((k) => !ORDEM.includes(k)).sort()];
-  return ks.filter((k) => c[k] !== null && c[k] !== undefined && c[k] !== '').map((k) => `${CAMPOS[k] || k}: ${valorCampo(k, c[k])}`).join('\n');
-}
 const mesDe = (c) => String(c.dueDate || c.dateCreated || '').slice(0, 7) || 'sem data';
 const selo = (s) => { const [t, cls] = STATUS[s] || [s || '—', '']; return `<span class="badge ${cls}">${esc(t)}</span>`; };
 
@@ -86,17 +58,25 @@ export function render() {
     const cab = `<button class="grp-h dobra" data-act="pagmes" data-m="${esc(m)}" aria-expanded="${aberto}"><h3>${esc(m === 'sem data' ? 'Sem data' : nomeMes(m))}</h3>
       <span class="count">${L.length} · ${R(total)} <span class="seta" aria-hidden="true">${aberto ? '▾' : '▸'}</span></span></button>`;
     if (!aberto) return `<div class="card pg-mes">${cab}</div>`;
-    return `<div class="card pg-mes">${cab}${L.map((c) => {
-      const t = texto(c);
-      return `<div class="pg-item"><div class="pg-item-h"><span class="pg-item-n"><b>${esc(c.description || 'Cobrança')}</b><small class="muted">${c.dueDate ? 'Vence ' + dBR(c.dueDate) : ''}${c.paymentDate ? ' · pago ' + dBR(c.paymentDate) : ''}</small></span>
-        <span class="pg-item-v"><b>${R(c.value)}</b>${selo(c.status)}</span></div>
-        <textarea class="pg-txt" readonly rows="${Math.min(14, t.split('\n').length)}" aria-label="Todas as informações do ASAAS desta cobrança">${esc(t)}</textarea></div>`;
-    }).join('')}</div>`;
+    return `<div class="card pg-mes">${cab}<div class="pg-lista">${L.map((c) => {
+      const ab = ui.aberta === c.id;
+      // Minimizada: descrição, valor e a situação; tocar abre os quatro dados.
+      const linha = `<button type="button" class="pg-l" data-act="pagitem" data-id="${esc(c.id)}" aria-expanded="${ab}">
+        <span class="pg-l-d">${esc(c.description || 'Cobrança')}</span><span class="pg-l-v">${R(c.value)}</span>${selo(c.status)}<span class="seta" aria-hidden="true">${ab ? '▾' : '▸'}</span></button>`;
+      if (!ab) return `<div class="pg-item">${linha}</div>`;
+      return `<div class="pg-item aberta">${linha}<dl class="pg-dados">
+        <div class="pg-d pg-d-full"><dt>Descrição</dt><dd>${esc(c.description || '—')}</dd></div>
+        <div class="pg-d"><dt>Valor</dt><dd>${R(c.value)}</dd></div>
+        <div class="pg-d"><dt>Forma de pagamento</dt><dd>${esc(FORMA[c.billingType] || c.billingType || '—')}</dd></div>
+        <div class="pg-d"><dt>Vencimento</dt><dd>${c.dueDate ? dBR(c.dueDate) : '—'}</dd></div>
+      </dl></div>`;
+    }).join('')}</div></div>`;
   }).join('');
   return h + '</section>';
 }
 
 export const cliques = {
+  pagitem(el) { ui.aberta = ui.aberta === el.dataset.id ? null : el.dataset.id; avisar(); },
   pagmes(el) { const m = el.dataset.m; if (ui.meses.has(m)) ui.meses.delete(m); else ui.meses.add(m); avisar(); },
   async pagatualizar() {
     if (ui.atualizando) return;

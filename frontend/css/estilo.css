@@ -1540,11 +1540,18 @@ button.eu-av{cursor:zoom-in}
 .pg-tela{gap:14px}
 .pg-mes{gap:10px}
 .pg-mes h3{margin:0;font-size:1.05rem}
-.pg-item{display:grid;gap:6px;padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--bg)}
-.pg-item-h{display:flex;justify-content:space-between;gap:8px;align-items:flex-start}
-.pg-item-n{display:grid;gap:2px;min-width:0;overflow-wrap:anywhere}
-.pg-item-v{display:grid;justify-items:end;gap:4px;flex:none}
-.pg-txt{width:100%;box-sizing:border-box;font:.8rem/1.45 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;resize:vertical;min-height:0;white-space:pre-wrap;overflow-wrap:anywhere;overflow:auto}
+.pg-lista{display:grid;gap:6px}
+.pg-item{border:1px solid var(--line);border-radius:10px;background:var(--bg);overflow:hidden}
+.pg-l{display:flex;align-items:center;gap:8px;width:100%;min-height:44px;padding:8px 10px;background:none;border:0;color:var(--ink);font:inherit;text-align:left;cursor:pointer}
+.pg-l-d{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:.92rem}
+.pg-l-v{flex:none;font-weight:700;font-size:.92rem}
+.pg-l .badge{flex:none;font-size:.7rem}
+.pg-l .seta{flex:none;color:var(--accent)}
+.pg-dados{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 12px;margin:0;padding:10px 12px 12px;border-top:1px solid var(--line)}
+.pg-d{display:grid;gap:2px;min-width:0}
+.pg-d-full{grid-column:1/-1}
+.pg-d dt{font-size:.72rem;letter-spacing:.04em;text-transform:uppercase;color:var(--muted)}
+.pg-d dd{margin:0;font-weight:600;overflow-wrap:anywhere}
 .at-rodape{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:8px;font-size:.82rem}
 .at-erro{margin:0;font-size:.82rem;color:var(--warn)}
 .at-meu{border-color:var(--off)}
