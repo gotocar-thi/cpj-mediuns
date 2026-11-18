@@ -29,9 +29,12 @@ const LINHAS_OK = new Set(LINHAS_DIARIO.map(([k]) => k));
 const copia = (o) => JSON.parse(JSON.stringify(o || {}));
 const dadosDe = (data) => estado.diario?.dias?.find((x) => x.data === data)?.dados || {};
 
-// Gira na agenda: gira cadastrada nesse dia ou evento do tipo gira.
+// Gira na agenda: gira cadastrada nesse dia ou evento do tipo gira. O amaci conta como gira (também tem preceito e banho)
+// e só vale para a corrente e os alunos: o servidor só manda o amaci às turmas marcadas (ex-alunos nem entram no app),
+// e o consulente fica de fora aqui também.
 const giraDaAgenda = (data) => estado.giras[data] || null;
-const agendaTemGira = (data) => !!giraDaAgenda(data) || (estado.eventos || []).some((e) => e.data === data && e.tipo === 'gira');
+const amaciNaAgenda = (data) => !estado.me?.consulente && (estado.eventos || []).some((e) => e.data === data && e.tipo === 'amaci');
+const agendaTemGira = (data) => !!giraDaAgenda(data) || amaciNaAgenda(data) || (estado.eventos || []).some((e) => e.data === data && e.tipo === 'gira');
 const ehGira = (data, d = dadosDe(data)) => (typeof d.gira === 'boolean' ? d.gira : agendaTemGira(data));
 const completo = (b) => !!(b?.humor || b?.emo?.length || b?.energia);
 // Linha do dia de gira: a escolhida ou, sem escolha, a da gira da agenda.
@@ -123,7 +126,7 @@ function cabecalho() {
   return `<div class="card di-cab"><p class="di-ola">${ehHoje ? `Olá${nome ? ', ' + esc(nome) : ''} 🤍` : 'Seu registro de'}</p>
     <h2>${ehHoje ? 'Como você está hoje?' : dLong(ui.dia)}</h2>${ehHoje ? `<p class="muted di-data">${dLong(ui.dia)}</p>` : ''}
     <label class="of-sw"><input type="checkbox" role="switch" data-act="digira" ${gira ? 'checked' : ''}><span class="of-sw-t" aria-hidden="true"></span><b>${ehHoje ? 'Hoje é dia de gira' : 'Dia de gira'}</b>
-      <span class="muted">${auto ? '(pela agenda)' : ''}</span></label>${cuidados(d)}</div>`;
+      <span class="muted">${auto ? (amaciNaAgenda(ui.dia) && !giraDaAgenda(ui.dia) ? '(amaci na agenda)' : '(pela agenda)') : ''}</span></label>${cuidados(d)}</div>`;
 }
 
 // ---------- Galeria de fotos da corrente ----------
@@ -196,6 +199,7 @@ function calendario(D) {
     else if (x && completo(x.antes) && completo(x.depois)) marcas.push('<i class="di-p di-p-dia"></i>');
     if (x?.banho?.feito || x?.habitos?.banho) marcas.push('<i class="di-folha">🌿</i>');
     if (x?.habitos?.atividade) marcas.push('<i class="di-folha">🏋️</i>');
+    if (amaciNaAgenda(data)) marcas.push('<i class="di-folha">🕊️</i>');
     const cls = ['di-d', data === ui.dia ? 'sel' : '', data === hj ? 'hoje' : '', !x && agendaTemGira(data) ? 'agenda' : ''].filter(Boolean).join(' ');
     cel += `<button type="button" class="${cls}" data-act="didia" data-d="${data}" ${data > hj ? 'disabled' : ''} aria-label="${dLong(data)}" aria-pressed="${data === ui.dia}">
       <span>${d}</span><span class="di-marcas">${marcas.join('')}</span></button>`;
@@ -206,7 +210,7 @@ function calendario(D) {
       <h2>${MESES[m - 1].replace(/^./, (c) => c.toUpperCase())} de ${y}</h2>
       <button class="btn small" data-act="dimes" data-v="1" aria-label="Próximo mês" ${ui.mes >= hj.slice(0, 7) ? 'disabled' : ''}>▸</button></div>
     <div class="di-grade">${['D', 'S', 'T', 'Q', 'Q', 'S', 'S'].map((s) => `<b>${s}</b>`).join('')}${cel}</div>
-    <div class="di-leg muted"><span><i class="di-p di-p-gira"></i> gira</span><span><i class="di-p di-p-dia"></i> manhã e noite</span><span>🌿 banho tomado</span><span>🏋️ atividade física</span></div>
+    <div class="di-leg muted"><span><i class="di-p di-p-gira"></i> gira</span><span><i class="di-p di-p-dia"></i> manhã e noite</span><span>🌿 banho tomado</span><span>🏋️ atividade física</span><span>🕊️ amaci</span></div>
     <p class="di-lua" title="${esc(textoLua)}"><span aria-hidden="true">${iconeLua}</span> <b>${nomeLua}</b> · ${esc(textoLua)}</p></div>`;
 }
 
