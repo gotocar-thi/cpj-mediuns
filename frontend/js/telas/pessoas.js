@@ -67,11 +67,10 @@ function guardarRascunhoLic() {
   if (i) estado.licRasc = { i: i.value, f: document.getElementById('lic-f')?.value || '', m: document.getElementById('lic-m')?.value || '' };
 }
 
-// Quem é de cada turma da limpeza (para conferir de uma vez).
-function cardTurmas(todas, editar) {
+// Quem é de cada turma da limpeza (para conferir de uma vez). Sub-bloco da Corrente CPJ, com os mesmos quadradinhos.
+function blocoTurmas(todas, editar) {
   const com = todas.filter((p) => p.limpeza);
-  const curimba = cardCurimba(todas, editar);
-  if (!com.length && !curimba) return '';
+  if (!com.length && !editar) return '';
   const grupos = [
     ...TURMAS_LIMPEZA.map((t) => ({ chave: String(t), nome: `Turma ${t}`, lista: todas.filter((p) => Number(p.limpeza) === t) })),
     { chave: 'sem', nome: 'Sem turma', lista: todas.filter((p) => !p.limpeza) },
@@ -79,11 +78,8 @@ function cardTurmas(todas, editar) {
   const aberta = grupos.some((g) => g.chave === estado.limpezaTurmaAberta) ? estado.limpezaTurmaAberta : null;
   const turmaAtiva = aberta && aberta !== 'sem' ? grupos.find((g) => g.chave === aberta) : null;
   const disponiveis = turmaAtiva ? todas.filter((p) => !p.limpeza) : [];
-  // Começa minimizado; aberto: quadradinhos das turmas, a turma aberta e, embaixo, o sub-bloco da Curimba.
-  const cab = (ab) => `<div class="card pp-card fn-limpeza">${cabDobra('dobrarlimpeza', '🧹 Turmas da limpeza', `${com.length} de ${todas.length}`, ab)}`;
-  if (!estado.limpezaAberto) return cab(false) + '</div>';
-  return `${cab(true)}
-    <div class="pf-of-totais auto">${grupos.map((g) => `<button type="button" class="pf-of-total fn-limpeza${aberta === g.chave ? ' selecionado' : ''}" data-act="limpezaTurma" data-t="${g.chave}" aria-expanded="${aberta === g.chave}" aria-label="${g.nome}: ${g.lista.length} ${g.lista.length === 1 ? 'pessoa' : 'pessoas'}${aberta === g.chave ? ', recolher lista' : ', expandir lista'}"${!editar && !g.lista.length ? ' disabled' : ''}><b>${g.lista.length}</b><span>${g.nome}</span></button>`).join('')}</div>
+  return `<div class="sub-bloco fn-limpeza"><div class="grp-h"><h2>🧹 Turmas da limpeza</h2><span class="count">${com.length} de ${todas.length}</span></div>
+    <div class="pf-of-totais seis">${grupos.map((g) => `<button type="button" class="pf-of-total fn-limpeza${aberta === g.chave ? ' selecionado' : ''}" data-act="limpezaTurma" data-t="${g.chave}" aria-expanded="${aberta === g.chave}" aria-label="${g.nome}: ${g.lista.length} ${g.lista.length === 1 ? 'pessoa' : 'pessoas'}${aberta === g.chave ? ', recolher lista' : ', expandir lista'}"${!editar && !g.lista.length ? ' disabled' : ''}><b>${g.lista.length}</b><span>${g.nome}</span></button>`).join('')}</div>
     ${aberta ? (() => {
       const g = grupos.find((x) => x.chave === aberta);
       return `<div class="lista-aberta">
@@ -95,8 +91,7 @@ function cardTurmas(todas, editar) {
           <label class="field">Adicionar pessoa nesta turma<select id="limpeza-pessoa" required><option value="">— escolha uma pessoa —</option>${disponiveis.map((p) => `<option value="${p.id}">${esc(p.nome)}${ehCurimba(p) ? ' · Curimba' : ` · ${esc(FUNCOES.find((f) => f.k === p.funcao)?.label || p.funcao)}`}</option>`).join('')}</select></label>
           <button class="btn primary" type="submit">＋ Adicionar</button></form>`
           : '<p class="nota">Não há pessoas sem turma de limpeza para adicionar.</p>' : ''}</div>`;
-    })() : ''}
-    ${curimba}</div>`;
+    })() : ''}</div>`;
 }
 
 const nomeFuncao = (p) => (p.funcao === 'extra' ? 'at. extra' : 'médium de passe');
@@ -185,20 +180,9 @@ document.addEventListener('toggle', (e) => {
   }
 }, true);
 
-// Curimba: só nome e turma da limpeza (não entra na presença nem no sorteio). Sub-bloco dentro de Turmas da limpeza.
-function cardCurimba(todas, editar) {
-  const cs = todas.filter(ehCurimba);
-  if (!cs.length) return '';
-  const aberto = !!estado.curimbaAberta && !estado.limpezaTurmaAberta;
-  let h = `<div class="sub-bloco fn-curimba">${cabDobra('dobrarcurimba', 'Limpeza extra (curimba)', cs.length, aberto)}`;
-  if (!aberto) return h + `</div>`;
-  h += `<p class="nota">Fazem parte das turmas da limpeza, mas não contam presença nem falta e não entram no sorteio.</p>`;
-  h += `<div class="ppl">${cs.map((p) => (editar ? linhaPessoa(p, { funcao: false })
-    : `<div class="pp"><div class="pp-l1"><span class="nm">${esc(p.nome)}</span>${p.limpeza ? `<span class="badge pp-limp">🧹 Turma ${p.limpeza}</span>` : ''}</div></div>`)).join('')}</div>`;
-  return h + `</div>`;
-}
-
-// Card "Adicionar": escolhe o que cadastrar (pessoas da corrente, licença ou curimba).
+// "Adicionar": escolhe o que cadastrar (pessoas da corrente, licença ou curimba).
+// Quem vê a corrente: botão no fim do bloco Corrente CPJ, que abre o cadastro ali mesmo.
+// Quem só cuida dos alunos: card próprio.
 const MODOS = [['pessoas', 'Pessoas'], ['licenca', 'Licença'], ['curimba', 'Curimba']];
 const ALUNO = 'aluno';
 // Funções que este perfil pode cadastrar: a corrente (quem edita Pessoas) e/ou Aluno (quem edita Alunos).
@@ -206,14 +190,19 @@ const funcoesCadastro = () => [
   ...(pode('pessoas:editar') ? FUNCOES.map((f) => [f.k, f.label]) : []),
   ...(pode('alunos:editar') ? [[ALUNO, 'Aluno']] : []),
 ];
+const addAberto = (ps) => estado.addAberto ?? (pode('pessoas:editar') && !ps.length);
 function cardAdicionar(ps) {
+  const aberto = addAberto(ps);
+  return `<div class="card adm">${cabDobra('dobraradd', '＋ Adicionar', '', aberto)}${aberto ? conteudoAdicionar(ps) : ''}</div>`;
+}
+function blocoAdicionar(ps) {
+  if (!addAberto(ps)) return `<div class="sub-bloco"><button class="btn primary" type="button" data-act="dobraradd">＋ Adicionar</button></div>`;
+  return `<div class="sub-bloco">${cabDobra('dobraradd', '＋ Adicionar', '', true)}${conteudoAdicionar(ps)}</div>`;
+}
+function conteudoAdicionar(ps) {
   const corrente = pode('pessoas:editar');
   const modo = corrente ? estado.addModo || 'pessoas' : 'pessoas';
-  // Começa minimizado (aberto só quando ainda não há ninguém cadastrado).
-  const aberto = estado.addAberto ?? (corrente && !ps.length);
-  if (!aberto) return `<div class="card adm">${cabDobra('dobraradd', '＋ Adicionar', '', false)}</div>`;
-  let h = `<div class="card adm">${cabDobra('dobraradd', '＋ Adicionar', '', true)}
-    ${corrente ? `<div class="seg add-seg" role="group" aria-label="O que adicionar">${MODOS.map(([k, t]) => `<button data-act="addmodo" data-v="${k}" aria-pressed="${modo === k}">${t}</button>`).join('')}</div>` : ''}`;
+  let h = corrente ? `<div class="seg add-seg" role="group" aria-label="O que adicionar">${MODOS.map(([k, t]) => `<button data-act="addmodo" data-v="${k}" aria-pressed="${modo === k}">${t}</button>`).join('')}</div>` : '';
   if (modo === 'pessoas') {
     const fs = funcoesCadastro();
     const func = fs.some(([k]) => k === prefs.lastFunc) ? prefs.lastFunc : fs[0][0];
@@ -242,12 +231,11 @@ function cardAdicionar(ps) {
       <button class="btn primary" type="submit">Adicionar</button></form>
       <p class="nota">A curimba entra nas turmas da limpeza, mas não conta presença nem falta e não entra no sorteio.</p>`;
   }
-  return h + `</div>`;
+  return h;
 }
 
 
 // ---------- dados do aluno: nome completo, CPF, celular e e-mail (quem edita Alunos) ----------
-const R$ = (v) => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 const soDig = (v) => String(v ?? '').replace(/\D/g, '');
 const telBR = (n) => {
   const d = soDig(n);
@@ -287,32 +275,6 @@ function lerCamposAluno(pre, d = {}, id = '') {
   else if (soDig(v('cpf'))) out.cpf = v('cpf');
   estado.alunoRasc = { pre, nc: v('nc'), cel: soDig(v('cel')), em: v('em'), cpf: v('cpf') };
   return out;
-}
-
-// Pendências (cobranças vencidas do ASAAS ligadas ao aluno pelo CPF): um quadradinho por turma com quantas
-// pendências há nela; tocar mostra os alunos pendentes, com o que deve. Vem da última leitura do ASAAS.
-function cardPendenciasAlunos(A, grupos) {
-  if (!A.pendencias) return '';
-  const pend = A.pendencias;
-  const daTurma = (g) => g.lista.filter((a) => pend[a.id]?.length);
-  const qtd = (g) => daTurma(g).reduce((s, a) => s + pend[a.id].length, 0);
-  const aberta = grupos.some((g) => g.id === estado.alunosPendAberta) ? estado.alunosPendAberta : null;
-  const quando = A.pendenciasEm ? new Date(A.pendenciasEm).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }).replace(', ', ' às ') : '';
-  let h = `<div class="al-pend"><div class="al-pend-h"><b>💳 Pendências de pagamento</b><span class="muted">${quando ? `lido em ${quando}` : 'ainda não lido'}</span></div>
-    <div class="pf-of-totais auto">${grupos.filter((g) => g.id !== 'sem' || g.lista.length).map((g) => {
-      const n = qtd(g);
-      return `<button type="button" class="pf-of-total fn-pend${aberta === g.id ? ' selecionado' : ''}" data-act="alunosPend" data-t="${esc(g.id)}" aria-expanded="${aberta === g.id}" aria-label="${esc(g.nome)}: ${n} ${n === 1 ? 'pendência' : 'pendências'}" ${n ? '' : 'disabled'}><b>${n}</b><span>${esc(g.nome)}</span></button>`;
-    }).join('')}</div>`;
-  if (aberta) {
-    const g = grupos.find((x) => x.id === aberta);
-    h += `<div class="al-pend-lista">${daTurma(g).map((a) => {
-      const L = pend[a.id];
-      const total = L.reduce((s, x) => s + Number(x.valor || 0), 0);
-      return `<div class="al-pend-a"><div class="al-pend-a-h"><b>${esc(a.nome)}</b><span>${L.length} ${L.length === 1 ? 'pendência' : 'pendências'} · <b>${R$(total)}</b></span></div>
-        ${L.map((x) => `<div class="al-pend-i"><span>${esc(x.descricao || 'Cobrança')}${x.vencimento ? ` <span class="muted">· venceu ${x.vencimento.split('-').reverse().join('/')}</span>` : ''}</span><span>${R$(x.valor)}</span></div>`).join('')}</div>`;
-    }).join('')}</div>`;
-  }
-  return h + '</div>';
 }
 
 // ---------- alunos da CPJ: um sub-bloco por turma ----------
@@ -393,7 +355,7 @@ function cardAlunos() {
   const aberta = grupos.some((g) => g.id === estado.alunosTurmaAberta) ? estado.alunosTurmaAberta : null;
   let h = `${cab}
     <div class="pf-of-totais auto">${grupos.map((g) => `<button type="button" class="pf-of-total fn-alunos${aberta === g.id ? ' selecionado' : ''}" data-act="alunosTurma" data-t="${esc(g.id)}" aria-expanded="${aberta === g.id}" aria-label="${esc(g.nome)}: ${g.lista.length} ${g.lista.length === 1 ? 'aluno' : 'alunos'}${aberta === g.id ? ', recolher lista' : ', expandir lista'}"${g.id === 'sem' && !g.lista.length ? ' disabled' : ''}><b>${g.lista.length}</b><span>${esc(g.nome)}</span></button>`).join('')}</div>`;
-  const pendencias = editar ? cardPendenciasAlunos(A, grupos) + blocoExAlunos(A) : '';
+  const pendencias = editar ? blocoExAlunos(A) : '';
   if (!aberta) return h + pendencias + '</div>';
   const g = grupos.find((x) => x.id === aberta);
   h += `<div class="lista-aberta">${acoesTurma(g, editar, podePromover)}
@@ -468,13 +430,13 @@ function renderPessoas() {
   const verAlunos = pode('alunos:ver');
   if (verAlunos && estado.alunos === null) { estado.alunos = undefined; carregarAlunos(); }
   let h = `<section class="panel pessoas-tela">`;
-  const add = editar || pode('alunos:editar') ? cardAdicionar(ps) : '';
+  const podeAdd = editar || pode('alunos:editar');
   // Perfil que só cuida dos alunos (ex.: Admin oferendas): só o Adicionar e o bloco Alunos.
-  if (!pode('pessoas:ver')) return h + add + (verAlunos ? cardAlunos() : '') + cardCadastrosLogin() + '</section>';
+  if (!pode('pessoas:ver')) return h + (podeAdd ? cardAdicionar(ps) : '') + (verAlunos ? cardAlunos() : '') + cardCadastrosLogin() + '</section>';
   if (!editar) h += `<p class="leitura" style="margin:0">Lista da corrente, só para consulta.</p>`;
-  h += add;
+  const add = podeAdd ? blocoAdicionar(ps) : '';
   if (!ps.length) {
-    return h + `<div class="card empty"><p class="muted">${editar ? 'Ninguém cadastrado ainda. Digite os nomes acima; pode colar uma lista inteira separada por vírgulas.' : 'Ninguém cadastrado ainda.'}</p></div>${cardTurmas(todas, editar)}${verAlunos ? cardAlunos() : ''}${cardCadastrosLogin()}</section>`;
+    return h + `<div class="card empty"><p class="muted">${editar ? 'Ninguém cadastrado ainda. Digite os nomes abaixo; pode colar uma lista inteira separada por vírgulas.' : 'Ninguém cadastrado ainda.'}</p>${add}</div>${verAlunos ? cardAlunos() : ''}${cardCadastrosLogin()}</section>`;
   }
   const funcaoCorrenteAberta = estado.correnteFuncaoAberta;
   const pessoasPorFuncao = Object.fromEntries(QUADROS_CORRENTE.map((f) => [f.k, todas.filter((p) => p.funcao === f.k)]));
@@ -483,7 +445,7 @@ function renderPessoas() {
     : editar ? linhaPessoa(p, { funcao: false })
       : `<div class="pp"><div class="pp-l1"><span class="nm">${esc(p.nome)}</span>${p.limpeza ? `<span class="badge pp-limp">🧹 Turma ${p.limpeza}</span>` : ''}</div></div>`);
   const correnteListaAberta = pessoasPorFuncao[funcaoCorrenteAberta]?.length ? funcaoCorrenteAberta : null;
-  // Ordem: Adicionar, Corrente (com Oferendas pendentes e, embaixo, as licenças), Turmas da limpeza (com Curimba), Alunos.
+  // Ordem: Corrente (funções, Turmas da limpeza, Oferendas pendentes, licenças e, no fim, o Adicionar), Alunos.
   h += `<div class="card pp-card fn-corrente corrente-card"><div class="grp-h"><h2><span class="estrela-ouro" aria-hidden="true">★</span> Corrente CPJ</h2><span class="count">${ps.length} pessoa${ps.length === 1 ? '' : 's'}</span></div>
     <div class="pf-of-totais seis">${QUADROS_CORRENTE.map((f) => {
       const abertas = pessoasPorFuncao[f.k];
@@ -493,8 +455,7 @@ function renderPessoas() {
     }).join('')}</div>
     ${correnteListaAberta === CURIMBA ? '<p class="nota">A curimba não conta presença nem falta, não entra no sorteio nem no total da corrente.</p>' : ''}
     ${correnteListaAberta ? `<div class="ppl">${pessoasPorFuncao[correnteListaAberta].map(linhaCorrente).join('')}</div>` : ''}
-    ${cardOferendasPendentes()}${listaLicencas(ps, editar)}</div>`;   // licença: só a corrente
-  h += cardTurmas(todas, editar);
+    ${blocoTurmas(todas, editar)}${cardOferendasPendentes()}${listaLicencas(ps, editar)}${add}</div>`;   // licença: só a corrente
   if (verAlunos) h += cardAlunos();
   h += cardCadastrosLogin();   // o último bloco da aba
   return h + '</section>';
@@ -570,30 +531,20 @@ export const cliques = {
   pfdobra: (el) => cliquesPerfil.pfdobra(el),
   pfofertas: (el) => cliquesPerfil.pfofertas(el),
   dobraradd() { estado.addAberto = !(estado.addAberto ?? !pessoasOrd().some((p) => !ehCurimba(p))); avisar(); },
-  // Turmas da limpeza e Alunos: tocar no título minimiza/abre (minimizar fecha a turma aberta).
-  dobrarlimpeza() {
-    estado.limpezaAberto = !estado.limpezaAberto;
-    if (!estado.limpezaAberto) { estado.limpezaTurmaAberta = null; estado.curimbaAberta = false; estado.limpezaPessoaEditando = null; }
-    avisar();
-  },
+  // Alunos: tocar no título minimiza/abre (minimizar fecha a turma aberta).
   dobraralunos() {
     estado.alunosAberto = !estado.alunosAberto;
     if (!estado.alunosAberto) { estado.alunosTurmaAberta = null; estado.alunosAdicionarTurma = null; estado.editAluno = null; estado.editTurma = null; if (!estado.alunosPromover?.enviando) estado.alunosPromover = null; }
     avisar();
   },
-  dobrarcurimba() {
-    estado.curimbaAberta = !estado.curimbaAberta;
-    if (estado.curimbaAberta) { estado.limpezaTurmaAberta = null; estado.correnteFuncaoAberta = null; }
-    avisar();
-  },
   correnteFuncao(el) {
     estado.correnteFuncaoAberta = estado.correnteFuncaoAberta === el.dataset.f ? null : el.dataset.f;
-    if (estado.correnteFuncaoAberta) { estado.limpezaTurmaAberta = null; estado.curimbaAberta = false; }
+    if (estado.correnteFuncaoAberta) estado.limpezaTurmaAberta = null;
     avisar();
   },
   limpezaTurma(el) {
     estado.limpezaTurmaAberta = estado.limpezaTurmaAberta === el.dataset.t ? null : el.dataset.t;
-    if (estado.limpezaTurmaAberta) { estado.correnteFuncaoAberta = null; estado.curimbaAberta = false; }
+    if (estado.limpezaTurmaAberta) estado.correnteFuncaoAberta = null;
     avisar();
   },
   alunosTurma(el) {
@@ -702,7 +653,6 @@ export const cliques = {
     document.getElementById('al-nome')?.focus();
   },
   cancelaluno() { estado.editAluno = null; estado.alunoCpfRemover = null; estado.alunoCpfVisto = null; estado.alunoRasc = null; avisar(); },
-  alunosPend(el) { estado.alunosPendAberta = estado.alunosPendAberta === el.dataset.t ? null : el.dataset.t; avisar(); },
   alcpfremover(el) { estado.alunoCpfRemover = el.dataset.id; estado.alunoCpfVisto = null; avisar(); },
   alcpfmanter() { estado.alunoCpfRemover = null; avisar(); },
   // Mostrar: busca o número inteiro e esconde sozinho em 30 s (como no Perfil).
@@ -769,8 +719,6 @@ export async function renomear(form) {
   if (await atualizarPessoa(id, patch)) {
     if (novaTurmaLimpeza) {
       estado.limpezaTurmaAberta = novaTurmaLimpeza;
-      estado.limpezaAberto = true;
-      estado.curimbaAberta = false;
       estado.correnteFuncaoAberta = null;
       avisar();
     }
