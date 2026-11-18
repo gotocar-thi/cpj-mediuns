@@ -4,7 +4,9 @@
 // Admin root: todas, separadas por conta, com o nome (da corrente, pelo CPF do Perfil, ou o do cliente no ASAAS) e lembrete no WhatsApp.
 // Atualizar: para todos (quem acabou de pagar vê sumir); o servidor segura toques repetidos da pessoa.
 // É o primeiro bloco da aba Geral. Para o root começa minimizado (tocar no título abre; vale até sair do app),
-// com o rótulo ADMIN FINANCEIRO na moldura.
+// com o rótulo ADMIN FINANCEIRO na moldura. Aberto, o admin vê um quadradinho por grupo — Corrente, cada turma de alunos,
+// aluno sem turma e sem ligação (o CPF do ASAAS não bate com ninguém) — com quantas pendências; tocar abre os nomes do
+// grupo, e cada nome abre as cobranças (Pagar, lembrete no WhatsApp).
 
 import { estado, pode, carregarAtrasos, avisar } from '../estado.js';
 import { esc, dShort, hoje, pd } from '../util.js';
@@ -14,6 +16,7 @@ import { ICONE_WHATS } from './giraComum.js';
 const R = (v) => reais(centavos(v));
 let minimizado = true;
 const pessoasAbertas = new Set();   // root: pessoas expandidas ('conta:nome'); todas começam minimizadas
+let grupoAberto = null;             // root: quadradinho aberto — 'corrente', 't:<turma>', 'semturma' ou 'semligacao'
 // ADMIN FINANCEIRO: quem vê a aba ASAAS (root e Admin financeiro) vê todas as pendências.
 const ehRoot = () => pode('asaas:ver');
 const dias = (venc) => Math.max(0, Math.round((pd(hoje()) - pd(venc)) / 86400000));
@@ -88,6 +91,25 @@ function blocoRoot(A, lista, modo, icone, titulo) {
     ${aberto ? `<div class="at-bloco-c">${secoesRoot(A, lista, modo)}</div>` : ''}</div>`;
 }
 
+// Grupo de cada pendência, para os quadradinhos do admin.
+const grupoDe = (a) => (a.pessoaId ? 'corrente' : a.alunoId ? (a.turmaId ? 't:' + a.turmaId : 'semturma') : 'semligacao');
+// Um quadradinho por grupo que tem pendência (com a quantidade); tocar abre embaixo os nomes do grupo, cada um com as cobranças.
+function quadrosGrupos(lista) {
+  const turmas = new Map();
+  lista.forEach((a) => { if (a.alunoId && a.turmaId) turmas.set('t:' + a.turmaId, a.turmaNome || 'Turma'); });
+  const grupos = [['corrente', 'Corrente', 'at-q-cor'],
+    ...[...turmas].sort((x, y) => x[1].localeCompare(y[1], 'pt-BR')).map(([k, nome]) => [k, nome, 'at-q-tur']),
+    ['semturma', 'Aluno sem turma', 'at-q-sem'], ['semligacao', 'Sem ligação', 'at-q-lig']]
+    .map(([k, nome, cls]) => ({ k, nome, cls, L: lista.filter((a) => grupoDe(a) === k) })).filter((g) => g.L.length);
+  if (!grupos.length) return '';
+  if (grupoAberto && !grupos.some((g) => g.k === grupoAberto)) grupoAberto = null;
+  const quads = grupos.map((g) => `<button type="button" class="pf-of-total ${g.cls}${g.k === grupoAberto ? ' selecionado' : ''}" data-act="atgrupo" data-g="${esc(g.k)}" aria-expanded="${g.k === grupoAberto}" aria-label="${esc(g.nome)}: ${g.L.length} pendências"><b>${g.L.length}</b><span>${esc(g.nome)}</span></button>`).join('');
+  const aberto = grupos.find((g) => g.k === grupoAberto);
+  const soma = (L) => L.reduce((t, a) => t + Number(a.valor || 0), 0);
+  const lista2 = aberto ? `<div class="at-grupo"><div class="at-conta-h"><h4>${esc(aberto.nome)}</h4><span class="muted">${aberto.L.length} · ${R(soma(aberto.L))}</span></div>${agrupado('pessoa', 'g:' + aberto.k, aberto.L)}</div>` : '';
+  return `<div class="pf-of-totais at-quads">${quads}</div>${lista2}`;
+}
+
 export function cardAtrasos() {
   if (estado.atrasos === null) { carregarAtrasos(); return ''; }
   const A = estado.atrasos;
@@ -104,7 +126,7 @@ export function cardAtrasos() {
   }
   const total = lista.reduce((s, a) => s + Number(a.valor || 0), 0);
   const quando = A.atualizadoEm ? new Date(A.atualizadoEm).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }).replace(', ', ' às ') : '';
-  const corpo = root ? blocoRoot(A, lista, 'pessoa', '👤', 'Por nome') + blocoRoot(A, lista, 'desc', '🧾', 'Por descrição')
+  const corpo = root ? quadrosGrupos(lista) + blocoRoot(A, lista, 'pessoa', '👤', 'Por nome') + blocoRoot(A, lista, 'desc', '🧾', 'Por descrição')
     : `<div class="at-lista">${lista.map((a) => linha(a, root)).join('')}</div>`;
   const rodape = root ? `<div class="at-rodape"><span class="muted">${lista.length ? `Total ${R(total)} · ` : ''}${quando ? `lido em ${quando}` : 'ainda não lido'}</span>
       <button class="btn small" data-act="atatualizar">↻ Atualizar</button></div>`
@@ -114,6 +136,7 @@ export function cardAtrasos() {
 }
 
 export const cliquesAtrasos = {
+  atgrupo(el) { grupoAberto = grupoAberto === el.dataset.g ? null : el.dataset.g; avisar(); },
   atatualizar() { carregarAtrasos({ atualizar: true }); },
   atdobrar() { minimizado = !minimizado; avisar(); },
   atbloco(el) { const k = el.dataset.k; if (blocosAbertos.has(k)) blocosAbertos.delete(k); else blocosAbertos.add(k); avisar(); },

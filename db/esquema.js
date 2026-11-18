@@ -9,7 +9,7 @@
 // Estrutura: veja db/ESTRUTURA-ESQUEMA.md para o mapa de versões, domínios e
 // quais migrações foram testadas no Postgres.
 
-export const VERSAO = 137;  // v137: amaci que já passou cadastrado pelo root (retroativo): o aluno marca a presença sem localização
+export const VERSAO = 138;  // v138: Pgto atrasado com a turma do aluno e leitura do ASAAS mais leve (clientes guardados)
 
 import { PERFIS_PADRAO } from '../shared/permissoes.js';
 
@@ -5143,20 +5143,6 @@ export const MIGRACOES = [
    end;
    $$`,
   // O bloco de atrasos passa a dar nome também ao aluno ligado (antes aparecia "sem ligação").
-  `create or replace function atrasos_ler(p jsonb default '{}'::jsonb)
-   returns jsonb language sql stable as $$
-     select jsonb_build_object(
-       'atualizadoEm', (select to_char(valor::timestamptz at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') from sistema where chave = 'asaas2_atualizado'),
-       'itens', coalesce((select jsonb_agg(jsonb_build_object(
-           'id', a.id, 'conta', a.conta, 'pessoaId', a.pessoa_id, 'alunoId', al.id, 'ligado', pe.id is not null or al.id is not null,
-           'nome', coalesce(pe.nome, al.nome, a.nome),
-           'telefone', coalesce(nullif(pe.perfil -> 'info' ->> 'celular', ''), nullif(al.perfil -> 'info' ->> 'celular', ''), a.telefone),
-           'valor', a.valor::float8, 'vencimento', a.vencimento, 'descricao', a.descricao, 'link', a.link)
-           order by a.vencimento nulls last, lower(coalesce(pe.nome, al.nome, a.nome)))
-         from atrasos_validos() a
-         left join pessoas pe on pe.id = a.pessoa_id and pe.saida is null
-         left join alunos al on al.id = a.aluno_id and al.saida is null and pe.id is null), '[]'::jsonb))
-   $$`,
   // Para quem edita Alunos: os dados de cada aluno (o CPF cifrado vai para o servidor mascarar) e as pendências.
   `create or replace function alunos_extras(p jsonb default '{}'::jsonb)
    returns jsonb language sql stable as $$
@@ -6021,5 +6007,62 @@ export const MIGRACOES = [
        'presencas', coalesce((select jsonb_agg(jsonb_build_object('eventoId', x.evento_id, 'alunoId', x.aluno_id, 'status', x.status))
                               from amaci_presencas x
                              where nullif(p ->> 'alunoId', '') is null or x.aluno_id = (p ->> 'alunoId')::uuid), '[]'::jsonb))
+   $$`,
+  // ================================================== v138: Pgto atrasado com a turma do aluno
+  // O bloco CPJ - Pgto atrasado (aba Geral) filtra por grupo: Corrente, cada turma de alunos, aluno sem turma e sem ligação.
+  `create or replace function atrasos_ler(p jsonb default '{}'::jsonb)
+   returns jsonb language sql stable as $$
+     select jsonb_build_object(
+       'atualizadoEm', (select to_char(valor::timestamptz at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') from sistema where chave = 'asaas2_atualizado'),
+       'itens', coalesce((select jsonb_agg(jsonb_build_object(
+           'id', a.id, 'conta', a.conta, 'pessoaId', a.pessoa_id, 'alunoId', al.id, 'ligado', pe.id is not null or al.id is not null,
+           'turmaId', al.turma_id, 'turmaNome', t.nome,
+           'nome', coalesce(pe.nome, al.nome, a.nome),
+           'telefone', coalesce(nullif(pe.perfil -> 'info' ->> 'celular', ''), nullif(al.perfil -> 'info' ->> 'celular', ''), a.telefone),
+           'valor', a.valor::float8, 'vencimento', a.vencimento, 'descricao', a.descricao, 'link', a.link)
+           order by a.vencimento nulls last, lower(coalesce(pe.nome, al.nome, a.nome)))
+         from atrasos_validos() a
+         left join pessoas pe on pe.id = a.pessoa_id and pe.saida is null
+         left join alunos al on al.id = a.aluno_id and al.saida is null and pe.id is null
+         left join turmas_alunos t on t.id = al.turma_id), '[]'::jsonb))
+   $$`,
+  // Leitura do ASAAS mais leve: os dados dos clientes (nome, telefone, hash do CPF — nunca o CPF aberto — e a referência)
+  // ficam guardados por 7 dias; cada leitura busca só as cobranças e os clientes novos (o Atualizar do root renova todos).
+  // A pessoa é achada pelo hash do CPF do Perfil, sem decifrar os CPFs da corrente.
+  `create table if not exists asaas_clientes_info (
+     conta          text not null,
+     id             text not null,
+     nome           text not null default '',
+     telefone       text not null default '',
+     cpf_hash       text not null default '',
+     referencia     text not null default '',
+     atualizado_em  timestamptz not null default now(),
+     primary key (conta, id)
+   )`,
+  // p = { conta, ids } — os clientes guardados há menos de 7 dias.
+  `create or replace function asaas_clientes_info_ler(p jsonb)
+   returns jsonb language sql stable as $$
+     select coalesce(jsonb_agg(jsonb_build_object('id', c.id, 'nome', c.nome, 'telefone', c.telefone, 'cpfHash', c.cpf_hash, 'referencia', c.referencia)), '[]'::jsonb)
+       from asaas_clientes_info c
+      where c.conta = p ->> 'conta' and c.atualizado_em > now() - interval '7 days'
+        and c.id in (select jsonb_array_elements_text(coalesce(p -> 'ids', '[]'::jsonb)))
+   $$`,
+  // p = { conta, itens: [{ id, nome, telefone, cpfHash, referencia }] }
+  `create or replace function asaas_clientes_info_salvar(p jsonb)
+   returns jsonb language plpgsql as $$
+   begin
+     insert into asaas_clientes_info (conta, id, nome, telefone, cpf_hash, referencia)
+     select p ->> 'conta', x ->> 'id', coalesce(x ->> 'nome', ''), coalesce(x ->> 'telefone', ''), coalesce(x ->> 'cpfHash', ''), coalesce(x ->> 'referencia', '')
+       from jsonb_array_elements(coalesce(p -> 'itens', '[]'::jsonb)) x
+     on conflict (conta, id) do update set nome = excluded.nome, telefone = excluded.telefone, cpf_hash = excluded.cpf_hash,
+       referencia = excluded.referencia, atualizado_em = now();
+     return jsonb_build_object('ok', true);
+   end;
+   $$`,
+  // Hash do CPF de cada pessoa ativa da corrente (para ligar a cobrança à pessoa sem decifrar).
+  `create or replace function cpf_hashes(p jsonb default '{}'::jsonb)
+   returns jsonb language sql stable as $$
+     select coalesce(jsonb_agg(jsonb_build_object('pessoaId', c.pessoa_id, 'hash', c.hash)), '[]'::jsonb)
+       from pessoas_cpf c join pessoas pe on pe.id = c.pessoa_id where pe.saida is null and c.hash <> ''
    $$`,
 ];

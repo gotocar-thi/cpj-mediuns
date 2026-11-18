@@ -360,7 +360,19 @@ function lerGet(caminho, q) {
     if (lista === 'videos') return copia(db.videos);
     if (lista === 'ausencias') return [];
     if (lista === 'conduta') return { ativa: true, relatos: [] };
-    if (lista === 'atrasos') return { configurado: false, contas: {}, root: true, atrasos: [] };
+    if (lista === 'atrasos') {
+      const at = (n, conta, quem, valor, venc, descricao) => {
+        const p = db.pessoas.find((x) => x.id === quem); const a = db.alunos.find((x) => x.id === quem);
+        const t = a && db.turmas.find((x) => x.id === a.turmaId);
+        return { id: 'demo' + n, conta, pessoaId: p?.id || null, alunoId: a?.id || null, ligado: !!(p || a), turmaId: t?.id || null, turmaNome: t?.nome || null,
+          nome: p?.nome || a?.nome || 'Cliente sem cadastro', telefone: '11912345678', valor, vencimento: dia(venc), descricao, link: '' };
+      };
+      return { configurado: true, contas: { A: true, B: true }, root: true, atualizadoEm: new Date().toISOString(), atrasos: [
+        at(1, 'B', id(6), 110, -12, 'Mensalidade CPJ'), at(2, 'B', id(7), 110, -40, 'Mensalidade CPJ'), at(3, 'B', id(7), 110, -10, 'Mensalidade CPJ'),
+        at(4, 'A', id(3), 80, -5, 'CPJ · Compras · pedido nº 3'), at(5, 'B', id(601), 90, -8, 'Curso de Umbanda'), at(6, 'B', id(602), 90, -8, 'Curso de Umbanda'),
+        at(7, 'B', id(603), 90, -20, 'Curso de Umbanda'), at(8, 'B', 'x', 50, -3, 'Doação'),
+      ] };
+    }
     if (lista === 'fotos') return { albuns: [], fotos: [], usado: 0, limite: 0, configurado: false };
     if (lista === 'transparencia') return transparencia(q.get('mes') || '');
   }

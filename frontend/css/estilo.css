@@ -1518,6 +1518,13 @@ button.eu-av{cursor:zoom-in}
 .at-bts a.btn{text-decoration:none}
 .at-info .badge{justify-self:start}
 .at-bts .wa-bt{min-height:34px;padding:4px 8px}
+.pf-of-totais.at-quads{grid-template-columns:repeat(auto-fill,minmax(76px,1fr))}
+.at-quads .pf-of-total{background:var(--bg)}
+.at-q-cor{--fn:var(--accent)}
+.at-q-tur{--fn:var(--gold)}
+.at-q-sem{--fn:var(--orange)}
+.at-q-lig{--fn:var(--off)}
+.at-grupo{display:grid;gap:8px;padding:10px;border:1px solid var(--line);border-radius:10px}
 .at-rodape{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:8px;font-size:.82rem}
 .at-erro{margin:0;font-size:.82rem;color:var(--warn)}
 .at-meu{border-color:var(--off)}

@@ -5,7 +5,9 @@
 // item pago ou cancelado, não conta (o filtro fica em atrasos_ler).
 // A leitura fica guardada em asaas2_atrasos e é refeita no máximo a cada 10 minutos, ou no Atualizar:
 // o do root lê sempre; o da pessoa só se a última leitura tiver mais de 1 minuto (toques repetidos não viram chamadas ao ASAAS).
-// Não usa webhook: a fonte é sempre o ASAAS na hora da leitura.
+// Não usa webhook: a fonte é sempre o ASAAS na hora da leitura. Os dados dos clientes (nome, telefone, hash do CPF e
+// referência) ficam guardados por 7 dias (asaas_clientes_info): cada leitura busca só as cobranças e os clientes novos;
+// o Atualizar do root renova todos. A pessoa é achada pelo hash do CPF do Perfil, sem decifrar os CPFs.
 //
 //   GET /api/giras?lista=atrasos[&atualizar=1]
 //     → { configurado, contas: { A, B } (quais estão ligadas), root, atualizadoEm, erro?, semSenha?, atrasos: [...] }
@@ -18,7 +20,7 @@
 import { HttpError } from './http.js';
 import { db } from './db.js';
 import { chamarAsaas } from './asaas.js';
-import { decifrar, hashCpf } from './cpf.js';
+import { hashCpf, preencherHashes } from './cpf.js';
 import { pode } from '../../shared/permissoes.js';
 
 const CONTAS = { A: 'ASAAS', B: 'ASAAS2' };
@@ -31,8 +33,9 @@ const ligada = (k) => !!process.env[CONTAS[k] + '_API_KEY'];
 export const configuradoB = () => ligada('B');
 const soNumeros = (v) => String(v ?? '').replace(/\D/g, '');
 
-// Lê no ASAAS as cobranças vencidas de uma conta e os clientes delas; liga cada uma à pessoa.
-async function buscarNoAsaas(k, porCpf) {
+// Lê no ASAAS as cobranças vencidas de uma conta e os clientes delas (os guardados há menos de 7 dias não são buscados de
+// novo, a não ser com renovar); liga cada uma à pessoa pelo hash do CPF.
+async function buscarNoAsaas(k, porHash, renovar) {
   const CONTA = CONTAS[k];
   const cobrancas = [];
   for (let offset = 0; offset < MAX_COBRANCAS; offset += 100) {
@@ -42,29 +45,39 @@ async function buscarNoAsaas(k, porCpf) {
   }
   const ids = [...new Set(cobrancas.map((c) => c.customer).filter(Boolean))];
   const clientes = new Map();
-  for (let i = 0; i < ids.length; i += LOTE_CLIENTES) {
-    await Promise.all(ids.slice(i, i + LOTE_CLIENTES).map(async (id) => {
-      try { clientes.set(id, await chamarAsaas(CONTA, 'GET', `/customers/${encodeURIComponent(id)}`)); } catch { /* fica sem nome/CPF */ }
+  if (!renovar && ids.length) (await db.rpc('asaas_clientes_info_ler', { conta: k, ids })).forEach((c) => clientes.set(c.id, c));
+  const novos = [];
+  const faltam = ids.filter((id) => !clientes.has(id));
+  for (let i = 0; i < faltam.length; i += LOTE_CLIENTES) {
+    await Promise.all(faltam.slice(i, i + LOTE_CLIENTES).map(async (id) => {
+      try {
+        const cli = await chamarAsaas(CONTA, 'GET', `/customers/${encodeURIComponent(id)}`);
+        // Hash do CPF do cliente (o CPF aberto não é guardado): liga à pessoa e ao aluno sem decifrar nada.
+        const cpf = soNumeros(cli.cpfCnpj);
+        let cpfHash = '';
+        if (cpf.length === 11) { try { cpfHash = hashCpf(cpf); } catch { /* sem CPF_CHAVE: não liga por CPF */ } }
+        const info = { id, nome: String(cli.name || ''), telefone: soNumeros(cli.mobilePhone || cli.phone), cpfHash, referencia: String(cli.externalReference || '') };
+        clientes.set(id, info);
+        novos.push(info);
+      } catch { /* fica sem nome/CPF */ }
     }));
   }
+  if (novos.length) await db.rpc('asaas_clientes_info_salvar', { conta: k, itens: novos });
   return cobrancas.map((c) => {
     const cli = clientes.get(c.customer) || {};
     // Cliente que o app criou na conta A: a referência é a chave da pessoa ('p:<id>') ou do aluno ('a:<id>').
-    const ref = String(cli.externalReference || '');
+    const ref = String(cli.referencia || '');
     const daChave = /^p:[0-9a-f-]{36}$/.test(ref) ? ref.slice(2) : null;
     const doAluno = /^a:[0-9a-f-]{36}$/.test(ref) ? ref.slice(2) : '';
-    // Hash do CPF do cliente: liga ao aluno pelo CPF dele (alunos_cpf), sem decifrar nada no banco.
-    const cpf = soNumeros(cli.cpfCnpj);
-    let cpfHash = '';
-    if (cpf.length === 11) { try { cpfHash = hashCpf(cpf); } catch { /* sem CPF_CHAVE: não liga por CPF */ } }
+    const cpfHash = cli.cpfHash || '';
     return {
       id: String(c.id),
       referencia: String(c.externalReference || ''),
       alunoId: doAluno,
       cpfHash,
-      pessoaId: daChave || porCpf.get(cpf) || null,
-      nome: String(cli.name || ''),
-      telefone: soNumeros(cli.mobilePhone || cli.phone),
+      pessoaId: daChave || (cpfHash && porHash.get(cpfHash)) || null,
+      nome: String(cli.nome || ''),
+      telefone: String(cli.telefone || ''),
       valor: Number(c.value) || 0,
       vencimento: c.dueDate || null,
       descricao: String(c.description || ''),
@@ -87,14 +100,12 @@ export async function atrasos(eu, atualizar) {
   const forcar = atualizar && (root || idade > INTERVALO_PESSOA_MS);
   if (forcar || idade > VALIDADE_MS) {
     // Cada conta é lida e guardada sozinha: se uma falhar, a outra continua atualizada.
-    const porCpf = new Map();
-    for (const l of (await db.rpc('cpf_todos')) || []) {
-      try { porCpf.set(decifrar(l.cifrado, l.pessoaId), l.pessoaId); } catch { /* sem chave ou linha ruim: não liga */ }
-    }
+    try { await preencherHashes(); } catch { /* sem CPF_CHAVE: liga só pela referência */ }
+    const porHash = new Map(((await db.rpc('cpf_hashes')) || []).map((l) => [l.hash, l.pessoaId]));
     const falhas = [];
     for (const k of ['B', 'A'].filter((x) => contas[x])) {
       try {
-        await db.rpc('atrasos_salvar', { conta: k, itens: await buscarNoAsaas(k, porCpf) });
+        await db.rpc('atrasos_salvar', { conta: k, itens: await buscarNoAsaas(k, porHash, forcar && root) });
       } catch (e) {
         console.error('[atrasos] leitura da conta', k, e.message);
         falhas.push({ k, e });

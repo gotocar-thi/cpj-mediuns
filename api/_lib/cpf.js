@@ -85,10 +85,15 @@ export async function rotaCpf(req, eu) {
 // Quem tem esse CPF (já validado): pessoa ativa da corrente ou aluno ativo (Criar cadastro e login pelo CPF).
 // Antes, preenche o hash dos CPFs da corrente gravados sem ele (de antes da v130 e do UP CPJ).
 export async function cadastroPorCpf(cpf) {
+  await preencherHashes();
+  return db.rpc('cadastro_por_cpf', { hash: hashCpf(cpf) });
+}
+
+// Hash dos CPFs da corrente gravados sem ele (de antes da v130 e do UP CPJ). Também usado pela leitura dos atrasos.
+export async function preencherHashes() {
   const semHash = await db.rpc('cpf_sem_hash');
   const itens = (semHash || []).map((l) => {
     try { return { pessoaId: l.pessoaId, hash: hashCpf(decifrar(l.cifrado, l.pessoaId)) }; } catch { return null; }
   }).filter(Boolean);
   if (itens.length) await db.rpc('cpf_hash_definir', { itens });
-  return db.rpc('cadastro_por_cpf', { hash: hashCpf(cpf) });
 }
