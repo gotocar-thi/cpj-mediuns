@@ -1,9 +1,9 @@
 // Tela "Amaci": a pessoa escolhe um orixá e vê, sempre nesta ordem, o nome, os recados, ervas, velas, ponto riscado e fatores.
 // O seletor só traz os orixás liberados para a turma de quem está logado (o servidor já manda só esses)
 // e abre no último liberado. Quem administra liga "Visível para todos", libera os orixás por turma e escreve os recados.
-// Cabeçalho: o orixá e, para o aluno, quem está logado, a turma, a data de hoje e o amaci do dia (ou o próximo), pelos
-// eventos do tipo Amaci. Presença: o aluno confirma no dia, no terreiro (localização do celular); o admin root marca
-// presença ou falta de cada aluno.
+// Cabeçalho: ícone e o orixá. Bloco do filtro: o seletor de orixás e, para o aluno (e o root, que vê como fica), quem
+// está logado, a turma, hoje e o amaci do dia (pelos eventos do tipo Amaci), com a presença: o aluno confirma no dia,
+// no terreiro (localização do celular). O admin root marca presença ou falta por turma no bloco Presença nos amacis.
 
 import { estado, pode, visaoAtiva, carregarAmaci, acaoAmaci, confirmarPresencaAmaci, avisar } from '../estado.js';
 import { esc, toast, hoje, dLong, dDM } from '../util.js';
@@ -22,7 +22,8 @@ const ui = {
   escolha: {},          // amaci de hoje → 'p' (Presente) ou 'a' (Ausente, o padrão)
   confirmando: false,   // pegando a localização / enviando
   presAdm: false,       // bloco Presença nos amacis do root aberto
-  presEv: new Set(),    // amacis abertos no bloco do root
+  presTurma: '',        // turma escolhida no bloco do root ('' = a primeira)
+  presQ: null,          // quadradinho aberto no bloco do root: 'eventoId:p' (presentes) ou 'eventoId:a' (ausentes)
 };
 export function limpar() {
   ui.sel = '';
@@ -32,7 +33,8 @@ export function limpar() {
   ui.pres = false;
   ui.escolha = {};
   ui.presAdm = false;
-  ui.presEv.clear();
+  ui.presTurma = '';
+  ui.presQ = null;
 }
 
 const admin = () => pode('amaci:editar') && !!estado.amaci?.admin;
@@ -68,90 +70,108 @@ function cardAdmin(A) {
 }
 
 // ---------- pessoa ----------
-// Cabeçalho: ícone e título (o orixá escolhido); para o aluno, quem está logado, a turma, hoje e o amaci do dia.
-function cardCabecalho(A, info) {
+// Cabeçalho: ícone e título (o orixá escolhido).
+function cardCabecalho(info) {
   const titulo = info ? `<span class="eyebrow">Amaci · ${esc(info.trono)}</span><h2>${esc(info.nome)}</h2>` : '<span class="eyebrow">Casa do Pai João</span><h2>Amaci</h2>';
-  let extra = '';
-  if (ehAluno()) {
-    const P = A.presenca || { hoje: hoje(), amacis: [] };
-    const doDia = P.amacis.find((a) => a.data === P.hoje);
-    const prox = P.amacis.find((a) => a.data > P.hoje);
-    const aula = doDia ? `<b>Hoje tem amaci</b> · ${esc(doDia.nome)}`
-      : prox ? `Próximo amaci: <b>${dDM(prox.data)}</b> · ${esc(prox.nome)}` : 'Nenhum amaci marcado na aba Eventos.';
-    extra = `<ul class="am-cab-info">
-      <li><span aria-hidden="true">👤</span><span>${esc(estado.me?.nome || '')}</span></li>
-      <li><span aria-hidden="true">🎓</span><span>${A.turmaNome ? esc(A.turmaNome) : 'Sem turma'}</span></li>
-      <li><span aria-hidden="true">📅</span><span>${esc(dLong(P.hoje))}</span></li>
-      <li class="${doDia ? 'am-hoje' : ''}"><span aria-hidden="true">✨</span><span>${aula}</span></li></ul>`;
-  }
-  return `<div class="card am-cab"><div class="am-nome"><span class="am-ico am-ico-g" aria-hidden="true">🙏</span><div>${titulo}</div></div>${extra}</div>`;
+  return `<div class="card am-cab"><div class="am-nome"><span class="am-ico am-ico-g" aria-hidden="true">🙏</span><div>${titulo}</div></div></div>`;
 }
 
-// Filtro numa linha só: anterior, a lista dos orixás liberados e o próximo. Com um orixá só, não aparece.
+// Quem vê a parte da presença no bloco do filtro: o aluno (que confirma) e o root (que vê como fica para o aluno).
+const raiz = () => pode('usuarios:gerenciar');
+const vePresenca = () => ehAluno() || raiz();
+
+// Bloco do filtro: anterior, a lista dos orixás liberados e o próximo (com mais de um orixá) e, para o aluno e o root,
+// a presença do dia com as informações de quem está logado.
 function cardFiltro(A, sel) {
-  if (A.orixas.length < 2) return '';
   const libs = A.orixas.map((o) => o.k);
   const i = libs.indexOf(sel);
-  return `<div class="card am-filtro">
+  const filtro = libs.length < 2 ? '' : `<div class="am-filtro-l">
     <button class="btn small pp-ico" data-act="amsel" data-k="${libs[i - 1] || ''}" aria-label="Orixá anterior"${i <= 0 ? ' disabled' : ''}>‹</button>
     <select id="am-orixa" data-act="amescolher" aria-label="Escolher orixá">${A.orixas.map((o) => `<option value="${o.k}"${o.k === sel ? ' selected' : ''}>${esc(NOME[o.k].curto)}</option>`).join('')}</select>
     <button class="btn small pp-ico" data-act="amsel" data-k="${libs[i + 1] || ''}" aria-label="Próximo orixá"${i >= libs.length - 1 ? ' disabled' : ''}>›</button>
-    <span class="muted am-filtro-n">${libs.length} de ${ORIXAS.length}</span>
-  </div>`;
+    <span class="muted am-filtro-n">${libs.length} de ${ORIXAS.length}</span></div>`;
+  const pres = vePresenca() ? areaPresenca(A) : '';
+  if (!filtro && !pres) return '';
+  return `<div class="card am-filtro">${filtro}${pres}</div>`;
 }
 
-// ---------- presença ----------
 const SITUACAO = { p: ['Presente', 'pleno'], f: ['Falta', 're'] };
 const selo = (st) => { const [t, c] = SITUACAO[st] || ['Ausente', '']; return `<span class="badge ${c}">${t}</span>`; };
 
-function linhaPresenca(a, hojeData) {
-  const n = `<span class="am-pres-n"><b>${esc(a.nome)}</b><small class="muted">${a.data === hojeData ? 'Hoje · ' : ''}${dDM(a.data)}</small></span>`;
-  if (a.data !== hojeData || a.status === 'p') return `<li>${n}${selo(a.status)}</li>`;
-  const e = ui.escolha[a.id] || 'a';
-  return `<li class="am-pres-hoje">${n}<div class="am-pres-acao">
-    <select data-act="amescolha" data-id="${a.id}" aria-label="Sua presença em ${esc(a.nome)}"><option value="a"${e === 'a' ? ' selected' : ''}>Ausente</option><option value="p"${e === 'p' ? ' selected' : ''}>Presente</option></select>
-    <button class="btn primary small" data-act="amconfirmar" data-id="${a.id}"${ui.confirmando ? ' disabled' : ''}>${ui.confirmando ? 'Conferindo…' : 'Confirmar'}</button></div></li>`;
+// Presença do dia: aluno com amaci hoje escolhe Ausente (padrão) / Presente e confirma; o root vê a mesma área, travada.
+function areaPresenca(A) {
+  const aluno = ehAluno();
+  const P = aluno ? A.presenca : A.presencaAdmin;
+  const hojeData = P?.hoje || hoje();
+  const amacis = P?.amacis || [];
+  const doDia = amacis.find((a) => a.data === hojeData);
+  const prox = aluno ? amacis.find((a) => a.data > hojeData) : null;
+  const info = `<ul class="am-cab-info">
+    <li><span aria-hidden="true">👤</span><span>${esc(estado.me?.nome || '')}</span></li>
+    <li><span aria-hidden="true">🎓</span><span>${aluno ? (A.turmaNome ? esc(A.turmaNome) : 'Sem turma') : 'Admin root'}</span></li>
+    <li><span aria-hidden="true">📅</span><span>${esc(dLong(hojeData))}</span></li></ul>`;
+  let acao;
+  if (!doDia) {
+    acao = `<p class="muted am-pres-nota">${prox ? `Sem amaci hoje. Próximo amaci: <b>${dDM(prox.data)}</b> · ${esc(prox.nome)}.` : 'Sem amaci hoje (aba Eventos, tipo Amaci).'}</p>`;
+  } else if (aluno && doDia.status === 'p') {
+    acao = `<div class="am-pres-dia"><span class="am-pres-n"><b>${esc(doDia.nome)}</b><small class="muted">Hoje</small></span>${selo('p')}</div>`;
+  } else {
+    const e = ui.escolha[doDia.id] || 'a';
+    const travado = !aluno ? ' disabled' : '';
+    acao = `<div class="am-pres-dia am-pres-hoje"><span class="am-pres-n"><b>${esc(doDia.nome)}</b><small class="muted">Hoje</small></span>
+      <div class="am-pres-acao">
+        <select data-act="amescolha" data-id="${doDia.id}" aria-label="Sua presença em ${esc(doDia.nome)}"${travado}><option value="a"${e === 'a' ? ' selected' : ''}>Ausente</option><option value="p"${e === 'p' ? ' selected' : ''}>Presente</option></select>
+        <button class="btn primary small" data-act="amconfirmar" data-id="${doDia.id}"${ui.confirmando || !aluno ? ' disabled' : ''}>${ui.confirmando ? 'Conferindo…' : 'Confirmar'}</button>
+      </div></div>
+      <p class="muted am-pres-nota">${aluno ? 'Confirme dentro do terreiro: o app confere a localização do celular.' : 'Assim o aluno vê. Só ele confirma, no terreiro; para marcar por ele, use Presença nos amacis.'}</p>`;
+  }
+  return `<div class="am-pres-area"><h3><span aria-hidden="true">✅</span> Presença no amaci</h3>${info}${acao}</div>`;
 }
 
-// Aluno: o percentual nos amacis já realizados e, aberto, cada amaci com a situação; o de hoje dá para confirmar.
+// Aluno: o percentual nos amacis já realizados e, aberto, cada amaci com a situação.
 function cardPresenca(A) {
   const P = A.presenca;
   if (!ehAluno() || !P) return '';
   const feitos = P.amacis.filter((a) => a.data <= P.hoje).reverse();
   const presentes = feitos.filter((a) => a.status === 'p').length;
   const pct = feitos.length ? Math.round((presentes / feitos.length) * 100) : null;
-  const cab = `<button class="grp-h dobra" data-act="ampres" aria-expanded="${ui.pres}"><h2><span aria-hidden="true">✅</span> Presença</h2>
+  const cab = `<button class="grp-h dobra" data-act="ampres" aria-expanded="${ui.pres}"><h2><span aria-hidden="true">📊</span> Minha presença</h2>
     <span class="count">${pct === null ? 'sem amaci ainda' : `${pct}% · ${presentes} de ${feitos.length}`} <span class="seta" aria-hidden="true">${ui.pres ? '▾' : '▸'}</span></span></button>`;
   if (!ui.pres) return `<div class="card am-pres">${cab}</div>`;
   const barra = pct === null ? '' : `<div class="am-pres-barra" role="img" aria-label="${pct}% de presença"><span style="width:${pct}%"></span></div>`;
-  const lista = feitos.length ? `<ul class="am-pres-l">${feitos.map((a) => linhaPresenca(a, P.hoje)).join('')}</ul>` : '<p class="muted" style="margin:0">Nenhum amaci realizado ainda.</p>';
-  return `<div class="card am-pres">${cab}${barra}${lista}
-    <p class="muted am-pres-nota">No dia do amaci, escolha Presente e toque em Confirmar dentro do terreiro: o app confere a localização do celular.</p></div>`;
+  const lista = feitos.length
+    ? `<ul class="am-pres-l">${feitos.map((a) => `<li><span class="am-pres-n"><b>${esc(a.nome)}</b><small class="muted">${a.data === P.hoje ? 'Hoje · ' : ''}${dDM(a.data)}</small></span>${selo(a.status)}</li>`).join('')}</ul>`
+    : '<p class="muted" style="margin:0">Nenhum amaci realizado ainda.</p>';
+  return `<div class="card am-pres">${cab}${barra}${lista}</div>`;
 }
 
-// Root: cada amaci realizado, com os alunos das turmas marcadas no tipo Amaci; marca presença, falta ou nada (ausente).
+// Root: escolhe a turma ao lado do título; cada amaci realizado com os quadradinhos Presentes e Ausentes (falta e sem
+// registro); tocar abre a lista dos alunos da turma (cadastro de alunos), onde o root marca presença, falta ou ausente.
 function cardPresencaAdmin(A) {
   const P = A.presencaAdmin;
-  if (!P || !pode('usuarios:gerenciar')) return '';
-  const cab = `<button class="grp-h dobra am-cfg-h" data-act="ampresadm" aria-expanded="${ui.presAdm}"><h2><span aria-hidden="true">✅</span> Presença nos amacis</h2>
-    <span class="am-turma-x">${ui.presAdm ? '' : `<small>${plural(P.amacis.length, 'amaci realizado', 'amacis realizados')}</small>`}<span class="seta" aria-hidden="true">${ui.presAdm ? '▴' : '▾'}</span></span></button>`;
+  if (!P || !raiz()) return '';
+  const turma = P.turmas.find((t) => t.id === ui.presTurma) || P.turmas[0];
+  const sel = P.turmas.length ? `<select class="am-padm-t" data-act="ampresturma" aria-label="Turma">${P.turmas.map((t) => `<option value="${t.id}"${t.id === turma.id ? ' selected' : ''}>${esc(t.nome)}</option>`).join('')}</select>` : '';
+  const cab = `<div class="am-padm-h"><button class="grp-h dobra am-cfg-h" data-act="ampresadm" aria-expanded="${ui.presAdm}"><h2><span aria-hidden="true">✅</span> Presenças</h2>
+    <span class="am-turma-x"><span class="seta" aria-hidden="true">${ui.presAdm ? '▴' : '▾'}</span></span></button>${sel}</div>`;
   if (!ui.presAdm) return `<div class="card adm am-adm">${cab}</div>`;
-  if (!P.turmas.length) return `<div class="card adm am-adm">${cab}<p class="muted" style="margin:0">Marque as turmas no tipo Amaci (Admin root → Eventos) para os alunos aparecerem aqui.</p></div>`;
+  if (!turma) return `<div class="card adm am-adm">${cab}<p class="muted" style="margin:0">Marque as turmas no tipo Amaci (Admin root → Eventos) para os alunos aparecerem aqui.</p></div>`;
   if (!P.amacis.length) return `<div class="card adm am-adm">${cab}<p class="muted" style="margin:0">Nenhum evento do tipo Amaci realizado ainda.</p></div>`;
+  const alunos = P.alunos.filter((a) => a.turmaId === turma.id);
+  if (!alunos.length) return `<div class="card adm am-adm">${cab}<p class="muted" style="margin:0">Nenhum aluno cadastrado na ${esc(turma.nome)}.</p></div>`;
   const corpo = P.amacis.map((ev) => {
     const m = P.marcas[ev.id] || {};
-    const aberto = ui.presEv.has(ev.id);
-    const pres = P.alunos.filter((a) => m[a.id] === 'p').length;
-    const turmas = !aberto ? '' : P.turmas.map((t) => {
-      const al = P.alunos.filter((a) => a.turmaId === t.id);
-      if (!al.length) return '';
-      return `<div class="am-pres-t"><b>${esc(t.nome)}</b>${al.map((a) => `<label class="am-pres-a"><span>${esc(a.nome)}</span>
-        <select data-act="ampresmarcar" data-ev="${ev.id}" data-aluno="${a.id}" aria-label="Presença de ${esc(a.nome)} em ${esc(ev.nome)}">
-          <option value=""${!m[a.id] ? ' selected' : ''}>Ausente</option><option value="p"${m[a.id] === 'p' ? ' selected' : ''}>Presente</option><option value="f"${m[a.id] === 'f' ? ' selected' : ''}>Falta</option></select></label>`).join('')}</div>`;
-    }).join('');
-    return `<div class="am-turma"><button class="am-turma-h" data-act="ampresev" data-id="${ev.id}" aria-expanded="${aberto}">
-      <b>${esc(ev.nome)}</b><span class="am-turma-x">${dDM(ev.data)} · ${pres}/${P.alunos.length}<span class="seta" aria-hidden="true">${aberto ? '▴' : '▾'}</span></span></button>
-      ${aberto ? `<div class="am-pres-ts">${turmas}</div>` : ''}</div>`;
+    const grupos = { p: alunos.filter((a) => m[a.id] === 'p'), a: alunos.filter((a) => m[a.id] !== 'p') };
+    const quad = (k, rot, cls) => {
+      const ab = ui.presQ === `${ev.id}:${k}`;
+      return `<button type="button" class="pf-of-total ${cls}${ab ? ' selecionado' : ''}" data-act="ampresq" data-q="${ev.id}:${k}" aria-expanded="${ab}" ${grupos[k].length ? '' : 'disabled'}><b>${grupos[k].length}</b><span>${rot}</span></button>`;
+    };
+    const aberto = ui.presQ?.startsWith(ev.id + ':') ? grupos[ui.presQ.slice(-1)] : null;
+    const lista = !aberto ? '' : `<div class="am-pres-t">${aberto.map((a) => `<label class="am-pres-a"><span>${esc(a.nome)}</span>
+      <select data-act="ampresmarcar" data-ev="${ev.id}" data-aluno="${a.id}" aria-label="Presença de ${esc(a.nome)} em ${esc(ev.nome)}">
+        <option value=""${!m[a.id] ? ' selected' : ''}>Ausente</option><option value="p"${m[a.id] === 'p' ? ' selected' : ''}>Presente</option><option value="f"${m[a.id] === 'f' ? ' selected' : ''}>Falta</option></select></label>`).join('')}</div>`;
+    return `<div class="am-padm-ev"><div class="am-padm-ev-h"><b>${esc(ev.nome)}</b><span class="muted">${ev.data === P.hoje ? 'Hoje' : dDM(ev.data)}</span></div>
+      <div class="pf-of-totais am-padm-q">${quad('p', 'Presentes', 'am-q-p')}${quad('a', 'Ausentes', 'am-q-a')}</div>${lista}</div>`;
   }).join('');
   return `<div class="card adm am-adm">${cab}${corpo}</div>`;
 }
@@ -203,12 +223,12 @@ export function render() {
   h += cardPresencaAdmin(A);
   if (!A.orixas.length) {
     const turma = A.turmaNome ? `da ${esc(A.turmaNome)}` : 'da sua turma';
-    return h + cardCabecalho(A, null) + cardPresenca(A) + `<div class="card"><p class="muted" style="margin:0">Nenhum orixá liberado ainda para os alunos ${turma}.</p></div></section>`;
+    return h + cardCabecalho(null) + cardFiltro(A, '') + cardPresenca(A) + `<div class="card"><p class="muted" style="margin:0">Nenhum orixá liberado ainda para os alunos ${turma}.</p></div></section>`;
   }
   const libs = A.orixas.map((o) => o.k);
   const sel = libs.includes(ui.sel) ? ui.sel : ultimoLiberado(libs);
   const o = A.orixas.find((x) => x.k === sel);
-  h += cardCabecalho(A, NOME[sel]) + cardPresenca(A) + cardFiltro(A, sel);
+  h += cardCabecalho(NOME[sel]) + cardFiltro(A, sel) + cardPresenca(A);
   h += blocoOrientacao(o);
   if (o.ervas.length) h += bloco('am-c-erva', '🌿', 'Ervas', lista(o.ervas));
   if (o.velas.length) h += bloco('am-c-vela', '🕯️', 'Velas', lista(o.velas));
@@ -241,7 +261,7 @@ export const cliques = {
   amsel(el) { if (!el.dataset.k) return; ui.sel = el.dataset.k; ui.editando = null; avisar(); },
   ampres() { ui.pres = !ui.pres; avisar(); },
   ampresadm() { ui.presAdm = !ui.presAdm; avisar(); },
-  ampresev(el) { const id = el.dataset.id; if (ui.presEv.has(id)) ui.presEv.delete(id); else ui.presEv.add(id); avisar(); },
+  ampresq(el) { ui.presQ = ui.presQ === el.dataset.q ? null : el.dataset.q; avisar(); },
   async amconfirmar(el) {
     const id = el.dataset.id;
     if ((ui.escolha[id] || 'a') !== 'p') { toast('Escolha Presente para confirmar.'); return; }
@@ -286,6 +306,7 @@ export const cliques = {
 export const mudancas = {
   amescolher(t) { ui.sel = t.value; ui.editando = null; avisar(); },
   amescolha(t) { ui.escolha[t.dataset.id] = t.value; },
+  ampresturma(t) { ui.presTurma = t.value; ui.presQ = null; avisar(); },
   async ampresmarcar(t) {
     if (await acaoAmaci('presenca', { eventoId: t.dataset.ev, alunoId: t.dataset.aluno, status: t.value })) toast('Presença salva.');
   },
