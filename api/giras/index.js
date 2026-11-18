@@ -1,7 +1,8 @@
 // GET  /api/giras — todas as giras (com presença e duplas), da mais recente para a mais antiga.
 //      O frontend usa a lista para o histórico, os selos de rodízio e a tabela "quem já cambonou quem".
 // GET  /api/giras?lista=eventos — eventos da casa (a corrente vê todos; alunos, gira, evento e os tipos da sua turma; curimba, sem avisos)
-// POST /api/giras  { acao: 'evento', id?, data: 'AAAA-MM-DD', nome, tipo: chave do tipo } · { acao: 'excluirEvento', id }  → eventos (só o admin root)
+// POST /api/giras  { acao: 'evento', id?, data: 'AAAA-MM-DD', nome, tipo: chave do tipo, retroativo? } · { acao: 'excluirEvento', id }  → eventos (só o admin root)
+//                  retroativo (só ao criar, data até hoje): amaci que já passou cadastrado na aba Amaci — o aluno marca a presença sem localização
 // GET  /api/giras?lista=eventosTipos — tipos de evento (só o root)  → { tipos: [{ chave, nome, turmas }], turmas: [{ id, nome }], eventos }
 // POST /api/giras  { acao: 'eventoTipo', chave?, nome, turmas: [id..] } (só o root; sem chave cria)  → o mesmo de ?lista=eventosTipos
 //                  { acao: 'excluirEventoTipo', chave } (só o root; não os quatro de sempre, nem tipo com eventos)  → idem
@@ -25,7 +26,7 @@
 // POST /api/giras  { acao: 'fotoAlbum', id?, data, nome }  → { ...fotos, albumId } (com id = editar: só admin)
 //                  { acao: 'fotoEnviar', albumId, foto, miniatura (JPEG em base64), largura, altura }  → { ok }
 //                  { acao: 'fotoExcluir', id } (a própria foto, ou qualquer uma para admin) · { acao: 'fotoExcluirAlbum', id } (admin)  → fotos
-import { rota, corpo, validarData, validarId, HttpError } from '../_lib/http.js';
+import { rota, corpo, validarData, validarId, HttpError, hojeBR } from '../_lib/http.js';
 import { exigir } from '../_lib/sessao.js';
 import { db } from '../_lib/db.js';
 import { ocultarSorteios } from '../_lib/escala.js';
@@ -157,6 +158,10 @@ export default rota({
     const nome = String(b.nome ?? '').replace(/\s+/g, ' ').trim();
     if (!nome || nome.length > 120) throw new HttpError(400, 'Informe o nome do evento (até 120 letras).');
     if (!/^[a-z0-9]{1,20}$/.test(String(b.tipo ?? ''))) throw new HttpError(400, 'Escolha o tipo do evento.');
-    return db.rpc('evento_salvar', { id: b.id ? validarId(b.id, 'Evento') : '', data: validarData(String(b.data || '')), nome, tipo: b.tipo });
+    const data = validarData(String(b.data || ''));
+    // retroativo: amaci que já passou cadastrado na aba Amaci (só ao criar; nele o aluno marca a presença sem localização).
+    const retroativo = !b.id && b.retroativo === true;
+    if (retroativo && data > hojeBR()) throw new HttpError(400, 'Amaci que já passou: a data não pode ser futura.');
+    return db.rpc('evento_salvar', { id: b.id ? validarId(b.id, 'Evento') : '', data, nome, tipo: b.tipo, retroativo });
   },
 });

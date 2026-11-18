@@ -1926,12 +1926,23 @@ section.panel.gi-tela{gap:12px}
 .am-pres-area{display:grid;gap:10px}
 .am-filtro-l + .am-pres-area{padding-top:12px;border-top:1px solid var(--line)}
 .am-pres-area h3{margin:0;font-size:1.05rem}
+.am-pres-lista{display:grid;gap:8px}
+.am-pres-dia .am-pres-nota{flex:1 1 100%}
 .am-pres-area .am-cab-info{padding:0;border:0}
 .am-pres-dia{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--bg)}
 .am-padm-h{display:flex;align-items:center;gap:8px}
 .am-padm-h .grp-h{flex:1 1 auto;min-width:0}
-.am-padm-h h2{white-space:nowrap}
+.am-padm-h h3{white-space:nowrap}
 .am-padm-t{width:auto;max-width:45%;flex:none}
+.am-adm-sec{display:grid;gap:10px;padding-top:10px;border-top:1px solid var(--line)}
+.am-adm-sec h3{display:flex;align-items:center;gap:8px;margin:0;font-size:1.02rem}
+.am-geo-t{display:grid;gap:6px;justify-items:start}
+.am-geo{margin:0;font-size:.88rem;font-weight:600}
+.am-geo.ok{color:var(--ok)}
+.am-geo.fora{color:var(--orange)}
+.am-novo-bt{justify-self:start}
+.am-novo{display:grid;gap:8px;padding:10px;border:1px dashed var(--line);border-radius:10px;background:var(--bg)}
+.am-novo-l{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px}
 .am-padm-lista{display:flex;flex-direction:column;gap:4px;max-height:340px;overflow-y:auto;overscroll-behavior:contain;padding-right:2px}
 .am-padm-lista > .am-turma{flex:none}
 .am-padm-lista .am-turma-h{min-height:40px;padding:6px 10px}

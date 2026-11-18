@@ -5,10 +5,10 @@
 // está logado, a turma, hoje e o amaci do dia (pelos eventos do tipo Amaci), com a presença: o aluno confirma no dia,
 // no terreiro (localização do celular). O admin root marca presença ou falta por turma no bloco Presença nos amacis.
 
-import { estado, pode, visaoAtiva, carregarAmaci, acaoAmaci, confirmarPresencaAmaci, avisar } from '../estado.js';
+import { estado, pode, visaoAtiva, carregarAmaci, acaoAmaci, confirmarPresencaAmaci, carregarEventosTipos, acaoEventos, avisar } from '../estado.js';
 import { esc, toast, hoje, dLong, dDM } from '../util.js';
 import { emDemo } from '../auth.js';
-import { ORIXAS, ordenarOrixas, ultimoLiberado, ORIENTACAO_LINHAS, ORIENTACAO_LETRAS, ORIENTACAO_VISIVEIS, TERREIRO, noTerreiro } from '/shared/amaci.js';
+import { ORIXAS, ordenarOrixas, ultimoLiberado, ORIENTACAO_LINHAS, ORIENTACAO_LETRAS, ORIENTACAO_VISIVEIS, TERREIRO, RAIO_TERREIRO_M, noTerreiro, distanciaM } from '/shared/amaci.js';
 
 const NOME = Object.fromEntries(ORIXAS.map((o) => [o.k, o]));
 
@@ -25,6 +25,9 @@ const ui = {
   presTurma: '',        // turma escolhida no bloco do root ('' = a primeira)
   presEv: null,         // amaci aberto no bloco do root (um por vez; todos começam minimizados)
   presQ: null,          // quadradinho aberto no bloco do root: 'eventoId:p' (presentes) ou 'eventoId:a' (ausentes)
+  novo: false,          // formulário "Cadastrar amaci que já passou" aberto (bloco do root)
+  adm: false,           // bloco ⚙️ Admin (Configuração + Presenças) aberto (começa minimizado)
+  geo: null,            // teste de localização do root: { pegando } ou { ok, dist, prec } ou { erro }
 };
 export function limpar() {
   ui.sel = '';
@@ -37,6 +40,9 @@ export function limpar() {
   ui.presTurma = '';
   ui.presEv = null;
   ui.presQ = null;
+  ui.novo = false;
+  ui.adm = false;
+  ui.geo = null;
 }
 
 const admin = () => pode('amaci:editar') && !!estado.amaci?.admin;
@@ -62,13 +68,24 @@ function cardAdmin(A) {
   }).join('') : '<p class="muted" style="margin:0">Nenhuma turma de alunos cadastrada (aba Pessoas → Alunos).</p>';
   const lib = turmas.filter((t) => t.orixas.length).length;
   const resumo = `${A.publicada ? 'Visível para todos' : 'Escondida'} · ${lib} de ${turmas.length} ${turmas.length === 1 ? 'turma' : 'turmas'} com orixás`;
-  const topo = `<button class="grp-h dobra am-cfg-h" data-act="amconfig" aria-expanded="${ui.config}"><h2><span aria-hidden="true">⚙️</span> Configuração</h2><span class="am-turma-x">${ui.config ? '' : `<small>${resumo}</small>`}<span class="seta" aria-hidden="true">${ui.config ? '▴' : '▾'}</span></span></button>`;
-  if (!ui.config) return `<div class="card adm am-adm">${topo}</div>`;
-  return `<div class="card adm am-adm">${topo}
+  const topo = `<button class="grp-h dobra am-cfg-h" data-act="amconfig" aria-expanded="${ui.config}"><h3><span aria-hidden="true">🌿</span> Orixás e visibilidade</h3><span class="am-turma-x">${ui.config ? '' : `<small>${resumo}</small>`}<span class="seta" aria-hidden="true">${ui.config ? '▴' : '▾'}</span></span></button>`;
+  if (!ui.config) return `<div class="am-adm-sec">${topo}</div>`;
+  return `<div class="am-adm-sec">${topo}
     <label class="of-sw"><input type="checkbox" role="switch" data-act="ampub" ${A.publicada ? 'checked' : ''}><span class="of-sw-t" aria-hidden="true"></span><b>Visível para todos</b></label>
     <div class="am-adm-t"><h3>Orixás liberados por turma</h3><span class="muted">Cada turma só vê os orixás marcados.</span></div>
     ${corpo}
   </div>`;
+}
+
+// Um bloco ADMIN só, minimizado: a configuração (quem administra a aba) e as presenças (só o root), cada uma dobrável.
+function cardAdminAmaci(A) {
+  const cfg = admin() ? cardAdmin(A) : '';
+  const pres = cardPresencaAdmin(A);
+  if (!cfg && !pres) return '';
+  const resumo = `${A.publicada ? 'Visível para todos' : 'Escondida'}${pres ? ` · ${plural(A.presencaAdmin.amacis.length, 'amaci realizado', 'amacis realizados')}` : ''}`;
+  const cab = `<button class="grp-h dobra am-cfg-h" data-act="amadm" aria-expanded="${ui.adm}"><h2><span aria-hidden="true">⚙️</span> Configuração</h2>
+    <span class="am-turma-x">${ui.adm ? '' : `<small>${resumo}</small>`}<span class="seta" aria-hidden="true">${ui.adm ? '▴' : '▾'}</span></span></button>`;
+  return `<div class="card adm am-adm">${cab}${ui.adm ? cfg + pres : ''}</div>`;
 }
 
 // ---------- pessoa ----------
@@ -92,7 +109,7 @@ function cardFiltro(A, sel) {
     <select id="am-orixa" data-act="amescolher" aria-label="Escolher orixá">${A.orixas.map((o) => `<option value="${o.k}"${o.k === sel ? ' selected' : ''}>${esc(NOME[o.k].curto)}</option>`).join('')}</select>
     <button class="btn small pp-ico" data-act="amsel" data-k="${libs[i + 1] || ''}" aria-label="Próximo orixá"${i >= libs.length - 1 ? ' disabled' : ''}>›</button>
     <span class="muted am-filtro-n">${libs.length} de ${ORIXAS.length}</span></div>`;
-  const pres = vePresenca() ? areaPresenca(A) : '';
+  const pres = vePresenca() ? areaPresenca(A, sel) : '';
   if (!filtro && !pres) return '';
   return `<div class="card am-filtro">${filtro}${pres}</div>`;
 }
@@ -100,35 +117,76 @@ function cardFiltro(A, sel) {
 const SITUACAO = { p: ['Presente', 'pleno'], f: ['Falta', 're'] };
 const selo = (st) => { const [t, c] = SITUACAO[st] || ['Ausente', '']; return `<span class="badge ${c}">${t}</span>`; };
 
-// Presença do dia: aluno com amaci hoje escolhe Ausente (padrão) / Presente e confirma; o root vê a mesma área, travada.
-function areaPresenca(A) {
+// Amacis do orixá escolhido no filtro: o nome do evento tem o nome do orixá ("Amaci de Oxalá"), sem diferença de acento.
+const semAcento = (t) => String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+const APELIDOS = { obaluaye: ['obaluae', 'obaluaie'], loguna: ['logunan'] };
+const doOrixa = (a, k) => !k || [semAcento(NOME[k].curto), k, ...(APELIDOS[k] || [])].some((x) => semAcento(a.nome).includes(x));
+// Hoje primeiro, depois os próximos (o mais perto antes) e os que já passaram (o mais recente antes).
+const ordemAmacis = (l, hojeData) => [...l].sort((a, b) => {
+  const g = (x) => (x.data === hojeData ? 0 : x.data > hojeData ? 1 : 2);
+  return g(a) - g(b) || (g(a) === 1 ? a.data.localeCompare(b.data) : b.data.localeCompare(a.data));
+});
+
+// Um amaci na área do aluno: o status dele (Presente, Falta, Ausente) e, quando ele pode marcar, a escolha e Confirmar:
+// hoje (no terreiro) ou o que já passou e foi cadastrado pelo root na aba Amaci (de qualquer lugar).
+function linhaAmaci(a, hojeData, aluno) {
+  const quando = a.data === hojeData ? 'Hoje' : dDM(a.data);
+  const nome = `<span class="am-pres-n"><b>${esc(a.nome)}</b><small class="muted">${quando}</small></span>`;
+  if (!aluno) return `<div class="am-pres-dia">${nome}</div>`;
+  if (a.data > hojeData) return `<div class="am-pres-dia">${nome}<span class="badge">Em breve</span></div>`;
+  const marca = a.status !== 'p' && (a.data === hojeData || a.retroativo);
+  if (!marca) return `<div class="am-pres-dia">${nome}${selo(a.status)}</div>`;
+  const e = ui.escolha[a.id] || 'a';
+  const nota = a.data === hojeData ? 'Confirme dentro do terreiro: o app confere a localização do celular.'
+    : 'Amaci cadastrado depois pela administração: você pode marcar a sua presença daqui.';
+  return `<div class="am-pres-dia am-pres-hoje">${nome}${selo(a.status)}
+    <div class="am-pres-acao">
+      <select data-act="amescolha" data-id="${a.id}" aria-label="Sua presença em ${esc(a.nome)}"><option value="a"${e === 'a' ? ' selected' : ''}>Ausente</option><option value="p"${e === 'p' ? ' selected' : ''}>Presente</option></select>
+      <button class="btn primary small" data-act="amconfirmar" data-id="${a.id}"${ui.confirmando ? ' disabled' : ''}>${ui.confirmando ? 'Conferindo…' : 'Confirmar'}</button>
+    </div><small class="muted am-pres-nota">${nota}</small></div>`;
+}
+
+// Presença do aluno no orixá escolhido: cada amaci da turma com o nome do orixá, com o status; o de hoje (de qualquer
+// orixá) aparece sempre, para confirmar. O root vê a mesma área, sem status, com o teste de localização.
+function areaPresenca(A, sel) {
   const aluno = ehAluno();
   const P = aluno ? A.presenca : A.presencaAdmin;
   const hojeData = P?.hoje || hoje();
   const amacis = P?.amacis || [];
   const doDia = amacis.find((a) => a.data === hojeData);
+  const lista = amacis.filter((a) => doOrixa(a, sel));
+  if (doDia && !lista.includes(doDia)) lista.push(doDia);
   const prox = aluno ? amacis.find((a) => a.data > hojeData) : null;
   const info = `<ul class="am-cab-info">
     <li><span aria-hidden="true">👤</span><span>${esc(estado.me?.nome || '')}</span></li>
     <li><span aria-hidden="true">🎓</span><span>${aluno ? (A.turmaNome ? esc(A.turmaNome) : 'Sem turma') : 'Admin root'}</span></li>
     <li><span aria-hidden="true">📅</span><span>${esc(dLong(hojeData))}</span></li></ul>`;
-  let acao;
-  if (!doDia) {
-    acao = `<p class="muted am-pres-nota">${prox ? `Sem amaci hoje. Próximo amaci: <b>${dDM(prox.data)}</b> · ${esc(prox.nome)}.` : 'Sem amaci hoje.'}</p>`;
-  } else if (aluno && doDia.status === 'p') {
-    acao = `<div class="am-pres-dia"><span class="am-pres-n"><b>${esc(doDia.nome)}</b><small class="muted">Hoje</small></span>${selo('p')}</div>`;
-  } else {
-    const e = ui.escolha[doDia.id] || 'a';
-    const travado = !aluno ? ' disabled' : '';
-    acao = `<div class="am-pres-dia am-pres-hoje"><span class="am-pres-n"><b>${esc(doDia.nome)}</b><small class="muted">Hoje</small></span>
-      <div class="am-pres-acao">
-        <select data-act="amescolha" data-id="${doDia.id}" aria-label="Sua presença em ${esc(doDia.nome)}"${travado}><option value="a"${e === 'a' ? ' selected' : ''}>Ausente</option><option value="p"${e === 'p' ? ' selected' : ''}>Presente</option></select>
-        <button class="btn primary small" data-act="amconfirmar" data-id="${doDia.id}"${ui.confirmando || !aluno ? ' disabled' : ''}>${ui.confirmando ? 'Conferindo…' : 'Confirmar'}</button>
-      </div></div>
-      <p class="muted am-pres-nota">${aluno ? 'Confirme dentro do terreiro: o app confere a localização do celular.' : 'Assim o aluno vê. Só ele confirma, no terreiro; para marcar por ele, use Presença nos amacis.'}</p>`;
-  }
-  return `<div class="am-pres-area"><h3><span aria-hidden="true">✅</span> Presença no amaci</h3>${info}${acao}</div>`;
+  const orixa = sel ? NOME[sel].curto : '';
+  let acao = lista.length
+    ? `<div class="am-pres-lista">${ordemAmacis(lista, hojeData).map((a) => linhaAmaci(a, hojeData, aluno)).join('')}</div>`
+    : `<p class="muted am-pres-nota">Nenhum amaci${orixa ? ` de ${esc(orixa)}` : ''} cadastrado${aluno ? ' para a sua turma' : ''}.</p>`;
+  if (!doDia && prox && !lista.includes(prox)) acao += `<p class="muted am-pres-nota">Sem amaci hoje. Próximo amaci: <b>${dDM(prox.data)}</b> · ${esc(prox.nome)}.</p>`;
+  if (!aluno) acao += '<p class="muted am-pres-nota">Assim o aluno vê. Ele confirma o de hoje no terreiro; para marcar por ele, use Presenças na Configuração.</p>';
+  if (!aluno) acao += testeLocalizacao();
+  // Ícone: ✅ presença de hoje confirmada, 🕒 amaci hoje ainda sem confirmar, 📋 sem amaci hoje (ou o root olhando).
+  const icone = aluno && doDia?.status === 'p' ? '✅' : aluno && doDia ? '🕒' : '📋';
+  return `<div class="am-pres-area"><h3><span aria-hidden="true">${icone}</span> Presença${orixa ? ` · Amaci de ${esc(orixa)}` : ' no amaci'}</h3>${info}${acao}</div>`;
 }
+
+// Root: confere se o celular está pegando a localização e se, daqui, o aluno conseguiria confirmar (dentro do terreiro).
+function testeLocalizacao() {
+  const G = ui.geo;
+  const res = !G || G.pegando ? ''
+    : G.erro ? `<p class="erro am-pres-nota">${esc(G.erro)}</p>`
+    : `<p class="am-geo ${G.ok ? 'ok' : 'fora'}">${G.ok ? '✅ Localização ok: dentro do terreiro' : '📍 Fora do terreiro'} · ${G.dist < 1000 ? `${G.dist} m` : `${(G.dist / 1000).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} km`} do terreiro (limite ${RAIO_TERREIRO_M} m)${G.prec ? ` · precisão ±${G.prec} m` : ''}</p>`;
+  return `<div class="am-geo-t"><button class="btn small" data-act="amtestargeo"${G?.pegando ? ' disabled' : ''}>${G?.pegando ? 'Pegando a localização…' : '📍 Testar localização'}</button>${res}</div>`;
+}
+
+const pegarLocalizacao = () => new Promise((ok, erro) => {
+  if (!navigator.geolocation) { erro({ code: 0 }); return; }
+  navigator.geolocation.getCurrentPosition(ok, erro, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 });
+});
+const msgGeo = (e) => (e?.code === 1 ? 'Permita a localização para o app no navegador.' : e?.code === 0 ? 'Este aparelho não informa a localização.' : 'Não deu para pegar a localização. Tente de novo.');
 
 // Aluno: o percentual nos amacis já realizados e, aberto, cada amaci com a situação.
 function cardPresenca(A) {
@@ -154,14 +212,15 @@ function cardPresencaAdmin(A) {
   if (!P || !raiz()) return '';
   const turma = P.turmas.find((t) => t.id === ui.presTurma) || P.turmas[0];
   const sel = P.turmas.length ? `<select class="am-padm-t" data-act="ampresturma" aria-label="Turma">${P.turmas.map((t) => `<option value="${t.id}"${t.id === turma.id ? ' selected' : ''}>${esc(t.nome)}</option>`).join('')}</select>` : '';
-  const cab = `<div class="am-padm-h"><button class="grp-h dobra am-cfg-h" data-act="ampresadm" aria-expanded="${ui.presAdm}"><h2><span aria-hidden="true">✅</span> Presenças</h2>
+  const cab = `<div class="am-padm-h"><button class="grp-h dobra am-cfg-h" data-act="ampresadm" aria-expanded="${ui.presAdm}"><h3><span aria-hidden="true">📋</span> Presenças</h3>
     <span class="am-turma-x"><span class="seta" aria-hidden="true">${ui.presAdm ? '▴' : '▾'}</span></span></button>${sel}</div>`;
-  if (!ui.presAdm) return `<div class="card adm am-adm">${cab}</div>`;
-  if (!turma) return `<div class="card adm am-adm">${cab}<p class="muted" style="margin:0">Cadastre um tipo de evento com Amaci no nome (ex.: T09 - Amaci), marque a turma nele (Admin root → Eventos) e os alunos aparecem aqui.</p></div>`;
+  if (!ui.presAdm) return `<div class="am-adm-sec">${cab}</div>`;
+  if (!turma) return `<div class="am-adm-sec">${cab}<p class="muted" style="margin:0">Cadastre um tipo de evento com Amaci no nome (ex.: T09 - Amaci), marque a turma nele (Admin root → Eventos) e os alunos aparecem aqui.</p></div>`;
   const amacis = P.amacis.filter((ev) => !ev.turmas || ev.turmas.includes(turma.id));
-  if (!amacis.length) return `<div class="card adm am-adm">${cab}<p class="muted" style="margin:0">Nenhum amaci da ${esc(turma.nome)} realizado ainda.</p></div>`;
+  const novo = blocoNovoAmaci(turma);
+  if (!amacis.length) return `<div class="am-adm-sec">${cab}${novo}<p class="muted" style="margin:0">Nenhum amaci da ${esc(turma.nome)} realizado ainda.</p></div>`;
   const alunos = P.alunos.filter((a) => a.turmaId === turma.id);
-  if (!alunos.length) return `<div class="card adm am-adm">${cab}<p class="muted" style="margin:0">Nenhum aluno cadastrado na ${esc(turma.nome)}.</p></div>`;
+  if (!alunos.length) return `<div class="am-adm-sec">${cab}<p class="muted" style="margin:0">Nenhum aluno cadastrado na ${esc(turma.nome)}.</p></div>`;
   const corpo = amacis.map((ev) => {
     const m = P.marcas[ev.id] || {};
     const grupos = { p: alunos.filter((a) => m[a.id] === 'p'), a: alunos.filter((a) => m[a.id] !== 'p') };
@@ -182,7 +241,62 @@ function cardPresencaAdmin(A) {
     return `<div class="am-turma">${linha}<div class="am-padm-ev">
       <div class="pf-of-totais am-padm-q">${quad('p', 'Presentes', 'am-q-p')}${quad('a', 'Ausentes', 'am-q-a')}</div>${lista}</div></div>`;
   }).join('');
-  return `<div class="card adm am-adm">${cab}<p class="muted am-pres-nota">${esc(turma.nome)} · ${plural(alunos.length, 'aluno', 'alunos')} · ${plural(amacis.length, 'amaci', 'amacis')}</p><div class="am-padm-lista">${corpo}</div></div>`;
+  return `<div class="am-adm-sec">${cab}${novo}<p class="muted am-pres-nota">${esc(turma.nome)} · ${plural(alunos.length, 'aluno', 'alunos')} · ${plural(amacis.length, 'amaci', 'amacis')}</p><div class="am-padm-lista">${corpo}</div></div>`;
+}
+
+// Tipos de evento de amaci (com "Amaci" no nome) em que a turma está marcada: é neles que o amaci da turma é cadastrado.
+const tiposAmaciDa = (turmaId) => (estado.eventosTipos?.tipos || [])
+  .filter((t) => (t.chave === 'amaci' || /amaci/i.test(t.nome)) && (t.turmas || []).includes(turmaId));
+
+// Root: cadastra aqui um amaci que já aconteceu (data digitada, sem calendário), no tipo de amaci da turma escolhida;
+// depois marca a presença na lista.
+function blocoNovoAmaci(turma) {
+  if (!ui.novo) return `<button class="btn small am-novo-bt" data-act="amnovo">＋ Cadastrar amaci que já passou</button>`;
+  if (estado.eventosTipos === null) { carregarEventosTipos(); return '<p class="muted am-pres-nota">Carregando os tipos de evento…</p>'; }
+  const tipos = tiposAmaciDa(turma.id);
+  if (!tipos.length) {
+    return `<div class="am-novo"><p class="muted am-pres-nota">A ${esc(turma.nome)} não está marcada em nenhum tipo de amaci. Crie o tipo (ex.: <b>${esc(turma.nome)} - Amaci</b>) em Admin root → Eventos e marque a turma nele.</p>
+      <button class="btn small" data-act="amnovocancel">Fechar</button></div>`;
+  }
+  return `<form id="f-amaci-novo" class="am-novo" autocomplete="off">
+    <b>Amaci que já passou · ${esc(turma.nome)}</b>
+    <div class="am-novo-l">
+      <label class="field">Data<input type="text" name="data" inputmode="numeric" maxlength="10" placeholder="31/10/2026" required></label>
+      ${tipos.length > 1 ? `<label class="field">Tipo<select name="tipo">${tipos.map((t) => `<option value="${esc(t.chave)}">${esc(t.nome)}</option>`).join('')}</select></label>` : `<input type="hidden" name="tipo" value="${esc(tipos[0].chave)}">`}
+    </div>
+    <label class="field">Nome<input type="text" name="nome" maxlength="120" placeholder="Ex.: Amaci de Oxalá" required></label>
+    <div class="row" style="justify-content:flex-end;gap:8px"><button type="button" class="btn small" data-act="amnovocancel">Cancelar</button><button class="btn small primary" type="submit">Cadastrar</button></div>
+  </form>`;
+}
+
+// "31/10/2026", "31/10/26" ou "31/10" (sem o ano: a data mais recente que já passou) → 'AAAA-MM-DD', ou null.
+function dataPassada(txt, hojeData) {
+  const m = String(txt || '').trim().match(/^(\d{1,2})\s*[/.-]\s*(\d{1,2})(?:\s*[/.-]\s*(\d{2}|\d{4}))?$/);
+  if (!m) return null;
+  const d = Number(m[1]), mes = Number(m[2]);
+  const montar = (a) => {
+    const x = new Date(Date.UTC(a, mes - 1, d));
+    return x.getUTCFullYear() === a && x.getUTCMonth() === mes - 1 && x.getUTCDate() === d ? x.toISOString().slice(0, 10) : null;
+  };
+  const ano = Number(hojeData.slice(0, 4));
+  if (m[3]) return montar(Number(m[3].length === 2 ? '20' + m[3] : m[3]));
+  const este = montar(ano);
+  return este && este <= hojeData ? este : montar(ano - 1);
+}
+
+export async function enviarNovoAmaci(form) {
+  const hojeData = estado.amaci?.presencaAdmin?.hoje || hoje();
+  const data = dataPassada(form.elements.data.value, hojeData);
+  const nome = form.elements.nome.value.replace(/\s+/g, ' ').trim();
+  if (!data) { toast('Data inválida. Use o formato 31/10/2026.'); form.elements.data.focus(); return; }
+  if (data > hojeData) { toast('Aqui é só para amaci que já passou. Amaci futuro: Admin root → Eventos.'); form.elements.data.focus(); return; }
+  if (!nome) { toast('Digite o nome do amaci.'); form.elements.nome.focus(); return; }
+  if (await acaoEventos('evento', { data, nome, tipo: form.elements.tipo.value, retroativo: true })) {
+    ui.novo = false;
+    estado.amaci = null;   // busca de novo: o amaci novo entra na lista para marcar a presença
+    toast(`Amaci cadastrado em ${data.slice(8, 10)}/${data.slice(5, 7)}/${data.slice(0, 4)}. Agora é só marcar a presença.`);
+    avisar();
+  }
 }
 
 // Bloco de conteúdo: ícone na frente do título e o texto da apostila. Sem conteúdo, o bloco não aparece.
@@ -228,8 +342,7 @@ export function render() {
   const A = estado.amaci;
   if (A.erro) return `<div class="card"><p class="erro">${esc(A.erro)}</p><button class="btn" data-act="amrecarregar">Tentar de novo</button></div>`;
   let h = '<section class="panel am-tela">';
-  if (admin()) h += cardAdmin(A);
-  h += cardPresencaAdmin(A);
+  h += cardAdminAmaci(A);
   if (!A.orixas.length) {
     const turma = A.turmaNome ? `da ${esc(A.turmaNome)}` : 'da sua turma';
     return h + cardCabecalho(null) + cardFiltro(A, '') + cardPresenca(A) + `<div class="card"><p class="muted" style="margin:0">Nenhum orixá liberado ainda para os alunos ${turma}.</p></div></section>`;
@@ -270,15 +383,40 @@ export const cliques = {
   amsel(el) { if (!el.dataset.k) return; ui.sel = el.dataset.k; ui.editando = null; avisar(); },
   ampres() { ui.pres = !ui.pres; avisar(); },
   ampresadm() { ui.presAdm = !ui.presAdm; avisar(); },
+  amnovo() { ui.novo = true; avisar(); },
+  amadm() { ui.adm = !ui.adm; avisar(); },
+  async amtestargeo() {
+    ui.geo = { pegando: true };
+    avisar();
+    try {
+      const pos = await pegarLocalizacao();
+      const { latitude: lat, longitude: lon, accuracy } = pos.coords;
+      const ok = noTerreiro(lat, lon);
+      ui.geo = { ok, dist: Math.round(distanciaM(TERREIRO, { lat, lon })), prec: Math.round(accuracy || 0) };
+      toast(ok ? 'Localização ok: dentro do terreiro.' : 'Fora do terreiro.');
+    } catch (e) {
+      ui.geo = { erro: msgGeo(e) };
+      toast(ui.geo.erro);
+    }
+    avisar();
+  },
+  amnovocancel() { ui.novo = false; avisar(); },
   ampresq(el) { ui.presQ = ui.presQ === el.dataset.q ? null : el.dataset.q; avisar(); },
   ampresev(el) { ui.presEv = ui.presEv === el.dataset.id ? null : el.dataset.id; ui.presQ = null; avisar(); },
   async amconfirmar(el) {
     const id = el.dataset.id;
     if ((ui.escolha[id] || 'a') !== 'p') { toast('Escolha Presente para confirmar.'); return; }
+    const P = estado.amaci?.presenca;
+    const a = P?.amacis.find((x) => x.id === id);
     ui.confirmando = true;
     avisar();
     try {
       let lat, lon;
+      if (a && a.data < P.hoje) {
+        // Amaci que já passou, cadastrado pelo root: sem localização.
+        if (await confirmarPresencaAmaci(id)) { delete ui.escolha[id]; toast('Presença registrada.'); }
+        return;
+      }
       if (emDemo()) {
         ({ lat, lon } = TERREIRO);
         toast('Demonstração: localização simulada no terreiro.');

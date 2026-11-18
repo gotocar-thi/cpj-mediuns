@@ -1928,7 +1928,14 @@ test('amaci: presença do aluno no dia e no terreiro; o root marca presença ou 
   const t09Amaci = tipos.find((t) => t.nome === 'Teste T09 - Amaci').chave;
   await api('POST', '/api/giras', ADMIN, { acao: 'evento', data: hoje, nome: 'Amaci da T09', tipo: t09Amaci });
   const daT09 = (await evs()).find((e) => e.nome === 'Amaci da T09');
-  assert.deepEqual((await am(aluno)).presenca.amacis.map((a) => a.nome), ['Amaci da T09']);
+  // Amaci que já passou cadastrado pelo root na aba Amaci (retroativo): o aluno marca sem localização; data futura recusa.
+  assert.equal((await api('POST', '/api/giras', ADMIN, { acao: 'evento', data: '2099-01-01', nome: 'Retro futuro', tipo: t09Amaci, retroativo: true })).status, 400);
+  await api('POST', '/api/giras', ADMIN, { acao: 'evento', data: '2021-03-06', nome: 'Amaci retroativo', tipo: t09Amaci, retroativo: true });
+  const retro = (await evs()).find((e) => e.nome === 'Amaci retroativo');
+  assert.equal((await am(aluno)).presenca.amacis.find((a) => a.id === retro.id).retroativo, true);
+  assert.equal((await confirmar({ eventoId: retro.id })).json.presenca.amacis.find((a) => a.id === retro.id).status, 'p', 'sem localização');
+  await api('POST', '/api/giras', ADMIN, { acao: 'excluirEvento', id: retro.id });
+  assert.deepEqual((await am(aluno)).presenca.amacis.map((a) => a.nome).filter((n) => n === 'Amaci da T09'), ['Amaci da T09']);
   assert.equal((await confirmar({ eventoId: daT09.id, ...NO_TERREIRO })).json.presenca.pct, 100);
   await api('POST', '/api/giras', ADMIN, { acao: 'excluirEvento', id: daT09.id });
   await api('POST', '/api/giras', ADMIN, { acao: 'excluirEventoTipo', chave: t09Amaci });

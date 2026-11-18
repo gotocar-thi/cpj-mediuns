@@ -9,7 +9,7 @@
 // Estrutura: veja db/ESTRUTURA-ESQUEMA.md para o mapa de versões, domínios e
 // quais migrações foram testadas no Postgres.
 
-export const VERSAO = 136;  // v136: amaci = tipo de evento com "Amaci" no nome (T09 - Amaci…); Amaci só com as turmas que têm a aba
+export const VERSAO = 137;  // v137: amaci que já passou cadastrado pelo root (retroativo): o aluno marca a presença sem localização
 
 import { PERFIS_PADRAO } from '../shared/permissoes.js';
 
@@ -4649,19 +4649,6 @@ export const MIGRACOES = [
          or e.tipo in ('gira', 'evento')
          or nullif(p ->> 'turmaId', '')::uuid = any(t.turmas)
    $$`,
-  `create or replace function evento_salvar(p jsonb)
-   returns jsonb language plpgsql as $$
-   begin
-     if not exists (select 1 from eventos_tipos where chave = p ->> 'tipo') then raise exception 'Escolha o tipo do evento.'; end if;
-     if coalesce(p ->> 'id', '') = '' then
-       insert into eventos (data, nome, tipo) values ((p ->> 'data')::date, btrim(p ->> 'nome'), p ->> 'tipo');
-     else
-       update eventos set data = (p ->> 'data')::date, nome = btrim(p ->> 'nome'), tipo = p ->> 'tipo' where id = (p ->> 'id')::uuid;
-       if not found then raise exception 'Evento não encontrado.'; end if;
-     end if;
-     return eventos_listar();
-   end;
-   $$`,
   // Para o root: os tipos (os quatro de sempre primeiro), as turmas de alunos e os eventos (o selo muda ao renomear).
   `create or replace function eventos_tipos_estado(p jsonb default '{}'::jsonb)
    returns jsonb language sql stable as $$
@@ -5991,18 +5978,6 @@ export const MIGRACOES = [
   // ================================================== v136: tipos de evento por turma (T09 - Amaci…) e turmas com acesso à aba
   // É amaci todo evento cujo tipo tem "Amaci" no nome (o tipo fixo Amaci e os criados por turma, como "T09 - Amaci");
   // as turmas de cada amaci são as marcadas no tipo do evento.
-  // p = { alunoId? } — os amacis (cada um com as turmas do tipo) e as presenças (de um aluno, ou de todos).
-  `create or replace function amaci_presencas_dados(p jsonb default '{}'::jsonb)
-   returns jsonb language sql stable as $$
-     select jsonb_build_object(
-       'eventos', coalesce((select jsonb_agg(jsonb_build_object('id', e.id, 'data', e.data, 'nome', e.nome, 'tipoNome', t.nome, 'turmas', to_jsonb(t.turmas))
-                                             order by e.data, lower(e.nome))
-                            from eventos e join eventos_tipos t on t.chave = e.tipo
-                           where t.chave = 'amaci' or t.nome ilike '%amaci%'), '[]'::jsonb),
-       'presencas', coalesce((select jsonb_agg(jsonb_build_object('eventoId', x.evento_id, 'alunoId', x.aluno_id, 'status', x.status))
-                              from amaci_presencas x
-                             where nullif(p ->> 'alunoId', '') is null or x.aluno_id = (p ->> 'alunoId')::uuid), '[]'::jsonb))
-   $$`,
   // A turma escondida Consulentes só entra (na configuração e nos orixás liberados) quando o perfil Consulentes tem a aba
   // Amaci marcada (Ver ou Editar) no Admin root; as outras turmas de alunos sempre têm a aba.
   `create or replace function amaci_estado(p jsonb default '{}'::jsonb)
@@ -6015,5 +5990,36 @@ export const MIGRACOES = [
                              or coalesce((select (abas -> 'amaci' ->> 'ver')::boolean or (abas -> 'amaci' ->> 'editar')::boolean
                                           from perfis where chave = 'consulente'), false)), '[]'::jsonb),
        'orientacoes', coalesce((select jsonb_object_agg(o.orixa, o.texto) from amaci_orientacoes o where o.texto <> ''), '{}'::jsonb))
+   $$`,
+  // ================================================== v137: amaci que já passou, cadastrado pelo root na aba Amaci
+  // O evento criado pelo root em Presenças → "Cadastrar amaci que já passou" fica marcado (retroativo): nele o aluno
+  // marca a própria presença sem a localização. Os outros amacis passados (cadastro normal de Eventos) só o root marca.
+  `alter table eventos add column if not exists retroativo boolean not null default false`,
+  `create or replace function evento_salvar(p jsonb)
+   returns jsonb language plpgsql as $$
+   begin
+     if not exists (select 1 from eventos_tipos where chave = p ->> 'tipo') then raise exception 'Escolha o tipo do evento.'; end if;
+     if coalesce(p ->> 'id', '') = '' then
+       insert into eventos (data, nome, tipo, retroativo)
+       values ((p ->> 'data')::date, btrim(p ->> 'nome'), p ->> 'tipo', coalesce((p ->> 'retroativo')::boolean, false));
+     else
+       update eventos set data = (p ->> 'data')::date, nome = btrim(p ->> 'nome'), tipo = p ->> 'tipo' where id = (p ->> 'id')::uuid;
+       if not found then raise exception 'Evento não encontrado.'; end if;
+     end if;
+     return eventos_listar();
+   end;
+   $$`,
+  // p = { alunoId? } — os amacis (tipo com "Amaci" no nome; cada um com as turmas do tipo e se é retroativo) e as presenças.
+  `create or replace function amaci_presencas_dados(p jsonb default '{}'::jsonb)
+   returns jsonb language sql stable as $$
+     select jsonb_build_object(
+       'eventos', coalesce((select jsonb_agg(jsonb_build_object('id', e.id, 'data', e.data, 'nome', e.nome, 'tipoNome', t.nome, 'turmas', to_jsonb(t.turmas),
+                                                                'retroativo', e.retroativo)
+                                             order by e.data, lower(e.nome))
+                            from eventos e join eventos_tipos t on t.chave = e.tipo
+                           where t.chave = 'amaci' or t.nome ilike '%amaci%'), '[]'::jsonb),
+       'presencas', coalesce((select jsonb_agg(jsonb_build_object('eventoId', x.evento_id, 'alunoId', x.aluno_id, 'status', x.status))
+                              from amaci_presencas x
+                             where nullif(p ->> 'alunoId', '') is null or x.aluno_id = (p ->> 'alunoId')::uuid), '[]'::jsonb))
    $$`,
 ];

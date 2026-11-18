@@ -61,6 +61,7 @@ const db = {
     { id: id(304), data: dia(-28), nome: 'Amaci de Oxalá (1ª aula)', tipo: 'amaci' },
     { id: id(305), data: dia(-14), nome: 'Amaci de Oxalá (2ª aula)', tipo: 'amaci' },
     { id: id(306), data: dia(0), nome: 'Amaci de Oxalá (3ª aula)', tipo: 'amaci' },
+    { id: id(307), data: dia(-21), nome: 'Amaci de Oxalá (reposição)', tipo: 'amaci', retroativo: true },
     { id: id(303), data: dia(proximoSabado + 2), nome: 'Mutirão de limpeza do terreiro', tipo: 'aviso' },
   ],
   oracoes: [
@@ -207,12 +208,12 @@ function amaci() {
   if (vcAtual && !alunoVc) return copia(AMACI_DEMO);   // vendo como alguém da corrente: sem presença
   const quem = alunoVc ? alunoVc.id : ALUNO_DEMO;
   const daTurma = !alunoVc || alunoVc.turmaId === id(501);
-  const amacis = daTurma ? evs.map((e) => ({ id: e.id, data: e.data, nome: e.nome, status: presAmaci[e.id]?.[quem] || null })) : [];
+  const amacis = daTurma ? evs.map((e) => ({ id: e.id, data: e.data, nome: e.nome, retroativo: !!e.retroativo, status: presAmaci[e.id]?.[quem] || null })) : [];
   const feitos = amacis.filter((a) => a.data <= hoje);
   const turmaNome = alunoVc ? db.turmas.find((t) => t.id === alunoVc.turmaId)?.nome || '' : 'Turma 1';
   if (alunoVc) return { ...copia(AMACI_DEMO), turmaNome, presenca: { hoje, amacis, pct: feitos.length ? Math.round((feitos.filter((a) => a.status === 'p').length / feitos.length) * 100) : null } };
   return {
-    ...copia(AMACI_DEMO), turmaNome,
+    ...copia(AMACI_DEMO), turmaNome, admin: true, turmas: db.turmas.map((t) => ({ ...t, orixas: t.id === id(501) ? ['oxala'] : [] })),
     presenca: { hoje, amacis, pct: feitos.length ? Math.round((feitos.filter((a) => a.status === 'p').length / feitos.length) * 100) : null },
     presencaAdmin: {
       hoje, amacis: evs.filter((e) => e.data <= hoje).reverse().map(({ id: i, data, nome, turmas }) => ({ id: i, data, nome, turmas })),
@@ -355,7 +356,7 @@ function lerGet(caminho, q) {
     if (!lista) return girasOrdenadas();
     if (lista === 'oracoes') return oracoes();
     if (lista === 'eventos') return copia(db.eventos);
-    if (lista === 'eventosTipos') return { tipos: TIPOS_EVENTO.map(([chave, nome]) => ({ chave, nome, turmas: [] })), turmas: copia(db.turmas), eventos: copia(db.eventos) };
+    if (lista === 'eventosTipos') return { tipos: TIPOS_EVENTO.map(([chave, nome]) => ({ chave, nome, turmas: chave === 'amaci' ? [id(501)] : [] })), turmas: copia(db.turmas), eventos: copia(db.eventos) };
     if (lista === 'videos') return copia(db.videos);
     if (lista === 'ausencias') return [];
     if (lista === 'conduta') return { ativa: true, relatos: [] };
@@ -447,6 +448,10 @@ function escrever(metodo, caminho, b) {
     Object.assign(p, b);
     return copia(p);
   }
+  if (caminho === '/giras' && b?.acao === 'evento' && !b.id) {
+    db.eventos.push({ id: id(3000 + db.eventos.length), data: b.data, nome: String(b.nome || '').trim(), tipo: b.tipo, retroativo: b.retroativo === true });
+    return copia(db.eventos).sort((a, x) => a.data.localeCompare(x.data));
+  }
   if (caminho === '/giras' && b?.acao === 'oracao') {
     db.oracoes.unshift({ id: id(4000 + db.oracoes.length), texto: String(b.texto || '').trim(), criadoEm: new Date().toISOString(), expiraEm: dia(4), autor: 'u:demo', autorNome: 'Teste CPJ', reacoes: [] });
     return oracoes();
@@ -462,7 +467,8 @@ function escrever(metodo, caminho, b) {
   if (caminho === '/oferendas' && b?.acao === 'iemanja') return acaoIemanja(b);
   if (caminho === '/pessoas' && b?.acao === 'amaciPresenca') {
     const ev = db.eventos.find((e) => e.id === b.eventoId && e.tipo === 'amaci');
-    if (!ev || ev.data !== dia(0)) throw new ErroDemo(409, 'A presença só pode ser confirmada no dia do amaci.');
+    if (!ev || ev.data > dia(0)) throw new ErroDemo(409, 'A presença só pode ser confirmada no dia do amaci.');
+    if (ev.data < dia(0) && !ev.retroativo) throw new ErroDemo(409, 'Este amaci já passou: a presença é marcada pela administração.');
     marcarAmaci(ev.id, ALUNO_DEMO, 'p');
     return amaci();
   }

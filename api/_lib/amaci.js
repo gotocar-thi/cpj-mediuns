@@ -45,7 +45,7 @@ async function presencaAmaci(eu) {
     const P = await db.rpc('amaci_presencas_dados', { alunoId: eu.alunoId });
     const st = Object.fromEntries(P.presencas.map((x) => [x.eventoId, x.status]));
     const amacis = P.eventos.filter((e) => !!eu.turmaId && e.turmas.includes(eu.turmaId))
-      .map(({ id, data, nome }) => ({ id, data, nome, status: st[id] || null }));
+      .map(({ id, data, nome, retroativo }) => ({ id, data, nome, retroativo: !!retroativo, status: st[id] || null }));
     return { presenca: { hoje, amacis, pct: pctAmaci(amacis, hoje) } };
   }
   if (!ehRoot(eu)) return {};
@@ -64,15 +64,18 @@ async function presencaAmaci(eu) {
   };
 }
 
-// O aluno confirma a própria presença: só no dia do amaci da turma dele e dentro do terreiro.
+// O aluno confirma a própria presença no amaci da turma dele: no dia, dentro do terreiro; no amaci que já passou e foi
+// cadastrado pelo root na aba Amaci (retroativo), de qualquer lugar. Os outros amacis passados, só o root marca.
 export async function presencaAluno(eu, b) {
   if (eu.grupo !== 'alunos') throw new HttpError(403, 'Só o aluno confirma a própria presença.');
   const eventoId = validarId(b.eventoId, 'Amaci');
   const P = await db.rpc('amaci_presencas_dados', { alunoId: eu.alunoId });
   const ev = P.eventos.find((e) => e.id === eventoId);
   if (!ev || !eu.turmaId || !ev.turmas.includes(eu.turmaId)) throw new HttpError(404, 'Amaci não encontrado para a sua turma.');
-  if (ev.data !== hojeBR()) throw new HttpError(409, 'A presença só pode ser confirmada no dia do amaci.');
-  if (!noTerreiro(Number(b.lat), Number(b.lon))) throw new HttpError(403, 'Você precisa estar no Terreiro Pai João para confirmar a presença.');
+  const hoje = hojeBR();
+  if (ev.data > hoje) throw new HttpError(409, 'A presença só pode ser confirmada no dia do amaci.');
+  if (ev.data < hoje && !ev.retroativo) throw new HttpError(409, 'Este amaci já passou: a presença é marcada pela administração.');
+  if (ev.data === hoje && !noTerreiro(Number(b.lat), Number(b.lon))) throw new HttpError(403, 'Você precisa estar no Terreiro Pai João para confirmar a presença.');
   await db.rpc('amaci_presenca_marcar', { eventoId, alunoId: eu.alunoId, status: 'p', por: 'aluno' });
   return amaci(eu);
 }
