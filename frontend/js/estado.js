@@ -249,14 +249,6 @@ export async function atualizarDoServidor() {
     if (r.semMudanca) { await atualizarAbaAberta(); return; }
     if (r.versao) estado.versaoDados = r.versao;
     if (r.config) definirConfig(r.config);
-    // Alunos: só os eventos, os próprios pedidos de oração e as aulas de curimba.
-    if (estado.me?.grupo === 'alunos') {
-      estado.eventos = r.eventos || estado.eventos;
-      estado.oracoes = r.oracoes || estado.oracoes;
-      if (r.minhaCurimba !== undefined) estado.minhaCurimba = r.minhaCurimba?.aulas ? r.minhaCurimba : null;
-      avisar();
-      return;
-    }
     // Lista que falhou no servidor não vem: fica a que já está na tela.
     const minhaCurimba = r.minhaCurimba === undefined ? estado.minhaCurimba : r.minhaCurimba;
     estado.oracoes = r.oracoes || estado.oracoes;

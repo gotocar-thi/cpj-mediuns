@@ -1,5 +1,6 @@
 // Imagem PNG dos aniversariantes do dia (aba Geral, bloco Eventos, só o root) para mandar no WhatsApp.
 // Sem cabeçalho: fundo claro com confetes e um cartão por pessoa — balão, o nome e uma mensagem curta, diferente para cada um.
+import { quebrar, retangulo } from './canvas.js';
 
 const C = {
   topo: '#fff0f3', fim: '#fff8e9', nome: '#8a2d55', ink: '#3a2c38', card: '#ffffff', borda: '#f5dbe4', fio: '#c9a9b6',
@@ -14,25 +15,6 @@ const P = 26;
 const CW = W - 2 * P;
 const LARGURA_PNG = 1440;
 
-function quebrar(ctx, t, max) {
-  const out = [];
-  let linha = '';
-  String(t).split(' ').forEach((w) => {
-    const teste = linha ? linha + ' ' + w : w;
-    if (ctx.measureText(teste).width > max && linha) { out.push(linha); linha = w; } else linha = teste;
-  });
-  out.push(linha);
-  return out;
-}
-function retangulo(ctx, x, y, w, h, r) {
-  ctx.beginPath();
-  ctx.moveTo(x + r, y);
-  ctx.arcTo(x + w, y, x + w, y + h, r);
-  ctx.arcTo(x + w, y + h, x, y + h, r);
-  ctx.arcTo(x, y + h, x, y, r);
-  ctx.arcTo(x, y, x + w, y, r);
-  ctx.closePath();
-}
 // Balão desenhado (não depende do emoji do aparelho): corpo, brilho, nó e fio ondulado.
 function balao(ctx, x, y, cor) {
   ctx.save();

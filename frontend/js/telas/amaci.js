@@ -6,7 +6,7 @@
 // no terreiro (localização do celular). O admin root marca presença ou falta por turma no bloco Presença nos amacis.
 
 import { estado, pode, visaoAtiva, carregarAmaci, acaoAmaci, confirmarPresencaAmaci, carregarEventosTipos, cadastrarAmaciPassado, acaoEventos, avisar } from '../estado.js';
-import { esc, toast, hoje, dLong, dDM, dShort } from '../util.js';
+import { esc, toast, hoje, dLong, dDM, dShort, semAcento } from '../util.js';
 import { emDemo } from '../auth.js';
 import { ORIXAS, ordenarOrixas, ultimoLiberado, ORIENTACAO_LINHAS, ORIENTACAO_LETRAS, ORIENTACAO_VISIVEIS, TERREIRO, RAIO_TERREIRO_M, noTerreiro, distanciaM } from '/shared/amaci.js';
 
@@ -130,7 +130,6 @@ const SITUACAO = { p: ['Presente', 'pleno'], f: ['Falta', 're'] };
 const selo = (st) => { const [t, c] = SITUACAO[st] || ['Ausente', '']; return `<span class="badge ${c}">${t}</span>`; };
 
 // Amacis do orixá escolhido no filtro: o nome do evento tem o nome do orixá ("Amaci de Oxalá"), sem diferença de acento.
-const semAcento = (t) => String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 const APELIDOS = { obaluaye: ['obaluae', 'obaluaie'], loguna: ['logunan'] };
 const doOrixa = (a, k) => !k || [semAcento(NOME[k].curto), k, ...(APELIDOS[k] || [])].some((x) => semAcento(a.nome).includes(x));
 // Hoje primeiro, depois os próximos (o mais perto antes) e os que já passaram (o mais recente antes).

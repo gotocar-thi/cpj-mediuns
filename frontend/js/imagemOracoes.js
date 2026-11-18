@@ -1,5 +1,6 @@
 // Imagem PNG dos pedidos de oração (aba Gira, bloco Orações) para mandar no grupo do WhatsApp:
 // fundo suave (lilás para o creme), o logo da casa, cada pedido num cartão com uma vela acesa e uma frase de fé no fim.
+import { quebrar, retangulo, carregarLogo } from './canvas.js';
 
 const C = {
   topo: '#efe7fb', fim: '#fdf6ec', roxo: '#5b3a9a', roxoSuave: '#8a6fc4', ink: '#2b2438', muted: '#7a6f8c',
@@ -12,27 +13,6 @@ const P = 30;
 const CW = W - 2 * P;
 const LARGURA_PNG = 1440;
 
-function quebrar(ctx, t, max) {
-  const out = [];
-  String(t).split('\n').forEach((par) => {
-    let linha = '';
-    par.split(' ').forEach((w) => {
-      const teste = linha ? linha + ' ' + w : w;
-      if (ctx.measureText(teste).width > max && linha) { out.push(linha); linha = w; } else linha = teste;
-    });
-    out.push(linha);
-  });
-  return out;
-}
-function retangulo(ctx, x, y, w, h, r) {
-  ctx.beginPath();
-  ctx.moveTo(x + r, y);
-  ctx.arcTo(x + w, y, x + w, y + h, r);
-  ctx.arcTo(x + w, y + h, x, y + h, r);
-  ctx.arcTo(x, y + h, x, y, r);
-  ctx.arcTo(x, y, x + w, y, r);
-  ctx.closePath();
-}
 // Vela acesa (desenhada, para não depender do emoji do aparelho).
 function vela(ctx, x, y, s = 1) {
   ctx.save();
@@ -126,15 +106,6 @@ function desenhar(ctx, oracoes, hoje, logo, pintar) {
   if (pintar) { ctx.fillStyle = C.muted; ctx.fillText(`Pedidos dos últimos 7 dias · ${d}/${m}/${a}`, W / 2, y); }
   ctx.textAlign = 'left';
   return y + 18 + P - 6;
-}
-
-async function carregarLogo() {
-  try {
-    const img = new Image();
-    img.src = '/img/terreiro.png';
-    await img.decode();
-    return img;
-  } catch { return null; }
 }
 
 export async function gerarImagemOracoes(oracoes, hoje) {

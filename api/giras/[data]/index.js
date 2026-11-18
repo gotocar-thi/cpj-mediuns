@@ -184,7 +184,7 @@ export default rota({
       p.passes = [];
     }
     // Gira nova: quem tinha ausência antecipada nesta data já entra como Ausente (o que veio no pedido vale mais).
-    const nova = b.encerrada !== true && !(await db.rpc('gira_obter', { data }));
+    const nova = b.encerrada !== true && !atual;
     const previas = nova ? (await db.rpc('ausencias_previas_listar')).filter((x) => x.data === data).map((x) => x.pessoaId) : [];
     if (previas.length) p.presenca = { ...Object.fromEntries(previas.map((id) => [id, 'a'])), ...(p.presenca || {}) };
     let gira = await db.rpc('gira_salvar', p);

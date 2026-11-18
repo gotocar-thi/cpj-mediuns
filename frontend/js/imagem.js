@@ -7,6 +7,7 @@
 
 import { paresPorMedium, escalaDaGira, guiaNaGira, pessoasDe, temRetrato } from '/shared/regras.js';
 import { gruposExtras, cabecalhoGira, foraDaGira, idsAniversariantes } from './exportar.js';
+import { quebrar, retangulo, carregarLogo } from './canvas.js';
 
 const C = {
   bg: '#f4f1ea', card: '#ffffff', ink: '#1e2533', muted: '#6b7385', line: '#e8e3d8', zebra: '#faf7f0',
@@ -24,27 +25,6 @@ const CW = W - 2 * P;
 const LH = 24;   // altura da linha de texto das listas
 const R = 22;    // raio do logo no cabeçalho
 
-export function quebrar(ctx, t, max) {
-  const out = [];
-  String(t).split('\n').forEach((par) => {
-    let linha = '';
-    par.split(' ').forEach((w) => {
-      const teste = linha ? linha + ' ' + w : w;
-      if (ctx.measureText(teste).width > max && linha) { out.push(linha); linha = w; } else linha = teste;
-    });
-    out.push(linha);
-  });
-  return out;
-}
-export function retangulo(ctx, x, y, w, h, r) {
-  ctx.beginPath();
-  ctx.moveTo(x + r, y);
-  ctx.arcTo(x + w, y, x + w, y + h, r);
-  ctx.arcTo(x + w, y + h, x, y + h, r);
-  ctx.arcTo(x, y + h, x, y, r);
-  ctx.arcTo(x, y, x + w, y, r);
-  ctx.closePath();
-}
 // Cartão branco com sombra leve e a faixa colorida à esquerda (cortada no canto arredondado).
 function cartao(ctx, x, y, w, h, cor) {
   ctx.save();
@@ -306,15 +286,6 @@ function desenhar(ctx, cadastro, g, desenhar, giras = [], logo = null) {
     ctx.textAlign = 'left';
   }
   return yNome + 16 + P - 6;
-}
-
-export async function carregarLogo() {
-  try {
-    const img = new Image();
-    img.src = '/img/terreiro.png';
-    await img.decode();
-    return img;
-  } catch { return null; }
 }
 
 export async function gerarImagem(pessoas, g, giras = []) {

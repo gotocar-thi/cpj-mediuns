@@ -62,6 +62,8 @@ export function mascaraTel(el) {
 }
 
 // Iniciais do nome (até duas), para o lugar da foto de quem ainda não tem.
+// Para busca: minúsculas e sem acento.
+export const semAcento = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 export const iniciais = (nome) => String(nome || '').split(/\s+/).filter((w) => /^\p{L}/u.test(w)).slice(0, 2).map((w) => w[0].toUpperCase()).join('');
 
 // Formulários marcados com data-rascunho (ex.: cadastro e edição na aba Pessoas): o que a pessoa digitou e ainda não

@@ -1,5 +1,6 @@
 // Imagem PNG de uma lista simples (pedido de ervas, cobrança...), no mesmo estilo das outras imagens.
 //   gerarImagemLista({ rotulo, titulo, subtitulo, linhas: [{ texto, valor?, sub? }], rodape? })
+import { quebrar } from './canvas.js';
 
 const C = { bg: '#f5f7fb', card: '#ffffff', ink: '#18212f', muted: '#5b6678', line: '#dde3ec', accent: '#2c4ea3', soft: '#c9d5f5' };
 const FD = '"Alegreya",Georgia,serif';
@@ -7,17 +8,6 @@ const FB = '"Alegreya Sans",system-ui,sans-serif';
 const W = 720;
 const P = 32;
 const CW = W - 2 * P;
-
-function quebrar(ctx, t, max) {
-  const out = [];
-  let linha = '';
-  String(t).split(' ').forEach((w) => {
-    const teste = linha ? linha + ' ' + w : w;
-    if (ctx.measureText(teste).width > max && linha) { out.push(linha); linha = w; } else linha = teste;
-  });
-  out.push(linha);
-  return out;
-}
 
 function desenhar(ctx, d, pintar) {
   const fonte = (w, s, f) => { ctx.font = `${w} ${s}px ${f || FB}`; };

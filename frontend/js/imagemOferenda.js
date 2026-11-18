@@ -1,6 +1,7 @@
 // Imagem PNG da lista de uma oferenda (para mandar no grupo do WhatsApp).
 
 import { situacao, dataBR, ROTULO_MEDIUM, medConferido, contagemMediuns, porCategoria, qtdTxt, corItem, CORES_ITEM } from '/shared/oferendas.js';
+import { quebrar } from './canvas.js';
 
 const C = { bg: '#f5f7fb', card: '#ffffff', ink: '#18212f', muted: '#5b6678', line: '#dde3ec', accent: '#2c4ea3', soft: '#c9d5f5', verde: '#2f9e5b', amarelo: '#e3b021', vermelho: '#d9534f', cinza: '#8a94a3', ok: '#24785a' };
 const FD = '"Alegreya",Georgia,serif';
@@ -8,17 +9,6 @@ const FB = '"Alegreya Sans",system-ui,sans-serif';
 const W = 720;
 const P = 32;
 const CW = W - 2 * P;
-
-function quebrar(ctx, t, max) {
-  const out = [];
-  let linha = '';
-  String(t).split(' ').forEach((w) => {
-    const teste = linha ? linha + ' ' + w : w;
-    if (ctx.measureText(teste).width > max && linha) { out.push(linha); linha = w; } else linha = teste;
-  });
-  out.push(linha);
-  return out;
-}
 
 const fonteDe = (ctx) => (w, s, f) => { ctx.font = `${w} ${s}px ${f || FB}`; };
 const caixa = (ctx, x, y, w, h, r) => { ctx.beginPath(); ctx.roundRect ? ctx.roundRect(x, y, w, h, r) : ctx.rect(x, y, w, h); };

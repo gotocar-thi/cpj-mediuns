@@ -3,7 +3,7 @@
 //   gerarImagemResumo({ rotulo, titulo, subtitulo, cartoes: [{ titulo, direita, cor, estrela?, quadros?, nota?, grupos? }] })
 //     quadros: [[rótulo, número, cor]] · grupos: [{ titulo, cor, pilulas?: [{ texto, cor? }], linhas?: [texto] }] (grupo vazio não aparece)
 
-import { quebrar, retangulo, carregarLogo } from './imagem.js';
+import { quebrar, retangulo, carregarLogo } from './canvas.js';
 
 export const COR_RESUMO = { ouro: '#a8771c', presente: '#24785a', ausente: '#a2423a', falta: '#e0101f', licenca: '#2c4ea3', limpeza: '#c2570c' };
 const C = { bg: '#f4f1ea', card: '#ffffff', ink: '#1e2533', muted: '#6b7385', line: '#e3ddd0', caixa: '#f8f6f1', navy: '#1c2b4a', navy2: '#2d4a86', gold: '#c9a24a', sol: '#e7c97f', soft: '#c9d5f5' };

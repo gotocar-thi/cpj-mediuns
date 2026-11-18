@@ -5,12 +5,11 @@
 import { lerDataCurta, dataCurta } from '/shared/eventos.js';
 import { CLASSES_VIDEO, idDoYoutube } from '/shared/videos.js';
 import { estado, pode, carregarVideos, acaoVideos, publicarVideos, avisar } from '../estado.js';
-import { esc, toast, hoje } from '../util.js';
+import { esc, toast, hoje, semAcento } from '../util.js';
 
 const MESES = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
 const U = () => (estado.vidUi ||= { novo: false, aberto: null, editar: null, filtro: '', busca: '', confirmar: null });
 const cabDobra = (act, titulo, count, aberto) => `<button class="grp-h dobra" data-act="${act}" aria-expanded="${aberto}"><h2>${titulo}</h2><span class="count">${count} <span class="seta" aria-hidden="true">${aberto ? '▾' : '▸'}</span></span></button>`;
-const semAcento = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 
 // Formulário de publicar (f-video) ou de editar (f-video-ed).
 function formulario(v) {

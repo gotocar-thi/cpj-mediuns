@@ -5,16 +5,15 @@ import { textoResumo, dadosResumo, linhaLicenca, limpezaResumo, historicoAtendim
 import { giraEspecial } from '/shared/regras.js';
 import { config } from '/shared/config.js';
 import { compartilharImagem } from './imagemLista.js';
-import { gerarImagemResumo, COR_RESUMO } from './imagemResumo.js';
 import { estado, avisar, girasLista } from './estado.js';
 import { toast, baixar, dShort } from './util.js';
 
 const giraDe = (data) => estado.giras[data];
 
 // Dados da imagem do resumo: um cartão de presença e um de atendimentos (e a limpeza, se a gira teve turma).
-function dadosImagem(g) {
+// CR: COR_RESUMO de imagemResumo.js, que só é baixado quando a imagem é gerada.
+function dadosImagem(g, CR) {
   const d = dadosResumo(estado.pessoas, g);
-  const CR = COR_RESUMO;
   const pilulas = (l) => l.map((p) => ({ texto: p.nome }));
   // Limpeza: quem esteve presente fica neutro; os outros mostram a situação, com a cor dela.
   const COR_SIT = { Falta: CR.falta, Ausente: CR.ausente };
@@ -98,7 +97,8 @@ async function prepararImagem(data) {
   resumo.gerando = true;
   avisar();
   try {
-    const blob = await gerarImagemResumo(dadosImagem(g));
+    const { gerarImagemResumo, COR_RESUMO } = await import('./imagemResumo.js');
+    const blob = await gerarImagemResumo(dadosImagem(g, COR_RESUMO));
     if (estado.resumo !== resumo) return;
     resumo.img = { blob, url: URL.createObjectURL(blob), nome: 'resumo-gira-' + g.data + '.png' };
   } catch (e) {
