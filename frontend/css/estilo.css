@@ -1729,8 +1729,15 @@ button.iem-tot-n{cursor:pointer}
 .gi-disp{font-size:.82rem}
 .gi-info .of-sw{margin-top:2px}
 .gi-acao{display:flex;flex-direction:column;align-items:stretch;gap:6px}
-.gi-doa-v{display:flex;align-items:center;gap:4px;font-weight:700;color:var(--muted)}
-.gi-doa-v input{width:84px;min-width:0;text-align:right;font-weight:700}
+.gi-item.gi-doa,.gi-tela .gi-item.gi-doa{grid-template-columns:minmax(0,1fr);align-items:stretch;gap:10px}
+.gi-doa-h{display:grid;grid-template-columns:64px minmax(0,1fr);gap:10px;align-items:center;min-width:0}
+.gi-doa-bs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.gi-doa-b{min-height:44px;border:1px solid color-mix(in srgb,var(--ok) 45%,var(--line));border-radius:22px;background:color-mix(in srgb,var(--ok) 10%,var(--bg));color:var(--ink);font:700 .95rem var(--f-body);cursor:pointer}
+.gi-doa-b:disabled{opacity:.5;cursor:default}
+.gi-doa-outro{display:flex;align-items:center;gap:8px}
+.gi-doa-v{display:flex;align-items:center;gap:6px;flex:1;min-width:0;font-size:.88rem;font-weight:600;color:var(--muted)}
+.gi-doa-v span{white-space:nowrap}
+.gi-doa-v input{flex:1;min-width:0;width:auto;text-align:right;font-weight:700}
 .gi-acao select{padding:4px 6px}
 .gi-acao-adm{flex-direction:row}
 .gi-meus{list-style:none;margin:0;padding:0;display:grid;gap:8px}

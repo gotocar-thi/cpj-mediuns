@@ -94,11 +94,14 @@ function cardItens(G) {
     ${g.itens.map((i) => {
       const max = Math.min(i.quantidade, 20);
       const q = Math.min(ui.qtd[i.id] || 1, Math.max(max, 1));
-      // Doação: a pessoa digita o valor (com centavos); o preço do item vem como sugestão. Doação não tem estoque.
+      // Doação: três balões de valor (tocar já pede a confirmação) ou Outro valor, digitado com centavos (o valor do item
+      // vem como sugestão no campo). Doação não tem estoque.
       if (i.doacao) {
-        return `<div class="gi-item gi-doa">${fotoItem(i, 'gi-foto', true)}
-        <div class="gi-info"><b>${esc(i.descricao)}${seloCpj(i)}</b><span class="muted gi-disp">Doação · você escolhe o valor</span></div>
-        <div class="gi-acao"><label class="gi-doa-v"><span aria-hidden="true">R$</span><input type="text" inputmode="decimal" data-guia="doacao" data-id="${i.id}" maxlength="10" placeholder="${esc(Number(i.valor) > 0 ? valorCampo(i.valor) : '0,00')}" value="${esc(ui.doa[i.id] || '')}" aria-label="Valor da doação para ${esc(i.descricao)}" ${fechado ? 'disabled' : ''}></label>
+        const balao = (v) => `<button type="button" class="gi-doa-b" data-act="guiadoarvalor" data-id="${i.id}" data-v="${v}" ${fechado ? 'disabled' : ''}>${R(v)}</button>`;
+        return `<div class="gi-item gi-doa">
+        <div class="gi-doa-h">${fotoItem(i, 'gi-foto', true)}<div class="gi-info"><b>${esc(i.descricao)}${seloCpj(i)}</b><span class="muted gi-disp">Doação · você escolhe o valor</span></div></div>
+        <div class="gi-doa-bs">${VALORES_DOACAO.map(balao).join('')}</div>
+        <div class="gi-doa-outro"><label class="gi-doa-v"><span>Outro valor: R$</span><input type="text" inputmode="decimal" data-guia="doacao" data-id="${i.id}" maxlength="10" placeholder="${esc(Number(i.valor) > 0 ? valorCampo(i.valor) : '0,00')}" value="${esc(ui.doa[i.id] || '')}" aria-label="Outro valor de doação para ${esc(i.descricao)}" ${fechado ? 'disabled' : ''}></label>
           <button class="btn primary small" data-act="guiadoar" data-id="${i.id}" ${fechado ? 'disabled' : ''}>Doar</button></div></div>`;
       }
       const acao = i.quantidade < 1 ? '<span class="badge re">Esgotado</span>'
@@ -574,6 +577,8 @@ export async function enviar(form) {
 }
 
 const valorCampo = (v) => Number(v).toFixed(2).replace('.', ',');
+// Balões de valor dos itens de doação (fixos).
+const VALORES_DOACAO = [10, 30, 100];
 
 export const cliques = {
   guiadobrar(el) { const id = el.dataset.id; if (ui.abertos.has(id)) ui.abertos.delete(id); else ui.abertos.add(id); avisar(); },
@@ -616,6 +621,13 @@ export const cliques = {
     const n = t ? Math.round(Number(t) * 100) / 100 : Number(i.valor) || 0;
     if (!Number.isFinite(n) || n <= 0 || n > 100000) { toast('Digite o valor da doação (ex.: 25,50).'); return; }
     ui.pedir = { itemId: i.id, quantidade: 1, valor: n };
+    avisar();
+  },
+  // Balão de valor: já abre a confirmação com aquele valor.
+  guiadoarvalor(el) {
+    const i = acharItem(el.dataset.id);
+    if (!i) return;
+    ui.pedir = { itemId: i.id, quantidade: 1, valor: Number(el.dataset.v) };
     avisar();
   },
   guiapedircancel() { ui.pedir = null; avisar(); },
