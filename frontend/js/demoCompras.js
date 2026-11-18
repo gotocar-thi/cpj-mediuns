@@ -285,7 +285,8 @@ export function criarCompras({ euChave, euNome, pessoas, ErroDemo }) {
     const doacao = new Set(grupos.flatMap((g) => g.itens.filter((i) => i.doacao).map((i) => i.id)));
     return {
       pedidos: todasLinhas().filter((l) => !doacao.has(l.itemId))
-        .map(({ id: lid, pedido, descricao, quantidade, valor, chave: ch, nome, pago, andamento }) => ({ id: lid, pedido, descricao, quantidade, valor, chave: ch, nome, pago, andamento })),
+        .map(({ id: lid, pedido, descricao, quantidade, valor, chave: ch, nome, pago, andamento, itemId }) => ({ id: lid, pedido, descricao, quantidade, valor, chave: ch, nome, pago, andamento,
+          itemId, fotoV: grupos.flatMap((g) => g.itens).find((i) => i.id === itemId)?.fotoV || null })),
       pendencias, pendenciasEm: new Date().toISOString(),
     };
   }

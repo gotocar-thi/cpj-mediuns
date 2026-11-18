@@ -629,6 +629,8 @@ main.addEventListener('submit', async (e) => {
     await (await telaDe('amaci')).enviar(e.target);
   } else if (id === 'f-amaci-novo') {
     await (await telaDe('amaci')).enviarNovoAmaci(e.target);
+  } else if (id === 'f-amaci-ed') {
+    await (await telaDe('amaci')).enviarEdicao(e.target);
   } else if (id === 'f-di-erva') {
     await (await telaDe('diario')).addErva(e.target);
   } else if (id === 'f-tr-val' || id === 'f-tr-busca') {

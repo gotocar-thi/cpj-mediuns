@@ -509,6 +509,12 @@ function escrever(metodo, caminho, b) {
     db.eventos = db.eventos.filter((e) => e.id !== b.id);
     return copia(db.eventos);
   }
+  if (caminho === '/giras' && b?.acao === 'evento' && b.id) {
+    const e = db.eventos.find((x) => x.id === b.id);
+    if (!e) throw new ErroDemo(404, 'Evento não encontrado.');
+    Object.assign(e, { data: b.data, nome: String(b.nome || '').trim(), tipo: b.tipo });
+    return copia(db.eventos).sort((a, x) => a.data.localeCompare(x.data));
+  }
   if (caminho === '/giras' && b?.acao === 'evento' && !b.id) {
     db.eventos.push({ id: id(3000 + db.eventos.length), data: b.data, nome: String(b.nome || '').trim(), tipo: b.tipo, retroativo: b.retroativo === true });
     return copia(db.eventos).sort((a, x) => a.data.localeCompare(x.data));

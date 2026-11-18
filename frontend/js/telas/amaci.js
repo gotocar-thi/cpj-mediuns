@@ -6,7 +6,7 @@
 // no terreiro (localização do celular). O admin root marca presença ou falta por turma no bloco Presença nos amacis.
 
 import { estado, pode, visaoAtiva, carregarAmaci, acaoAmaci, confirmarPresencaAmaci, carregarEventosTipos, cadastrarAmaciPassado, acaoEventos, avisar } from '../estado.js';
-import { esc, toast, hoje, dLong, dDM } from '../util.js';
+import { esc, toast, hoje, dLong, dDM, dShort } from '../util.js';
 import { emDemo } from '../auth.js';
 import { ORIXAS, ordenarOrixas, ultimoLiberado, ORIENTACAO_LINHAS, ORIENTACAO_LETRAS, ORIENTACAO_VISIVEIS, TERREIRO, RAIO_TERREIRO_M, noTerreiro, distanciaM } from '/shared/amaci.js';
 
@@ -32,6 +32,8 @@ const ui = {
   abrirNovo: null,      // amaci recém-cadastrado a abrir na lista quando ela voltar: { data, nome }
   excluir: null,        // amaci criado pelo root com o Excluir? aberto (id)
   excluindo: false,
+  editar: null,         // amaci com o ✎ aberto no bloco do root: { id, data, nome } (o que foi digitado volta depois de um erro)
+  editSalvando: false,
   adm: false,           // bloco ⚙️ Admin (Configuração + Presenças) aberto (começa minimizado)
   geo: null,            // teste de localização do root: { pegando } ou { ok, dist, prec } ou { erro }
 };
@@ -50,6 +52,7 @@ export function limpar() {
   ui.novoRasc = null;
   ui.novoMsg = null;
   ui.abrirNovo = null;
+  ui.editar = null;
   ui.adm = false;
   ui.geo = null;
 }
@@ -250,17 +253,66 @@ function cardPresencaAdmin(A) {
     const ab = ui.presEv === ev.id;
     const linha = `<button class="am-turma-h" data-act="ampresev" data-id="${ev.id}" aria-expanded="${ab}">
       <span class="am-padm-ev-n">${esc(ev.nome)}</span>
-      <span class="am-turma-x"><small>${ev.data === P.hoje ? 'Hoje' : dDM(ev.data)}</small><span class="am-padm-cont" aria-label="${grupos.p.length} de ${alunos.length} presentes"><b>${grupos.p.length}</b>/${alunos.length}</span><span class="seta" aria-hidden="true">${ab ? '▴' : '▾'}</span></span></button>`;
+      <span class="am-turma-x"><small>${ev.data === P.hoje ? 'Hoje' : dShort(ev.data)}</small><span class="am-padm-cont" aria-label="${grupos.p.length} de ${alunos.length} presentes"><b>${grupos.p.length}</b>/${alunos.length}</span><span class="seta" aria-hidden="true">${ab ? '▴' : '▾'}</span></span></button>`;
     // Amaci criado pelo root (Cadastrar amaci que já passou): ✕ à direita; tocar pede Confirmar / Cancelar.
     const x = ev.retroativo ? `<button type="button" class="btn small link am-padm-x" data-act="amexcluir" data-id="${ev.id}" aria-label="Excluir ${esc(ev.nome)}" title="Excluir">✕</button>` : '';
     const conf = ui.excluir === ev.id ? `<div class="am-padm-conf" role="alert"><span>Excluir <b>${esc(ev.nome)}</b> e as presenças marcadas nele?</span>
       <span class="am-padm-conf-b"><button type="button" class="btn small" data-act="amexcluircancel"${ui.excluindo ? ' disabled' : ''}>Cancelar</button><button type="button" class="btn small danger" data-act="amexcluirok" data-id="${ev.id}"${ui.excluindo ? ' disabled' : ''}>${ui.excluindo ? 'Excluindo…' : 'Confirmar'}</button></span></div>` : '';
-    const topo = `<div class="am-padm-row">${linha}${x}</div>${conf}`;
+    // ✎ (todo amaci da lista): abre embaixo o nome e a data para corrigir.
+    const lapis = `<button type="button" class="btn small link am-padm-ed" data-act="ameditar" data-id="${ev.id}" aria-label="Editar ${esc(ev.nome)}" title="Editar nome e data">✎</button>`;
+    const topo = `<div class="am-padm-row">${linha}${lapis}${x}</div>${conf}${ui.editar?.id === ev.id ? formEditar(ev) : ''}`;
     if (!ab) return `<div class="am-turma">${topo}</div>`;
     return `<div class="am-turma">${topo}<div class="am-padm-ev">
       <div class="pf-of-totais am-padm-q">${quad('p', 'Presentes', 'am-q-p')}${quad('a', 'Ausentes', 'am-q-a')}</div>${lista}</div></div>`;
   }).join('');
   return `<div class="am-adm-sec">${cab}${novo}<p class="muted am-pres-nota">${esc(turma.nome)} · ${plural(alunos.length, 'aluno', 'alunos')} · ${plural(amacis.length, 'amaci', 'amacis')}</p><div class="am-padm-lista">${corpo}</div></div>`;
+}
+
+// Root: corrige o nome e a data de um amaci (o mesmo evento de Admin root → Eventos; o tipo continua o mesmo).
+function formEditar(ev) {
+  const E = ui.editar;
+  const carregando = estado.eventosTipos === null;   // os eventos (com o tipo de cada um) chegam pelo ameditar
+  return `<form id="f-amaci-ed" class="am-novo am-padm-edf" data-id="${ev.id}" autocomplete="off">
+    <div class="am-novo-l">
+      <label class="field">Data<input type="text" name="data" inputmode="numeric" maxlength="10" data-mascara="data" placeholder="31/10/2026" required value="${esc(E.data)}"></label>
+    </div>
+    <label class="field">Nome<input type="text" name="nome" maxlength="120" required value="${esc(E.nome)}"></label>
+    <div class="row" style="justify-content:flex-end;gap:8px"><button type="button" class="btn small" data-act="ameditarcancel">Cancelar</button><button class="btn small primary" type="submit"${ui.editSalvando || carregando ? ' disabled' : ''}>${ui.editSalvando ? 'Salvando…' : 'Salvar'}</button></div>
+  </form>`;
+}
+
+// "31/10/2026" ou "31/10/26" → 'AAAA-MM-DD'; "31/10" fica no ano que já estava. Data que não existe → null.
+function dataEditada(txt, anoAtual) {
+  const m = String(txt || '').trim().match(/^(\d{1,2})\s*[/.-]\s*(\d{1,2})(?:\s*[/.-]\s*(\d{2}|\d{4}))?$/);
+  if (!m) return null;
+  const d = Number(m[1]), mes = Number(m[2]);
+  const a = m[3] ? Number(m[3].length === 2 ? '20' + m[3] : m[3]) : Number(anoAtual);
+  const x = new Date(Date.UTC(a, mes - 1, d));
+  return x.getUTCFullYear() === a && x.getUTCMonth() === mes - 1 && x.getUTCDate() === d ? x.toISOString().slice(0, 10) : null;
+}
+
+export async function enviarEdicao(form) {
+  if (ui.editSalvando) return;
+  const id = form.dataset.id;
+  const ev = (estado.amaci?.presencaAdmin?.amacis || []).find((x) => x.id === id);
+  const tipo = (estado.eventos || []).find((x) => x.id === id)?.tipo;
+  ui.editar = { id, data: form.elements.data.value, nome: form.elements.nome.value };
+  const data = dataEditada(ui.editar.data, (ev?.data || hoje()).slice(0, 4));
+  const nome = ui.editar.nome.replace(/\s+/g, ' ').trim();
+  if (!data) { toast('Data inválida. Use o formato 31/10/2026.'); return; }
+  if (!nome) { toast('Digite o nome do amaci.'); return; }
+  if (!tipo) { toast('Não achei o amaci nos eventos. Abra a aba de novo e tente outra vez.'); return; }
+  const hojeData = estado.amaci?.presencaAdmin?.hoje || hoje();
+  ui.editSalvando = true;
+  avisar();
+  const ok = await acaoEventos('evento', { id, data, nome, tipo });
+  ui.editSalvando = false;
+  if (ok) {
+    ui.editar = null;
+    estado.amaci = null;   // busca de novo com o nome e a data novos
+    toast(data > hojeData ? 'Amaci alterado. Com data futura, ele sai desta lista até o dia.' : 'Amaci alterado.');
+  }
+  avisar();
 }
 
 // Tipos de evento de amaci (com "Amaci" no nome) em que a turma está marcada: é neles que o amaci da turma é cadastrado.
@@ -418,7 +470,15 @@ export const cliques = {
   ampres() { ui.pres = !ui.pres; avisar(); },
   ampresadm() { ui.presAdm = !ui.presAdm; avisar(); },
   amnovo() { ui.novo = true; ui.novoMsg = null; avisar(); },
-  amexcluir(el) { ui.excluir = ui.excluir === el.dataset.id ? null : el.dataset.id; avisar(); },
+  ameditar(el) {
+    const ev = (estado.amaci?.presencaAdmin?.amacis || []).find((x) => x.id === el.dataset.id);
+    ui.editar = ui.editar?.id === el.dataset.id || !ev ? null : { id: ev.id, data: dShort(ev.data), nome: ev.nome };
+    ui.excluir = null;
+    if (ui.editar && estado.eventosTipos === null) carregarEventosTipos();
+    avisar();
+  },
+  ameditarcancel() { ui.editar = null; avisar(); },
+  amexcluir(el) { ui.editar = null; ui.excluir = ui.excluir === el.dataset.id ? null : el.dataset.id; avisar(); },
   amexcluircancel() { ui.excluir = null; avisar(); },
   async amexcluirok(el) {
     if (ui.excluindo) return;

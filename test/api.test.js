@@ -2109,6 +2109,7 @@ test('pedidos de guias: aba escondida até publicar; grupos, itens, pedir baixa 
   let PD = (await api('GET', '/api/oferendas?lista=pedidos', ADMIN)).json;
   const pd = PD.pedidos.find((l) => l.id === linha.id);
   assert.deepEqual([pd.descricao, pd.nome, pd.pago, pd.andamento], [linha.descricao, linha.nome, false, 'pendente']);
+  assert.deepEqual([pd.itemId, pd.fotoV], [it.id, null], 'o item vai junto; sem foto, sem versão');
   assert.equal(typeof PD.pendencias, 'object');
   assert.equal((await gu(ADMIN, { op: 'andamento', id: linha.id, andamento: 'pronto' })).status, 400);
   PD = (await gu(ADMIN, { op: 'andamento', id: linha.id, andamento: 'em_confeccao' })).json;

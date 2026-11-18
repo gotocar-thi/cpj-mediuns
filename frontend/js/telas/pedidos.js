@@ -2,6 +2,7 @@
 // Bloco "Pedidos em andamento": uma linha por pedido (cada linha das Compras, sem as doações) com descrição, quem pediu,
 // pagamento (Pago / Pendente) e andamento, agrupadas pelo andamento. O andamento muda no combo da própria linha.
 // Quem tem cobrança vencida no ASAAS (última leitura do CPJ - Pgto atrasado) ganha o selo vermelho "pendências R$ X".
+// À esquerda, a foto pequena do modelo (a do item, pelo mesmo link da aba Compras); tocar abre em tela cheia.
 
 import { estado, carregarPedidos, mudarAndamento, avisar } from '../estado.js';
 import { esc } from '../util.js';
@@ -16,18 +17,35 @@ const ANDAMENTOS = [
   ['concluido', 'Concluído'],
   ['entregue', 'Entregue'],
 ];
-// fechados: grupos minimizados (Entregue começa assim); salvando: id da linha indo ao servidor.
-const ui = { fechados: new Set(['entregue']), salvando: null };
-export function limpar() { ui.fechados = new Set(['entregue']); ui.salvando = null; }
+const fotoUrl = (l) => `/api/oferendas?lista=guiaFoto&id=${encodeURIComponent(l.itemId)}&v=${encodeURIComponent(l.fotoV)}`;
+// fechados: grupos minimizados (Entregue começa assim); salvando: id da linha indo ao servidor; zoom: id da linha com a foto aberta.
+const ui = { fechados: new Set(['entregue']), salvando: null, zoom: null };
+export function limpar() { ui.fechados = new Set(['entregue']); ui.salvando = null; ui.zoom = null; }
+
+function foto(l) {
+  if (!l.fotoV || !l.itemId) return '<div class="gi-foto pd-foto"><span aria-hidden="true">📿</span></div>';
+  return `<div class="gi-foto pd-foto zoom" data-act="pdzoom" data-id="${esc(l.id)}" role="button" tabindex="0" aria-label="Ver foto de ${esc(l.descricao)}">
+    <img src="${esc(fotoUrl(l))}" alt="" loading="lazy" decoding="async"></div>`;
+}
+
+// Foto em tela cheia (mesmo visual da aba Compras); tocar em qualquer lugar fecha.
+function telaFoto(lista) {
+  const l = ui.zoom && lista.find((x) => x.id === ui.zoom);
+  if (!l?.fotoV) return '';
+  return `<div class="ft-luz" role="dialog" aria-modal="true" aria-label="Foto de ${esc(l.descricao)}" data-act="pdzoomfechar">
+    <div class="ft-luz-topo"><span class="ft-luz-tit">${esc(l.descricao)}</span><button class="btn small" data-act="pdzoomfechar" aria-label="Fechar">✕</button></div>
+    <div class="ft-luz-img"><img src="${esc(fotoUrl(l))}" alt=""></div>
+    <div class="ft-luz-rodape"><b>${esc(l.nome)}</b><span class="muted">nº ${l.pedido}</span></div></div>`;
+}
 
 function linha(l, pend) {
   const p = pend[l.chave] || 0;
   const opcoes = ANDAMENTOS.map(([k, rot]) => `<option value="${k}"${l.andamento === k ? ' selected' : ''}>${rot}</option>`).join('');
-  return `<li class="pd-l">
+  return `<li class="pd-l">${foto(l)}<div class="pd-c">
     <div class="pd-l1"><span class="pd-d">${l.quantidade > 1 ? `${l.quantidade}x ` : ''}${esc(l.descricao)}</span><span class="pd-v">${R(l.valor * l.quantidade)}</span></div>
     <div class="pd-l2"><span class="pd-nome">${esc(l.nome)}</span><span class="muted pd-n">nº ${l.pedido}</span>
       ${l.pago ? '<span class="badge pleno">Pago</span>' : '<span class="badge pd-pend">Pendente</span>'}
-      ${p > 0 ? `<span class="badge pd-divida" title="Cobranças vencidas no ASAAS">pendências ${R(p)}</span>` : ''}</div>
+      ${p > 0 ? `<span class="badge pd-divida" title="Cobranças vencidas no ASAAS">pendências ${R(p)}</span>` : ''}</div></div>
     <select class="pd-and" data-act="pdandamento" data-id="${esc(l.id)}" aria-label="Andamento do pedido de ${esc(l.nome)}"${ui.salvando === l.id ? ' disabled' : ''}>${opcoes}</select>
   </li>`;
 }
@@ -49,11 +67,13 @@ export function render() {
       <span class="count">${L.length} <span class="seta" aria-hidden="true">${aberto ? '▾' : '▸'}</span></span></button>`;
     return `<div class="pd-grupo pd-${k}">${cab}${aberto ? `<ul class="pd-lista">${L.map((l) => linha(l, pend)).join('')}</ul>` : ''}</div>`;
   }).join('');
-  return h + '</div></section>';
+  return h + `</div>${telaFoto(lista)}</section>`;
 }
 
 export const cliques = {
   pddobrar(el) { const k = el.dataset.k; if (ui.fechados.has(k)) ui.fechados.delete(k); else ui.fechados.add(k); avisar(); },
+  pdzoom(el) { ui.zoom = el.dataset.id; avisar(); },
+  pdzoomfechar() { ui.zoom = null; avisar(); },
   pdrecarregar() { estado.pedidos = null; avisar(); },
 };
 

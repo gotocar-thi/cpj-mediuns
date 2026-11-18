@@ -9,7 +9,7 @@
 // Estrutura: veja db/ESTRUTURA-ESQUEMA.md para o mapa de versões, domínios e
 // quais migrações foram testadas no Postgres.
 
-export const VERSAO = 146;  // v146: sub-aba Pedidos (andamento de cada linha das Compras)
+export const VERSAO = 147;  // v147: sub-aba Pedidos com a foto do item
 
 import { PERFIS_PADRAO } from '../shared/permissoes.js';
 
@@ -6303,5 +6303,16 @@ export const MIGRACOES = [
      if not found then raise exception 'Pedido não encontrado.'; end if;
      return guias_pedidos_andamento();
    end;
+   $$`,
+  // ================================================== v147: sub-aba Pedidos com a foto do item
+  // Cada linha leva o item e a versão da foto (fotoV, como na aba Compras); a foto vem pelo link ?lista=guiaFoto.
+  `create or replace function guias_pedidos_andamento(p jsonb default '{}'::jsonb)
+   returns jsonb language sql stable as $$
+     select coalesce(jsonb_agg(jsonb_build_object('id', l.id, 'pedido', l.pedido, 'descricao', l.descricao, 'quantidade', l.quantidade,
+              'valor', l.valor::float8, 'chave', l.chave, 'nome', l.nome, 'pago', l.pago_em is not null, 'andamento', l.andamento, 'criadoEm', l.criado_em,
+              'itemId', l.item_id, 'fotoV', case when i.foto is null then null else substr(md5(i.foto), 1, 10) end)
+              order by l.criado_em, lower(l.nome)), '[]'::jsonb)
+       from guias_linhas l left join guias_itens i on i.id = l.item_id
+      where not coalesce(i.doacao, false)
    $$`,
 ];
