@@ -342,8 +342,8 @@ function itensDoPedido(g, linhas) {
   }).join('')}</div>`;
 }
 
-// Painel de pedidos: um bloco por grupo, começando minimizado. Minimizado, mostra o pedido aberto,
-// quantas pessoas e quanto falta pagar. Aberto: Encerrar / Novo pedido do grupo e a lista por pessoa.
+// Painel de pedidos: um bloco por grupo, começando minimizado. Minimizado, mostra o pedido aberto e quantas pessoas
+// (o quanto falta pagar ficava longo demais no celular). Aberto: Encerrar / Novo pedido do grupo e a lista por pessoa.
 function cardPainel(G) {
   if (!G.grupos.length) return '';
   const R0 = rodadas(G);
@@ -352,8 +352,7 @@ function cardPainel(G) {
     const r = R0.find((x) => x.grupoId === g.id && x.numero === g.aberto && !x.encerradoEm);
     const aberto = ui.painel.has(g.id);
     const pessoas = r ? porPessoa(r.linhas).length : 0;
-    const falta = r ? r.linhas.filter((l) => !l.pago).reduce((a, l) => a + l.valor * l.quantidade, 0) : 0;
-    const resumo = r ? `Nº ${r.numero} · ${plural(pessoas, 'pessoa', 'pessoas')}${falta ? ` · falta ${R(falta)}` : ''}` : 'Fechado';
+    const resumo = r ? `Nº ${r.numero} · ${plural(pessoas, 'pessoa', 'pessoas')}` : 'Fechado';
     const cab = `<button class="grp-h dobra gp-grupo-h" data-act="guiapainel" data-id="${g.id}" aria-expanded="${aberto}"><h3>${esc(g.descricao)}</h3>
       <span class="count">${r ? '<span class="badge new">Aberto</span> ' : ''}${resumo} <span class="seta" aria-hidden="true">${aberto ? '▾' : '▸'}</span></span></button>`;
     if (!aberto) return `<div class="gp-grupo">${cab}</div>`;
