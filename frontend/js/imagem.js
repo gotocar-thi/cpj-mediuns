@@ -270,10 +270,12 @@ function desenhar(ctx, cadastro, g, desenhar, giras = [], logo = null) {
     });
     y += ch + gap;
   };
+  // Médium de passe com o guia da linha da gira (do Perfil) entre parênteses, como o médium.
+  const comGuia = (id) => { const gp = guiaNaGira(ps.find((p) => p.id === id), g); return nome(id) + (gp ? ` (${gp})` : ''); };
   // O passe só vem riscado quando todos os médiuns de passe daquela linha faltaram.
   const linhaCambone = (x) => ({ l: x.m.nome, lRisc: faltou.has(x.m.nome), guia: guiaNaGira(x.m, g),
     r: x.cams.length ? x.cams.map((p) => ({ n: nome(p.c), re: !!p.remanejado, risc: faltou.has(nome(p.c)) })) : [{ n: 'sem cambone' }], vazio: !x.cams.length,
-    passe: x.passes.map((p) => nome(p.c)).join(' e ') + (x.passes.some((p) => p.remanejado) ? ' ↻' : ''), passeRe: x.passes.some((p) => p.remanejado),
+    passe: x.passes.map((p) => comGuia(p.c)).join(' e ') + (x.passes.some((p) => p.remanejado) ? ' ↻' : ''), passeRe: x.passes.some((p) => p.remanejado),
     passeRisc: x.passes.length > 0 && x.passes.every((p) => faltou.has(nome(p.c))) });
   secao('Médiuns', COR.medium, 'MÉDIUM', 'CAMBONE', lista.filter((x) => x.m.funcao !== 'extra').map(linhaCambone));
   secao('At. Extras', COR.extra, 'AT. EXTRA', 'CAMBONE', lista.filter((x) => x.m.funcao === 'extra').map(linhaCambone));

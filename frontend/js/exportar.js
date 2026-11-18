@@ -92,6 +92,8 @@ export function textoWhats(pessoas, g, fmt, giras = []) {
   // Na lista, o médium de passe vai na linha de baixo do médium, recuado.
   // Quem entrou no Remanejar faltas vem com 🔄.
   const re = (p) => (p.remanejado ? '🔄 ' : '') + nome(p.c);
+  // Médium de passe: com o guia da linha da gira (do Perfil), como o médium.
+  const rePasse = (p) => { const gp = guiaNaGira(ps.find((x) => x.id === p.c), g); return re(p) + (gp ? ` _(${gp})_` : ''); };
   const cams = (x) => (x.cams.length ? x.cams.map(re).join(' e ') : '_sem cambone_');
   const RECUO = '  ';   // espaço largo: o WhatsApp não some com ele no começo da linha
   const secao = (titulo, itens) => {
@@ -103,7 +105,7 @@ export function textoWhats(pessoas, g, fmt, giras = []) {
       itens.forEach((x) => {
         const guia = guiaNaGira(x.m, g);
         L.push(`▫️ *${x.m.nome}*${guia ? ` _(${guia})_` : ''} → ${cams(x)}`);
-        if (x.passes.length) L.push(`${RECUO}🙌 _Passe:_ ${x.passes.map(re).join(' e ')}`);
+        if (x.passes.length) L.push(`${RECUO}🙌 _Passe:_ ${x.passes.map(rePasse).join(' e ')}`);
       });
     }
   };

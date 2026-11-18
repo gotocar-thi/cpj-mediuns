@@ -1109,22 +1109,23 @@ export const mudancas = {
     gravarPresenca(t.dataset.id, t.value);
   },
   // Cambone pode acompanhar mais de um médium; médium de passe fica com um só (sai do anterior).
+  // Com a escala já publicada, quem entra no Ajuste manual fica marcado como remanejado (como no Remanejar faltas).
   addcam(t) {
     if (!t.value) return;
     const g = giraAtual();
-    editarGira({ pares: [...(g.pares || []), { m: t.dataset.m, c: t.value, fixo: false, remanejado: false }], ...saiDoSuporte(g, t.value) });
+    editarGira({ pares: [...(g.pares || []), { m: t.dataset.m, c: t.value, fixo: false, remanejado: !!g.publicada }], ...saiDoSuporte(g, t.value) });
     avisar();
   },
   addpasse(t) {
     if (!t.value) return;
     const g = giraAtual();
-    editarGira({ passes: [...(g.passes || []).filter((p) => p.c !== t.value), { m: t.dataset.m, c: t.value, fixo: false, remanejado: false }] });
+    editarGira({ passes: [...(g.passes || []).filter((p) => p.c !== t.value), { m: t.dataset.m, c: t.value, fixo: false, remanejado: !!g.publicada }] });
     avisar();
   },
   troca(t) {
     const k = t.dataset.k;
     const g = giraAtual();
-    editarGira({ [k]: (g[k] || []).map((p, i) => (i === +t.dataset.i ? { ...p, c: t.value } : p)), ...(k === 'pares' ? saiDoSuporte(g, t.value) : {}) });
+    editarGira({ [k]: (g[k] || []).map((p, i) => (i === +t.dataset.i && p.c !== t.value ? { ...p, c: t.value, remanejado: !!p.remanejado || !!g.publicada } : p)), ...(k === 'pares' ? saiDoSuporte(g, t.value) : {}) });
     avisar();
   },
 };
