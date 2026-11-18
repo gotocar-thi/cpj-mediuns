@@ -1,5 +1,5 @@
 // Tela "Perfil": cada pessoa registra as suas informações, os seus orixás, guias e outros guias.
-// O admin também acompanha a corrente: quem já respondeu, os guias de todos e as oferendas pendentes.
+// O admin também acompanha a corrente: a Anamnese, os guias de todos e as oferendas pendentes.
 
 import { ORIXAS, LINHAS_CADASTRO, LINHA_KEYS } from '/shared/regras.js';
 import { POSICOES_ORIXA, POSICOES_GUIA, GUIAS, NOME_GUIA_MAX, respondeu, lerNascimento, nascimentoBR, telefoneBR, soNumeros, emailValido, blocosAfinidade, cadastraEspiritual, cpfValido, cpfBR,
@@ -27,7 +27,7 @@ function card(k, titulo, count, padrao, corpo, dobra = admin(), adm = false) {
   return `<div class="card pf-c-${k}${adm ? ' pf-adm-card' : ''}">${cab(k, titulo, count, ab, dobra)}${ab ? corpo() : ''}</div>`;
 }
 
-// ---------- Pessoas (abaixo da moldura ADMIN) ----------
+// ---------- Pessoas (abaixo da moldura ADMIN PERFIL) ----------
 // A aba Pessoas dentro de um bloco que começa aberto, só com a Corrente (o resto no "Ver mais" da própria tela);
 // aparece para quem vê a aba Pessoas.
 // Os toques e as mudanças dentro dele vão para a tela Pessoas (main.js, pelo data-tela).
@@ -473,9 +473,10 @@ function janelaAnamnese() {
 
 // Admin: % de quem já preencheu, as perguntas (＋ Adicionar pergunta, excluir), as respostas de uma pessoa
 // e o arquivo com todas as respostas para mandar no WhatsApp.
-function cardAnamneseAdmin(todos) {
+// Bloco Anamnese do admin (moldura ADMIN PERFIL): o resumo vai no título do bloco; corpo() é o conteúdo.
+function anamneseAdmin(todos) {
   const A = estado.anamnese;
-  if (!A || A.erro) return '';
+  if (!A || A.erro) return null;
   const R = respostasPorPessoa(A.todas);
   const responderam = todos.filter((x) => anamnesePreenchida(A.perguntas, R[x.pessoaId]));
   const faltam = todos.filter((x) => !anamnesePreenchida(A.perguntas, R[x.pessoaId]));
@@ -486,7 +487,7 @@ function cardAnamneseAdmin(todos) {
   const listaAberta = grupoAberto === 'responderam' ? responderam : grupoAberto === 'faltam' ? faltam : null;
   const tituloLista = grupoAberto === 'responderam' ? 'Responderam' : 'Ainda não responderam';
   const val = valorAnamnese;
-  return card('anamnese-adm', `<span aria-hidden="true">🩺</span> Anamnese <span class="pf-cab-pct">${pct}%</span>`, `${responderam.length} de ${todos.length}`, true, () => `
+  return { pct, n: responderam.length, total: todos.length, corpo: () => `
     <div class="ana-adm-blocos">
     <section class="ana-adm-bloco">
       <div class="ana-adm-bloco-titulo">Acompanhamento</div>
@@ -528,25 +529,10 @@ function cardAnamneseAdmin(todos) {
     <button class="btn" data-act="anacompartilhar"><span aria-hidden="true">📄</span> Compartilhar todas as respostas (arquivo)</button>
     </div>
     </section>
-    </div>`, true, true);
+    </div>` };
 }
 
 // ---------- admin: a corrente ----------
-function cardRespostas(todos) {
-  const sim = todos.filter((x) => respondeu(x.perfil));
-  const nao = todos.filter((x) => !respondeu(x.perfil));
-  const pct = todos.length ? Math.round((sim.length / todos.length) * 100) : 0;
-  const grupoAberto = U().respostaGrupo;
-  const listaAberta = grupoAberto === 'responderam' ? sim : grupoAberto === 'faltam' ? nao : null;
-  const tituloLista = grupoAberto === 'responderam' ? 'Responderam' : 'Ainda não responderam';
-  return card('respostas', `<span aria-hidden="true">📝</span> Respostas <span class="pf-cab-pct">${pct}%</span>`, `${sim.length} de ${todos.length}`, true, () => `
-    <div class="pf-of-totais pf-resp-totais" aria-label="Status das respostas">
-      <button class="pf-of-total pf-resp-total fn-respondeu${grupoAberto === 'responderam' ? ' selecionado' : ''}" type="button" data-act="pfrespostas" data-grupo="responderam" aria-expanded="${grupoAberto === 'responderam'}" aria-label="Responderam: ${sim.length} pessoas"${sim.length ? '' : ' disabled'}><b>${sim.length}</b><span>Responderam</span></button>
-      <button class="pf-of-total pf-resp-total fn-faltam${grupoAberto === 'faltam' ? ' selecionado' : ''}" type="button" data-act="pfrespostas" data-grupo="faltam" aria-expanded="${grupoAberto === 'faltam'}" aria-label="Ainda não responderam: ${nao.length} pessoas"${nao.length ? '' : ' disabled'}><b>${nao.length}</b><span>Faltam</span></button>
-    </div>
-    ${listaAberta ? `<div class="pf-grupo"><div class="pf-gt">${tituloLista}<span class="count">${listaAberta.length}</span></div><ul class="pf-lista">${listaAberta.map((x) => `<li>${esc(x.nome)}</li>`).join('')}</ul></div>` : ''}`, true, true);
-}
-
 // Guias da corrente: todos veem (só guia chefe e de frente de cada um); começa minimizado.
 function cardGuiasCorrente(lista) {
   return card('corrente-guias', 'Guias da corrente', lista.length, false, () => (lista.length ? `
@@ -559,7 +545,7 @@ function cardGuiasCorrente(lista) {
     </div>` : '<p class="muted" style="margin:0">Ninguém informou os guias ainda.</p>'), true);
 }
 
-// Oferendas que faltam, só de quem já respondeu (quem não respondeu está no bloco Respostas).
+// Oferendas que faltam, só de quem já respondeu os orixás e guias.
 function cardOferendas(todos) {
   const resp = todos.filter((x) => respondeu(x.perfil));
   const pendentes = resp.map((x) => {
@@ -625,13 +611,13 @@ export function render() {
   let h = '';
   // Funções de admin juntas no topo, dentro da moldura dourada "ADMIN".
   if (admin()) {
-    // Respostas contam só quem cadastra orixás e guias (a curimba fica fora).
-    const comOrixas = todos.filter((x) => cadastraEspiritual(x.funcao));
-    // Começa minimizada; tocar no título expande e recolhe.
-    const abertaAdm = !!U().abertos['adm-area'];
-    h += `<div class="pf-adm-area" role="group" aria-label="Só para admin"><span class="pf-adm-rot">ADMIN</span>
-      <button class="grp-h dobra" data-act="pfdobra" data-k="adm-area" aria-expanded="${abertaAdm}"><h2>Administração</h2><span class="count"><span class="seta" aria-hidden="true">${abertaAdm ? '▾' : '▸'}</span></span></button>
-      ${abertaAdm ? cardRespostas(comOrixas) + cardAnamneseAdmin(todos) : ''}</div>`;
+    // Só a Anamnese: começa minimizada; tocar no título expande e recolhe.
+    const ana = anamneseAdmin(todos);
+    const abertaAdm = !!U().abertos['anamnese-adm'];
+    h += `<div class="pf-adm-area" role="group" aria-label="Só para admin"><span class="pf-adm-rot">ADMIN PERFIL</span>
+      <button class="grp-h dobra" data-act="pfdobra" data-k="anamnese-adm" aria-expanded="${abertaAdm}"><h2><span aria-hidden="true">🩺</span> Anamnese${ana ? ` <span class="pf-cab-pct">${ana.pct}%</span>` : ''}</h2>
+        <span class="count">${ana ? `${ana.n} de ${ana.total} ` : ''}<span class="seta" aria-hidden="true">${abertaAdm ? '▾' : '▸'}</span></span></button>
+      ${abertaAdm ? (ana ? ana.corpo() : '<div class="loading">Carregando a anamnese…</div>') : ''}</div>`;
   }
   h += cardPessoas();
   h += cardInfo(eu);
@@ -765,12 +751,6 @@ export const cliques = {
       avisar();
       return;
     }
-    if (k === 'respostas') {
-      U().abertos[k] = true;
-      U().respostaGrupo = null;
-      avisar();
-      return;
-    }
     if (k === 'corrente-oferendas') {
       U().abertos[k] = true;
       U().oferendaFuncao = null;
@@ -778,10 +758,6 @@ export const cliques = {
       return;
     }
     U().abertos[k] = el.getAttribute('aria-expanded') !== 'true';
-    avisar();
-  },
-  pfrespostas(el) {
-    U().respostaGrupo = U().respostaGrupo === el.dataset.grupo ? null : el.dataset.grupo;
     avisar();
   },
   pfanamnese(el) {
