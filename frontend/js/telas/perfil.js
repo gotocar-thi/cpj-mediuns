@@ -4,7 +4,7 @@
 import { ORIXAS, LINHAS_CADASTRO, LINHA_KEYS } from '/shared/regras.js';
 import { POSICOES_ORIXA, POSICOES_GUIA, GUIAS, NOME_GUIA_MAX, respondeu, lerNascimento, nascimentoBR, telefoneBR, soNumeros, emailValido, blocosAfinidade, cadastraEspiritual, cpfValido, cpfBR,
   ANAMNESE_TIPOS, ANAMNESE_PERGUNTA_MAX, ANAMNESE_TEXTO_MAX, ANAMNESE_SIMNAO, ANAMNESE_TIPO_LABEL, anamnesePreenchida, respostasPorPessoa, textoAnamnese, valorAnamnese } from '/shared/perfil.js';
-import { estado, pode, visaoAtiva, avisar, carregarPerfil, mudarPerfil, salvarAfinidade, carregarFoto, salvarFoto, salvarInfoDe, carregarAnamnese, acaoAnamnese, lerCpf, salvarCpf } from '../estado.js';
+import { estado, pode, visaoAtiva, vePessoas, avisar, carregarPerfil, mudarPerfil, salvarAfinidade, carregarFoto, salvarFoto, salvarInfoDe, carregarAnamnese, acaoAnamnese, lerCpf, salvarCpf } from '../estado.js';
 import { esc, toast, iniciais, baixar, hoje } from '../util.js';
 import { emDemo } from '../auth.js';
 import { ICONE_WHATS } from './giraComum.js';
@@ -25,6 +25,22 @@ function cab(k, titulo, count, aberto, dobra) {
 function card(k, titulo, count, padrao, corpo, dobra = admin(), adm = false) {
   const ab = !dobra || (U().abertos[k] ?? padrao);
   return `<div class="card pf-c-${k}${adm ? ' pf-adm-card' : ''}">${cab(k, titulo, count, ab, dobra)}${ab ? corpo() : ''}</div>`;
+}
+
+// ---------- Pessoas (abaixo da moldura ADMIN) ----------
+// A aba Pessoas dentro de um bloco que começa aberto, só com a Corrente (o resto no "Ver mais" da própria tela);
+// aparece para quem vê a aba Pessoas.
+// Os toques e as mudanças dentro dele vão para a tela Pessoas (main.js, pelo data-tela).
+let telaPessoas = null;
+function cardPessoas() {
+  if (!vePessoas()) return '';
+  const aberto = U().abertos.pessoas ?? true;
+  let corpo = '';
+  if (aberto && !telaPessoas) {
+    import('./pessoas.js').then((m) => { telaPessoas = m; avisar(); });
+    corpo = '<div class="loading">Carregando…</div>';
+  } else if (aberto) corpo = `<div class="pf-pessoas" data-tela="pessoas">${telaPessoas.render({ embutida: true })}</div>`;
+  return `<div class="card pf-c-pessoas">${cab('pessoas', '<span aria-hidden="true">👥</span> Pessoas', '', aberto, true)}${corpo}</div>`;
 }
 
 // ---------- Admin root: Ajustes perfil ----------
@@ -617,6 +633,7 @@ export function render() {
       <button class="grp-h dobra" data-act="pfdobra" data-k="adm-area" aria-expanded="${abertaAdm}"><h2>Administração</h2><span class="count"><span class="seta" aria-hidden="true">${abertaAdm ? '▾' : '▸'}</span></span></button>
       ${abertaAdm ? cardRespostas(comOrixas) + cardAnamneseAdmin(todos) : ''}</div>`;
   }
+  h += cardPessoas();
   h += cardInfo(eu);
   const outra = admin() && estado.infoPessoa && estado.infoPessoa !== eu?.pessoaId ? todos.find((x) => x.pessoaId === estado.infoPessoa) : null;
   if (outra) h += cardsDeOutra(outra);

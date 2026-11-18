@@ -891,6 +891,9 @@ export async function acaoAmaci(op, dados = {}) {
 // ---------- aba Diário ----------
 // O root sempre; os outros (corrente e alunos), quando o root liga Visível para todos. É pessoal: não abre no Ver como
 // nem no acesso da curimba (sem pessoa).
+// Aba Pessoas (e o bloco Pessoas do Perfil, que segue a mesma regra): quem vê a corrente ou os alunos, fora das visões
+// Alunos e Curimba. O que dá para editar lá dentro continua pelas permissões de cada ação (e o servidor confere).
+export const vePessoas = () => (pode('pessoas:ver') || pode('alunos:ver')) && !['alunos', 'curimba'].includes(visaoAtiva());
 export const veDiario = () => !estado.me?.aguardando && !estado.verComo && estado.me?.grupo !== 'curimba' && visaoAtiva() !== 'curimba'
   && (pode('usuarios:gerenciar') || !!estado.me?.diarioPublicada);
 export async function carregarDiario() {

@@ -2,7 +2,7 @@
 
 import { estadoDoApp, logado, entrar, cadastrar, criarSenhaContato, verificarCpf, entrarCpf, criarSenhaCpf, instalar, sair, trocarSenha, criarSenhaCorrente } from './auth.js';
 import { quandoSessaoExpirar, definirVerComo } from './api.js';
-import { estado, prefs, salvarPrefs, pode, visaoAtiva, aoMudar, avisar, carregarTudo, atualizarDoServidor, atualizarOferendasAoAbrir, atualizarAoAbrir, atualizarUsuariosAoAbrir, salvarPerfilAgora, mudarVisaoRoot, verComoPessoa, ehRootReal, veErvas, veOferendas, veGuias, veAmaci, veTransparencia, vePedidos, veDiario, temPendencia } from './estado.js';
+import { estado, prefs, salvarPrefs, pode, visaoAtiva, aoMudar, avisar, carregarTudo, atualizarDoServidor, atualizarOferendasAoAbrir, atualizarAoAbrir, atualizarUsuariosAoAbrir, salvarPerfilAgora, mudarVisaoRoot, verComoPessoa, ehRootReal, veErvas, veOferendas, veGuias, veAmaci, veTransparencia, vePedidos, veDiario, vePessoas, temPendencia } from './estado.js';
 import { esc, toast, hoje, mascaraTel, guardarRascunhos, devolverRascunhos } from './util.js';
 import { iniciarAtualizacao } from './atualizacao.js';
 import { PIN_NOVO, PIN_NOVO_MSG } from '/shared/permissoes.js';
@@ -134,7 +134,7 @@ function render() {
   const visao = visaoAtiva();
   // Abas que o perfil pode ver.
   let VE = { usuarios: pode('usuarios:gerenciar'), asaas: pode('asaas:ver'), pedidos: vePedidos(), transparencia: veTransparencia(), ervas: veErvas(), oferendas: veOferendas(), guias: veGuias(), amaci: veAmaci(),
-    pessoas: pode('pessoas:ver') || pode('alunos:ver'), hist: pode('historico:ver'), perfil: pode('perfil:ver'), curimba: pode('curimba:ver'), videos: pode('videos:ver') || !!estado.me.videosPublicada, fotos: FOTOS_ATIVA && pode('fotos:ver'), diario: veDiario(), gira: true, agenda: true };
+    pessoas: vePessoas(), hist: pode('historico:ver'), perfil: pode('perfil:ver'), curimba: pode('curimba:ver'), videos: pode('videos:ver') || !!estado.me.videosPublicada, fotos: FOTOS_ATIVA && pode('fotos:ver'), diario: veDiario(), gira: true, agenda: true };
   if (visao === 'alunos') VE = { usuarios: false, asaas: false, pedidos: false, transparencia: false, ervas: false, oferendas: veOferendas(), guias: veGuias(), amaci: veAmaci(), pessoas: false, hist: false, perfil: true, curimba: false, videos: false, fotos: false, diario: veDiario(), gira: true, agenda: false };
   // Consulente: a Geral e as abas que o root marcou no perfil Consulentes (Perfil, Compras, Amaci, Vídeos).
   if (visao === 'alunos' && estado.me.consulente) Object.assign(VE, { oferendas: false, perfil: pode('perfil:ver'), guias: veGuias(), amaci: veAmaci(), videos: pode('videos:ver') || !!estado.me.videosPublicada });
@@ -357,7 +357,9 @@ main.addEventListener('click', async (e) => {
   if (a === 'askdel') { estado.confirm = el.dataset.k; render(); return; }
   estado.confirm = null;
   if (a === 'goto') { prefs.tab = el.dataset.tab; salvarPrefs(); render(); window.scrollTo(0, 0); return; }
-  const tela = TELAS[prefs.tab];
+  // Tela embutida em outra aba (ex.: Pessoas dentro do Perfil): o toque vai para ela.
+  const embutida = el.closest('[data-tela]')?.dataset.tela;
+  const tela = embutida ? await telaDe(embutida) : TELAS[prefs.tab];
   if (tela?.cliques && tela.cliques[a]) tela.cliques[a](el, e);
   else render();
 });
@@ -370,6 +372,8 @@ main.addEventListener('change', (e) => {
   if (prefs.tab === 'transparencia' && (t.id === 'tr-mes' || t.dataset.act === 'trpublicar')) { TELAS.transparencia?.mudou(t); return; }
   if (prefs.tab === 'oferendas' && t.form?.querySelector('[data-previa]')) TELAS.oferendas?.atualizarPrevia(t.form);
   if (t.id === 'f-import' && t.files && t.files[0]) { const f = t.files[0]; t.value = ''; telaDe('hist').then((m) => m.restaurar(f)); return; }
+  const embutida = t.closest?.('[data-tela]')?.dataset.tela;
+  if (embutida) { telaDe(embutida).then((m) => m.mudancas?.[t.dataset.act]?.(t)); return; }
   const tela = TELAS[prefs.tab];
   const fn = t.dataset.act && tela?.mudancas && tela.mudancas[t.dataset.act];
   if (fn) fn(t);

@@ -419,16 +419,21 @@ function janelaExcluir() {
   </div></div>`;
 }
 
-export function render() {
-  return renderPessoas().replace(/<\/section>$/, janelaExcluir() + '</section>');
+// embutida: dentro do bloco Pessoas da aba Perfil. Ali aparece só a Corrente (funções e turmas da limpeza); de Oferendas
+// pendentes para baixo fica recolhido atrás do "Ver mais" (estado.pessoasMais).
+export function render({ embutida = false } = {}) {
+  return renderPessoas(embutida).replace(/<\/section>$/, janelaExcluir() + '</section>');
 }
 
-function renderPessoas() {
+function renderPessoas(embutida = false) {
   const todas = pessoasOrd();
   const ps = todas.filter((p) => !ehCurimba(p));   // a corrente (sem a curimba)
   const editar = pode('pessoas:editar');
   const verAlunos = pode('alunos:ver');
-  if (verAlunos && estado.alunos === null) { estado.alunos = undefined; carregarAlunos(); }
+  // No Perfil (embutida), os Alunos ficam atrás do "Ver mais": só busca a lista (pesada para quem edita: dados,
+  // pendências e CPF mascarado de cada aluno) quando ela vai aparecer.
+  const mostraAlunos = !embutida || estado.pessoasMais || !pode('pessoas:ver');
+  if (verAlunos && mostraAlunos && estado.alunos === null) { estado.alunos = undefined; carregarAlunos(); }
   let h = `<section class="panel pessoas-tela">`;
   const podeAdd = editar || pode('alunos:editar');
   // Perfil que só cuida dos alunos (ex.: Admin oferendas): só o Adicionar e o bloco Alunos.
@@ -455,9 +460,11 @@ function renderPessoas() {
     }).join('')}</div>
     ${correnteListaAberta === CURIMBA ? '<p class="nota">A curimba não conta presença nem falta, não entra no sorteio nem no total da corrente.</p>' : ''}
     ${correnteListaAberta ? `<div class="ppl">${pessoasPorFuncao[correnteListaAberta].map(linhaCorrente).join('')}</div>` : ''}
-    ${blocoTurmas(todas, editar)}${cardOferendasPendentes()}${listaLicencas(ps, editar)}${add}</div>`;   // licença: só a corrente
-  if (verAlunos) h += cardAlunos();
-  h += cardCadastrosLogin();   // o último bloco da aba
+    ${blocoTurmas(todas, editar)}`;
+  const resto = `${cardOferendasPendentes()}${listaLicencas(ps, editar)}${add}`;   // licença: só a corrente
+  const fim = (verAlunos ? cardAlunos() : '') + cardCadastrosLogin();   // Cadastros pelo login: o último bloco da aba
+  if (embutida && !estado.pessoasMais) return h + `<button type="button" class="btn small pp-vermais" data-act="pessoasmais">Ver mais ▾</button></div></section>`;
+  h += resto + (embutida ? '<button type="button" class="btn small pp-vermais" data-act="pessoasmais">Ver menos ▴</button>' : '') + '</div>' + fim;
   return h + '</section>';
 }
 
@@ -506,6 +513,7 @@ function cardCadastrosLogin() {
 const formatarCel = (c) => { const d = String(c).replace(/\D/g, ''); return d.length >= 10 ? `(${d.slice(0, 2)}) ${d.slice(2, -4)}-${d.slice(-4)}` : c; };
 
 export const cliques = {
+  pessoasmais() { estado.pessoasMais = !estado.pessoasMais; avisar(); },
   cadquadro(el) { estado.cadQuadro = estado.cadQuadro === el.dataset.q ? null : el.dataset.q; estado.cadEditar = null; estado.cadAberto = null; avisar(); },
   cadpessoa(el) { estado.cadAberto = estado.cadAberto === el.dataset.id ? null : el.dataset.id; avisar(); },
   cadeditar(el) { estado.cadEditar = el.dataset.id; estado.alunoCpfRemover = null; estado.alunoCpfVisto = null; estado.alunoRasc = null; avisar(); document.getElementById('cad-nc')?.focus(); },
