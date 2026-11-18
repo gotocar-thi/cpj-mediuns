@@ -226,9 +226,9 @@ function amaci() {
 // Aba Diário: alguns dias de exemplo do próprio root (um dia de gira com conselho e banho pendente, um dia comum).
 let diarioPublicado = false;
 const diarioDias = [
-  { data: dia(-6), dados: { gira: true, antes: { emo: 'drenado', energia: 2 }, depois: { emo: 'paz', energia: 4, sensacao: 'leve' }, linha: 'preto-velho',
+  { data: dia(-6), dados: { gira: true, antes: { humor: 2, emo: ['drenado'], energia: 2 }, depois: { humor: 4, emo: ['paz', 'grato'], energia: 4, sensacao: 'leve' }, linha: 'preto-velho',
     conselho: 'Firma o teu pensamento antes de dormir e não carrega o que não é teu.', banho: { ervas: ['arruda', 'alecrim', 'manjericão'], feito: false, origem: 'guia' } } },
-  { data: dia(-2), dados: { antes: { emo: 'ansioso', energia: 2, sono: 'agitado' }, depois: { emo: 'grato', energia: 3 }, reflexao: 'Encontrei um amigo antigo bem quando pensava nele.',
+  { data: dia(-2), dados: { antes: { humor: 2, emo: ['ansioso'], energia: 2, sono: 'agitado' }, depois: { humor: 4, emo: ['grato'], energia: 3 }, reflexao: 'Encontrei um amigo antigo bem quando pensava nele.',
     banho: { ervas: ['Camomila'], feito: true, origem: 'orientador' } } },
 ];
 const diarioDemo = () => {

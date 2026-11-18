@@ -2206,3 +2206,48 @@ div.pf-of-total{cursor:default}
 .di-add input{flex:1;min-width:0}
 .di-ori{display:grid;gap:6px;padding:10px;border-radius:8px;background:var(--accent-soft)}
 .di-ori p{margin:0}
+/* Diário: visual acolhedor (tons quentes, cantos macios, rostos e emoções em dois grupos) */
+.di-tela{--di-pessego:#e9a96b;--di-rosa:#d98c9a;--di-verde:#7cbf8e;--di-azul:#8ea6d8;gap:16px}
+.di-tela .card:not(.adm){border-radius:20px;border-color:color-mix(in srgb,var(--di-pessego) 16%,var(--line));
+  background:linear-gradient(165deg,color-mix(in srgb,var(--di-pessego) 6%,var(--surface)) 0%,var(--surface) 55%)}
+.di-tela h3{font-size:1.15rem}
+.di-tela .di-rot{font-size:.95rem;color:var(--ink);font-weight:600;margin-top:2px}
+.di-tela .di-rot .muted{font-weight:400;font-size:.85rem}
+.di-cab{gap:6px;padding:20px 18px;background:radial-gradient(120% 90% at 0% 0%,color-mix(in srgb,var(--di-pessego) 20%,var(--surface)) 0%,var(--surface) 70%)!important}
+.di-ola{margin:0;color:var(--gold);font-weight:700;font-size:.95rem}
+.di-cab h2{font-size:1.5rem}
+.di-data{margin:0 0 6px;font-size:.88rem}
+.di-data::first-letter{text-transform:uppercase}
+.di-check-a{background:linear-gradient(170deg,color-mix(in srgb,var(--di-pessego) 13%,var(--surface)) 0%,var(--surface) 45%)!important}
+.di-check-b{background:linear-gradient(170deg,color-mix(in srgb,var(--di-azul) 14%,var(--surface)) 0%,var(--surface) 45%)!important;border-color:color-mix(in srgb,var(--di-azul) 18%,var(--line))!important}
+/* escala de rostos */
+.di-rostos{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:6px}
+.di-rosto{display:flex;flex-direction:column;align-items:center;gap:4px;padding:10px 2px 8px;border-radius:16px;border:1.5px solid transparent;
+  background:color-mix(in srgb,var(--bg) 70%,transparent);color:var(--muted);cursor:pointer;transition:transform .15s,opacity .15s,filter .15s,background .15s;font-family:var(--f-body)}
+.di-rosto-i{font-size:1.9rem;line-height:1}
+.di-rosto-t{font-size:.68rem;font-weight:600;line-height:1.1;text-align:center}
+.di-rostos:has([aria-pressed="true"]) .di-rosto:not([aria-pressed="true"]){opacity:.5;filter:grayscale(.6)}
+.di-rosto[aria-pressed="true"]{transform:scale(1.06);border-color:var(--di-pessego);color:var(--ink);
+  background:color-mix(in srgb,var(--di-pessego) 18%,var(--surface))}
+/* emoções em dois grupos */
+.di-grupo{display:grid;gap:8px;padding:12px;border-radius:16px}
+.di-grupo-leve{background:color-mix(in srgb,var(--di-verde) 10%,transparent);border:1px solid color-mix(in srgb,var(--di-verde) 22%,transparent)}
+.di-grupo-densa{background:color-mix(in srgb,var(--di-lilas) 11%,transparent);border:1px solid color-mix(in srgb,var(--di-lilas) 24%,transparent)}
+.di-grupo-h{margin:0;display:grid;gap:1px}
+.di-grupo-h b{font-size:.92rem}
+.di-grupo-h span{font-size:.78rem;color:var(--muted)}
+.di-tela .di-chip{border-radius:999px;padding:7px 13px;background:var(--surface);border-color:color-mix(in srgb,var(--ink) 12%,transparent)}
+.di-grupo-leve .di-chip[aria-pressed="true"]{background:color-mix(in srgb,var(--di-verde) 30%,var(--surface));border-color:var(--di-verde);color:var(--ink)}
+.di-grupo-densa .di-chip[aria-pressed="true"]{background:color-mix(in srgb,var(--di-lilas) 32%,var(--surface));border-color:var(--di-lilas);color:var(--ink)}
+.di-chip[aria-disabled="true"]{opacity:.45}
+.di-emo-sel{margin:0;padding:0;list-style:none;display:grid;gap:4px;font-size:.85rem;color:var(--muted)}
+.di-emo-sel b{color:var(--ink);font-weight:600}
+.di-tela .di-en-b{border-radius:14px}
+.di-termo-rostos{margin:0;display:flex;align-items:center;justify-content:center;gap:14px;font-size:2rem}
+.di-termo-rostos .muted{font-size:1.2rem}
+.di-tela .di-termo-b{border-radius:14px}
+.di-tela .di-pilula{border-left:0;background:linear-gradient(165deg,color-mix(in srgb,var(--gold) 16%,var(--surface)) 0%,var(--surface) 70%)!important}
+.di-tela .di-pilula-t{font-family:var(--f-display);font-size:1.05rem;font-style:italic}
+.di-tela .di-ori{border-radius:14px;background:color-mix(in srgb,var(--di-verde) 12%,var(--surface))}
+.di-tela .di-d{border-radius:12px}
+.di-tela .di-d.sel{border-color:var(--di-pessego);background:color-mix(in srgb,var(--di-pessego) 18%,var(--surface))}

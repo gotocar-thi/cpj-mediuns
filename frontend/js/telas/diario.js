@@ -3,13 +3,14 @@
 // calendário do mês (ponto dourado: gira registrada; lilás: dia comum com manhã e noite; 🌿: banho tomado) com a lua do
 // dia escolhido. O dia muda conforme a agenda (ou o interruptor "Dia de gira"): na gira, Chegada, Saída, Linha, Banho e
 // Conselho do guia; no dia comum, Manhã, Noite, Reflexão e o Orientador, que sugere um banho quando o estado é pesado.
+// Cada check-in tem a escala de rostos (1 a 5), as emoções em dois grupos (leve e densa; até 3) e a energia.
 // Toques salvam na hora; os textos salvam ao sair do campo. O root liga "Visível para todos"; desligado, só ele vê.
 
 import { estado, avisar, carregarDiario, salvarDiaDiario, publicarDiario } from '../estado.js';
 import { esc, toast, hoje, dLong, dDM, pd } from '../util.js';
 import { linhaDaEntidade, LINHA_LABEL } from '/shared/regras.js';
 import {
-  EMOCOES, SENSACOES, SONO, LINHAS_DIARIO, TEMPERATURAS, AVISO_QUENTE, ERVAS_SUGESTOES, MAX_CONSELHO, MAX_REFLEXAO,
+  EMOCOES, GRUPOS_EMOCOES, HUMOR, MAX_EMOCOES, SENSACOES, SONO, LINHAS_DIARIO, TEMPERATURAS, AVISO_QUENTE, ERVAS_SUGESTOES, MAX_CONSELHO, MAX_REFLEXAO,
   temperaturaDaErva, sugestaoOrientador, faseDaLua, deltaAxe,
 } from '/shared/diario.js';
 
@@ -28,7 +29,7 @@ const dadosDe = (data) => estado.diario?.dias?.find((x) => x.data === data)?.dad
 const giraDaAgenda = (data) => estado.giras[data] || null;
 const agendaTemGira = (data) => !!giraDaAgenda(data) || (estado.eventos || []).some((e) => e.data === data && e.tipo === 'gira');
 const ehGira = (data, d = dadosDe(data)) => (typeof d.gira === 'boolean' ? d.gira : agendaTemGira(data));
-const completo = (b) => !!(b?.emo || b?.energia);
+const completo = (b) => !!(b?.humor || b?.emo?.length || b?.energia);
 // Linha do dia de gira: a escolhida ou, sem escolha, a da gira da agenda.
 function linhaDoDia(data, d = dadosDe(data)) {
   if (d.linha) return d.linha;
@@ -45,6 +46,21 @@ function salvar(muda) {
 // ---------- peças ----------
 function chips(campo, lista, valor) {
   return `<div class="di-chips">${lista.map(([k, t]) => `<button type="button" class="di-chip" data-act="dichip" data-campo="${campo}" data-v="${k}" aria-pressed="${valor === k}">${t}</button>`).join('')}</div>`;
+}
+// Escala de rostos: como a pessoa se sente, de 1 (muito mal) a 5 (muito bem).
+function rostos(campo, valor) {
+  return `<div class="di-rostos" role="group" aria-label="Como você se sente, de 1 a 5">${HUMOR.map(([n, ico, t]) => `<button type="button" class="di-rosto" data-act="dienergia" data-campo="${campo}" data-v="${n}" aria-pressed="${valor === n}" aria-label="${t}">
+    <span class="di-rosto-i" aria-hidden="true">${ico}</span><span class="di-rosto-t">${t}</span></button>`).join('')}</div>`;
+}
+// Emoções em dois grupos; marcadas até MAX_EMOCOES; embaixo, o que é cada uma das marcadas.
+function emocoes(campo, marcadas = []) {
+  const grupos = GRUPOS_EMOCOES.map((g) => `<div class="di-grupo di-grupo-${g.k}"><p class="di-grupo-h"><b>${g.k === 'leve' ? '☀️' : '🌧️'} ${g.titulo}</b><span>${g.sub}</span></p>
+    <div class="di-chips">${g.itens.map(([k, t]) => {
+      const on = marcadas.includes(k);
+      return `<button type="button" class="di-chip" data-act="diemo" data-campo="${campo}" data-v="${k}" aria-pressed="${on}" ${!on && marcadas.length >= MAX_EMOCOES ? 'aria-disabled="true"' : ''}>${on ? '✓ ' : ''}${t}</button>`;
+    }).join('')}</div></div>`).join('');
+  const sel = EMOCOES.filter(([k]) => marcadas.includes(k));
+  return `${grupos}${sel.length ? `<ul class="di-emo-sel">${sel.map(([, t, x]) => `<li><b>${t}</b> · ${x}</li>`).join('')}</ul>` : ''}`;
 }
 function energia(campo, valor) {
   return `<div class="di-en" role="group" aria-label="Energia de 1 a 5">${[1, 2, 3, 4, 5].map((n) => `<button type="button" class="di-en-b di-en-${n}" data-act="dienergia" data-campo="${campo}" data-v="${n}" aria-pressed="${valor === n}" aria-label="Energia ${n}">${n}</button>`).join('')}</div>
@@ -118,11 +134,13 @@ function calendario(D) {
 function termometro(d, gira) {
   const delta = deltaAxe(d);
   if (delta === null) return '';
+  const face = (n) => HUMOR.find(([x]) => x === n)?.[1];
+  const humor = face(d.antes.humor) && face(d.depois.humor) ? `<p class="di-termo-rostos" aria-label="Como se sentiu"><span>${face(d.antes.humor)}</span><span class="muted">→</span><span>${face(d.depois.humor)}</span></p>` : '';
   const a = d.antes.energia, b = d.depois.energia;
   const msg = delta > 0 ? (gira ? 'Você saiu da gira mais forte do que chegou.' : 'Você termina o dia com mais energia.')
     : delta < 0 ? (gira ? 'Você saiu com menos energia: descanse e cuide-se.' : 'O dia pesou: um banho de manutenção ajuda.')
     : 'Energia estável.';
-  return `<div class="card di-termo"><p class="eyebrow">🌡️ Termômetro de Axé</p>
+  return `<div class="card di-termo"><p class="eyebrow">🌡️ Termômetro de Axé</p>${humor}
     <div class="di-termo-b" style="background:linear-gradient(90deg, ${corEnergia(a)}, ${corEnergia(b)})">
       <span>${gira ? 'Chegada' : 'Manhã'} ${a}</span><span>${gira ? 'Saída' : 'Noite'} ${b}</span></div>
     <p class="di-termo-t"><b>Delta de Axé ${delta > 0 ? '+' : ''}${delta}</b> · ${msg}</p></div>`;
@@ -155,15 +173,20 @@ function dia(D) {
   const auto = agendaTemGira(ui.dia);
   const linha = gira ? linhaDoDia(ui.dia, d) : '';
   const A = d.antes || {}, P = d.depois || {};
-  let h = `<div class="card di-cab"><h2>${ui.dia === hoje() ? 'Hoje · ' : ''}${dLong(ui.dia)}</h2>
-    <label class="of-sw"><input type="checkbox" role="switch" data-act="digira" ${gira ? 'checked' : ''}><span class="of-sw-t" aria-hidden="true"></span><b>${ui.dia === hoje() ? 'Hoje é dia de gira' : 'Dia de gira'}</b>
+  const nome = String(estado.me?.nome || '').split(' ')[0];
+  const ehHoje = ui.dia === hoje();
+  let h = `<div class="card di-cab"><p class="di-ola">${ehHoje ? `Olá${nome ? ', ' + esc(nome) : ''} 🤍` : 'Seu registro de'}</p>
+    <h2>${ehHoje ? 'Como você está hoje?' : dLong(ui.dia)}</h2>${ehHoje ? `<p class="muted di-data">${dLong(ui.dia)}</p>` : ''}
+    <label class="of-sw"><input type="checkbox" role="switch" data-act="digira" ${gira ? 'checked' : ''}><span class="of-sw-t" aria-hidden="true"></span><b>${ehHoje ? 'Hoje é dia de gira' : 'Dia de gira'}</b>
       <span class="muted">${auto ? '(pela agenda)' : ''}</span></label></div>`;
-  h += `<div class="card"><h3>${gira ? '🕯️ Antes da gira · Chegada' : '🌅 Check-in da manhã'}</h3>
-    <p class="di-rot">${gira ? 'Como você está chegando?' : 'Como você acordou?'}</p>${chips('antes.emo', EMOCOES, A.emo)}
+  h += `<div class="card di-check di-check-a"><h3>${gira ? '🕯️ Antes da gira' : '🌅 Ao acordar'}</h3>
+    <p class="di-rot">${gira ? 'Como você está chegando?' : 'Como você acordou?'}</p>${rostos('antes.humor', A.humor)}
+    <p class="di-rot">O que você sente? <span class="muted">(até ${MAX_EMOCOES})</span></p>${emocoes('antes.emo', A.emo)}
     ${gira ? '' : `<p class="di-rot">Sono e sonhos</p>${chips('antes.sono', SONO, A.sono)}`}
     <p class="di-rot">Energia ${gira ? 'física e espiritual' : 'da manhã'}</p>${energia('antes.energia', A.energia)}</div>`;
-  h += `<div class="card"><h3>${gira ? '✨ Depois da gira · Saída' : '🌙 Check-in do fim do dia'}</h3>
-    <p class="di-rot">${gira ? 'Como você está saindo?' : 'Como você está encerrando o dia?'}</p>${chips('depois.emo', EMOCOES, P.emo)}
+  h += `<div class="card di-check di-check-b"><h3>${gira ? '✨ Depois da gira' : '🌙 Ao fim do dia'}</h3>
+    <p class="di-rot">${gira ? 'Como você está saindo?' : 'Como você está encerrando o dia?'}</p>${rostos('depois.humor', P.humor)}
+    <p class="di-rot">O que você sente? <span class="muted">(até ${MAX_EMOCOES})</span></p>${emocoes('depois.emo', P.emo)}
     <p class="di-rot">Energia ${gira ? 'depois do trabalho' : 'da noite'}</p>${energia('depois.energia', P.energia)}
     ${gira ? `<p class="di-rot">Sensação</p>${chips('depois.sensacao', SENSACOES, P.sensacao)}`
       : campoTexto('reflexao', 'Reflexão, gratidão ou sincronicidades (opcional)', d.reflexao, MAX_REFLEXAO, true)}</div>`;
@@ -255,6 +278,18 @@ export const cliques = {
     avisar();
   },
   dichip(el) { marcar(el.dataset.campo, el.dataset.v); },
+  // Emoção: tocar marca ou desmarca; com MAX_EMOCOES marcadas, avisa.
+  diemo(el) {
+    const [g, k] = el.dataset.campo.split('.');
+    const atual = dadosDe(ui.dia)[g]?.[k] || [];
+    const v = el.dataset.v;
+    if (!atual.includes(v) && atual.length >= MAX_EMOCOES) { toast(`Escolha até ${MAX_EMOCOES}: desmarque uma para trocar.`); return; }
+    salvar((d) => {
+      d[g] = d[g] || {};
+      const L = (d[g][k] || []).includes(v) ? d[g][k].filter((x) => x !== v) : [...(d[g][k] || []), v];
+      if (L.length) d[g][k] = L; else delete d[g][k];
+    });
+  },
   dienergia(el) { marcar(el.dataset.campo, Number(el.dataset.v)); },
   dirmerva(el) {
     const i = Number(el.dataset.i);

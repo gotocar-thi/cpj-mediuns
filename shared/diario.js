@@ -5,12 +5,33 @@
 import { LINHAS } from './regras.js';
 import { BANHO_ORIXA, BANHO_GUIA } from './banhos.js';
 
-export const EMOCOES = [
-  ['drenado', 'Cansado/Drenado'], ['ansioso', 'Ansioso'], ['agitado', 'Agitado'], ['irritado', 'Irritado'],
-  ['triste', 'Triste'], ['disperso', 'Disperso'], ['paz', 'Em paz'], ['grato', 'Grato'],
+// Escala de 1 a 5 com rostos: como a pessoa se sente, no geral.
+export const HUMOR = [[1, '😣', 'Muito mal'], [2, '😟', 'Mal'], [3, '😐', 'Mais ou menos'], [4, '🙂', 'Bem'], [5, '😄', 'Muito bem']];
+// Emoções em dois grupos: [chave, nome, o que é]. A pessoa marca até MAX_EMOCOES.
+export const GRUPOS_EMOCOES = [
+  { k: 'leve', titulo: 'Vibração leve', sub: 'Abertura, equilíbrio e recarga', itens: [
+    ['paz', 'Em paz / Sereno', 'Mente quieta, coração tranquilo'],
+    ['grato', 'Grato', 'Vontade de agradecer, reconhecimento'],
+    ['fe', 'Com fé / Firme', 'Senso de propósito, sustentação espiritual'],
+    ['alegre', 'Alegre / Entusiasmado', 'Energia alta, leveza'],
+    ['amor', 'Com amor / Acolhedor', 'Coração aberto para ajudar ou receber'],
+    ['inspirado', 'Inspirado / Intuitivo', 'Sensibilidade aguçada, clareza'],
+  ] },
+  { k: 'densa', titulo: 'Vibração densa', sub: 'Pede acolhimento, descarrego ou firmeza', itens: [
+    ['drenado', 'Cansado / Drenado', 'Esgotamento físico, "bateria zerada"'],
+    ['ansioso', 'Ansioso / Agitado', 'Mente acelerada, preocupação demais'],
+    ['triste', 'Triste / Angustiado', 'Aperto no peito, vontade de chorar, desânimo'],
+    ['irritado', 'Irritado / Impaciente', 'Pavio curto, tensão acumulada'],
+    ['sobrecarregado', 'Sobrecarregado / Confuso', 'Muitos problemas, cabeça cheia, dispersão'],
+    ['medo', 'Com medo / Inseguro', 'Vulnerabilidade, dúvida, receio'],
+  ] },
 ];
+export const EMOCOES = GRUPOS_EMOCOES.flatMap((g) => g.itens);
+export const MAX_EMOCOES = 3;
 // Estados pesados: o Orientador sugere um banho de manutenção.
-export const DENSAS = ['drenado', 'ansioso', 'agitado', 'irritado', 'triste', 'disperso'];
+export const DENSAS = GRUPOS_EMOCOES.find((g) => g.k === 'densa').itens.map(([k]) => k);
+// Nomes da primeira versão do Diário que viraram outra opção.
+const EMOCAO_ANTIGA = { agitado: 'ansioso', disperso: 'sobrecarregado' };
 export const SENSACOES = [['leve', 'Leve'], ['renovado', 'Renovado'], ['sonolento', 'Sonolento'], ['eletrizado', 'Eletrizado'], ['emocionado', 'Emocionado']];
 export const SONO = [['bem', 'Dormi bem'], ['pouco', 'Dormi pouco'], ['agitado', 'Sono agitado'], ['sonhos', 'Sonhos marcantes']];
 // Linhas que dá para escolher no conselho do guia (sem o Encontro das Linhas, que não é um guia).
@@ -45,14 +66,14 @@ export const ERVAS_SUGESTOES = [...new Set([
 // ---------- Orientador (dia comum) ----------
 const MANUTENCAO = {
   alecrim: { nome: 'Alecrim', fundamento: 'Erva morna de alegria e clareza: devolve o ânimo a quem está drenado ou triste.' },
-  manjericao: { nome: 'Manjericão', fundamento: 'Erva morna de limpeza suave e proteção: ajuda a recolher o pensamento disperso.' },
-  alfazema: { nome: 'Alfazema', fundamento: 'Erva morna de paz: acalma a agitação e a irritação.' },
+  manjericao: { nome: 'Manjericão', fundamento: 'Erva morna de limpeza suave e proteção: organiza a cabeça cheia e devolve a sensação de amparo.' },
+  alfazema: { nome: 'Alfazema', fundamento: 'Erva morna de paz: acalma a impaciência e a tensão acumulada.' },
   camomila: { nome: 'Camomila', fundamento: 'Erva morna de tranquilidade: alivia a ansiedade e ajuda no sono.' },
 };
-const ERVA_POR_EMOCAO = { drenado: 'alecrim', triste: 'alecrim', disperso: 'manjericao', agitado: 'alfazema', irritado: 'alfazema', ansioso: 'camomila' };
+const ERVA_POR_EMOCAO = { drenado: 'alecrim', triste: 'alecrim', sobrecarregado: 'manjericao', medo: 'manjericao', irritado: 'alfazema', ansioso: 'camomila' };
 // O estado pesado mais recente do dia (o da noite vale mais que o da manhã) e a erva de manutenção para ele.
 export function sugestaoOrientador(dia) {
-  const emo = [dia?.depois?.emo, dia?.antes?.emo].find((e) => DENSAS.includes(e));
+  const emo = [...(dia?.depois?.emo || []), ...(dia?.antes?.emo || [])].find((e) => DENSAS.includes(e));
   return emo ? { emo, ...MANUTENCAO[ERVA_POR_EMOCAO[emo]] } : null;
 }
 
@@ -82,7 +103,12 @@ export function faseDaLua(data) {
 // ---------- dados do dia ----------
 const chaves = (L) => L.map(([k]) => k);
 const umDe = (v, L) => (chaves(L).includes(v) ? v : undefined);
-const energia = (v) => (Number.isInteger(v) && v >= 1 && v <= 5 ? v : undefined);
+// Emoções marcadas (aceita o texto único da primeira versão): sem repetir, até MAX_EMOCOES.
+function emocoes(v) {
+  const L = (Array.isArray(v) ? v : v ? [v] : []).map((e) => EMOCAO_ANTIGA[e] || e).filter((e) => umDe(e, EMOCOES));
+  return L.length ? [...new Set(L)].slice(0, MAX_EMOCOES) : undefined;
+}
+const nota = (v) => (Number.isInteger(v) && v >= 1 && v <= 5 ? v : undefined);
 const texto = (v, max) => (typeof v === 'string' && v.trim() ? v.replace(/\r/g, '').trim().slice(0, max) : undefined);
 const limpo = (o) => {
   const r = Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined));
@@ -94,7 +120,7 @@ export const MAX_ERVAS = 15;
 
 // Só os campos conhecidos, com os valores válidos; o resto cai fora. Dia sem nada: {}.
 //   gira: true|false (só quando a pessoa mudou; sem ele vale a agenda)
-//   antes: { emo, energia, sono }  · depois: { emo, energia, sensacao }
+//   antes: { humor (1 a 5, rostos), emo: [até 3], energia, sono }  · depois: { humor, emo, energia, sensacao }
 //   linha, conselho (dia de gira) · reflexao (dia comum)
 //   banho: { ervas: [..], feito, origem: 'guia' | 'orientador' | 'proprio' (anotado pela pessoa num dia comum) }
 export function normalizarDia(d) {
@@ -103,8 +129,8 @@ export function normalizarDia(d) {
     ? [...new Set(d.banho.ervas.map((e) => texto(e, 60)).filter(Boolean))].slice(0, MAX_ERVAS) : [];
   return limpo({
     gira: typeof d.gira === 'boolean' ? d.gira : undefined,
-    antes: limpo({ emo: umDe(d.antes?.emo, EMOCOES), energia: energia(d.antes?.energia), sono: umDe(d.antes?.sono, SONO) }),
-    depois: limpo({ emo: umDe(d.depois?.emo, EMOCOES), energia: energia(d.depois?.energia), sensacao: umDe(d.depois?.sensacao, SENSACOES) }),
+    antes: limpo({ humor: nota(d.antes?.humor), emo: emocoes(d.antes?.emo), energia: nota(d.antes?.energia), sono: umDe(d.antes?.sono, SONO) }),
+    depois: limpo({ humor: nota(d.depois?.humor), emo: emocoes(d.depois?.emo), energia: nota(d.depois?.energia), sensacao: umDe(d.depois?.sensacao, SENSACOES) }),
     linha: umDe(d.linha, LINHAS_DIARIO),
     conselho: texto(d.conselho, MAX_CONSELHO),
     reflexao: texto(d.reflexao, MAX_REFLEXAO),

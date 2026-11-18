@@ -2960,7 +2960,7 @@ test('diário: só o root vê até ligar; cada um lê e grava só o seu, com os 
   assert.equal((await api('GET', '/api/auth/me', ana)).json.diarioPublicada, true);
   const r = await salvar(ana, '2024-03-02', { antes: { emo: 'ansioso', energia: 9 }, lixo: 1, banho: { ervas: ['arruda', ''] } });
   assert.equal(r.status, 200, JSON.stringify(r.json));
-  assert.deepEqual(r.json.dados, { antes: { emo: 'ansioso' }, banho: { ervas: ['arruda'], feito: false, origem: 'guia' } });
+  assert.deepEqual(r.json.dados, { antes: { emo: ['ansioso'] }, banho: { ervas: ['arruda'], feito: false, origem: 'guia' } });
   assert.equal((await salvar(ana, '2999-01-01', { antes: { emo: 'paz' } })).status, 400, 'dia que ainda não chegou');
   assert.deepEqual((await ler(ana)).json.dias.map((d) => d.data), ['2024-03-02']);
   assert.equal((await ler(ADMIN)).json.dias.some((d) => d.data === '2024-03-02'), false, 'o root não vê o diário dos outros');
