@@ -2100,3 +2100,10 @@ div.pf-of-total{cursor:default}
 .tr-cred{border-top:3px solid var(--ok)}
 .tr-deb{border-top:3px solid var(--off)}
 .ano-orixa-h h3{margin:0;font-size:.95rem}
+
+/* Aluno aguardando liberação (cadastro novo pelo login) */
+.aguardando{gap:8px;border-left:4px solid var(--ok)}
+.aguardando-h{display:flex;align-items:center;gap:10px}
+.aguardando-h span{font-size:1.5rem}
+.aguardando h2{margin:0;font-size:1.2rem}
+.aguardando p{margin:0;line-height:1.5}

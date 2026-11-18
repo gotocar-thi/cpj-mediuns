@@ -136,6 +136,8 @@ function render() {
   if (visao === 'alunos') VE = { usuarios: false, asaas: false, transparencia: false, ervas: false, oferendas: veOferendas(), guias: veGuias(), amaci: veAmaci(), pessoas: false, hist: false, perfil: true, curimba: false, videos: false, fotos: false, gira: true, agenda: false };
   // Consulente: a Geral e as abas que o root marcou no perfil Consulentes (Perfil, Compras, Amaci, Vídeos).
   if (visao === 'alunos' && estado.me.consulente) Object.assign(VE, { oferendas: false, perfil: pode('perfil:ver'), guias: veGuias(), amaci: veAmaci(), videos: pode('videos:ver') || !!estado.me.videosPublicada });
+  // Aluno sem turma (cadastro novo pelo login): só a Geral, até a administração colocá-lo numa turma.
+  if (visao === 'alunos' && estado.me.aguardando) VE = { usuarios: false, asaas: false, transparencia: false, ervas: false, oferendas: false, guias: false, amaci: false, pessoas: false, hist: false, perfil: false, curimba: false, videos: false, fotos: false, gira: true, agenda: false };
   if (visao === 'curimba') VE = { usuarios: false, asaas: false, transparencia: false, ervas: false, oferendas: false, guias: veGuias(), amaci: false, pessoas: false, hist: false, perfil: false, curimba: false, videos: !!estado.me.videosPublicada, fotos: false, gira: true, agenda: false };
   // Botão do topo de um grupo que a pessoa não vê (ex.: só o ASAAS, sem Compras): abre a primeira sub-aba que ela vê.
   const grupoAberto = grupoDa(prefs.tab);

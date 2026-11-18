@@ -253,10 +253,19 @@ function janelaOracoes() {
 export function render() {
   if (prefs.tab === 'agenda') return renderGira();
   if (visaoAtiva() === 'curimba') return `<section class="panel">${cardAulaCurimba()}${cardSemana({ ocultarAvisos: true })}</section>`;
+  if (visaoAtiva() === 'alunos' && estado.me?.aguardando) return `<section class="panel">${cardAguardando()}${cardSemana()}${cardOracoes({ aluno: true })}</section>`;
   if (visaoAtiva() === 'alunos') return `<section class="panel">${cardAulaCurimba()}${cardSemana()}${cardOracoes({ aluno: true })}</section>`;
   const g = giraAtual();
   const eu = estado.me?.pessoaId && (estado.giras[g.data] || licencaEm(estado.pessoas.find((x) => x.id === estado.me.pessoaId) || {}, g.data)) ? blocoEu(g) : '';
   return `<section class="panel">${cardAtrasos()}${eu}${cardAulaCurimba()}${cardCompromissos()}${cardSemana()}${cardOracoes()}${cardConduta()}</section>`;
+}
+
+// Cadastro novo pelo login (aluno sem turma): boas-vindas enquanto a administração libera o acesso.
+function cardAguardando() {
+  const nome = String(estado.me?.nome || '').split(/\s+/)[0];
+  return `<div class="card aguardando"><div class="aguardando-h"><span aria-hidden="true">🌿</span><h2>Que bom ter você aqui${nome ? `, ${esc(nome)}` : ''}!</h2></div>
+    <p>Seu cadastro foi recebido com carinho. Agora é só aguardar: a administração da Casa do Pai João vai liberar o seu acesso em breve.</p>
+    <p class="muted">Enquanto isso, você já pode ver os próximos eventos e pedir uma oração. Axé! 🙏</p></div>`;
 }
 
 function renderGira() {
