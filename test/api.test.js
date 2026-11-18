@@ -2556,12 +2556,14 @@ test('Compras: item de doação é cobrado na conta B; venda e doação no mesmo
     assert.equal(doacao.doacao, true);
     assert.equal(vela.doacao, false);
     // Sem a conta B configurada, o Pix da doação avisa (a venda continua na A).
-    G = (await gu(ADMIN, { op: 'pedir', itemId: doacao.id, quantidade: 1, cpf: '52998224725' })).json;
+    assert.equal((await gu(ADMIN, { op: 'pedir', itemId: doacao.id, quantidade: 1, cpf: '52998224725' })).status, 400, 'doação sem valor');
+    G = (await gu(ADMIN, { op: 'pedir', itemId: doacao.id, quantidade: 1, valor: '25,50', cpf: '52998224725' })).json;
     assert.match(G.aviso || '', /conta B/);
+    assert.equal(G.grupos.find((x) => x.id === grupoId).itens.find((i) => i.id === doacao.id).quantidade, 10, 'doação não mexe no estoque');
     Object.assign(process.env, { ASAAS2_API_KEY: 'chave-b', ASAAS2_WEBHOOK_TOKEN: 'token-b', ASAAS2_API_URL: BASES.B });
     G = (await gu(ADMIN, { op: 'pedir', itemId: vela.id, quantidade: 2, cpf: '52998224725' })).json;
     const minhas = G.cobrancas.filter((c) => c.status === 'pendente' && c.pedido === grupo.aberto);
-    assert.deepEqual(minhas.map((c) => [c.conta, c.valor]).sort(), [['A', 20], ['B', 25]], 'uma cobrança em cada conta');
+    assert.deepEqual(minhas.map((c) => [c.conta, c.valor]).sort(), [['A', 20], ['B', 25.5]], 'uma cobrança em cada conta; a doação com o valor digitado');
     const pagB = falso.pedidos.find(([c, m, cam]) => c === 'B' && m === 'POST' && cam === '/payments');
     assert.match(pagB[3].description, /Doação/);
     assert.ok(falso.pedidos.some(([c, m, cam]) => c === 'B' && m === 'POST' && cam === '/customers'), 'cliente criado também na conta B');

@@ -9,7 +9,7 @@
 // Estrutura: veja db/ESTRUTURA-ESQUEMA.md para o mapa de versões, domínios e
 // quais migrações foram testadas no Postgres.
 
-export const VERSAO = 142;  // v142: item de doação nas Compras cobrado na conta B do ASAAS
+export const VERSAO = 143;  // v143: doação nas Compras com o valor que a pessoa digita
 
 import { PERFIS_PADRAO } from '../shared/permissoes.js';
 
@@ -4794,36 +4794,6 @@ export const MIGRACOES = [
                    from guias_pedidos pe))
    $$`,
   // Pedir: entra no pedido aberto do grupo do item. Devolve também o número do pedido (para gerar o Pix dele).
-  `create or replace function guia_pedir(p jsonb)
-   returns jsonb language plpgsql as $$
-   declare
-     v_pedido int;
-     v_item guias_itens%rowtype;
-     v_grupo text;
-     v_qtd int := (p ->> 'quantidade')::int;
-     v_linha uuid;
-   begin
-     select i.* into v_item from guias_itens i join guias_grupos g on g.id = i.grupo_id
-      where i.id = (p ->> 'itemId')::uuid and i.visivel and g.visivel for update of i;
-     if not found then raise exception 'Este item não está disponível.'; end if;
-     select descricao into v_grupo from guias_grupos where id = v_item.grupo_id;
-     v_pedido := guia_pedido_do_grupo(v_item.grupo_id);
-     if v_pedido is null then raise exception 'Os pedidos de % estão fechados no momento.', v_grupo; end if;
-     if v_item.quantidade < 1 then raise exception 'Este item esgotou.'; end if;
-     if v_qtd < 1 or v_qtd > v_item.quantidade then raise exception 'Só restam % deste item.', v_item.quantidade; end if;
-     update guias_itens set quantidade = quantidade - v_qtd where id = v_item.id;
-     select id into v_linha from guias_linhas
-      where pedido = v_pedido and item_id = v_item.id and chave = p ->> 'chave' and valor = v_item.valor
-        and cobranca_id is null and pago_em is null limit 1;
-     if v_linha is not null then
-       update guias_linhas set quantidade = quantidade + v_qtd, nome = p ->> 'nome', ok = false where id = v_linha;
-     else
-       insert into guias_linhas (pedido, item_id, grupo_id, descricao, valor, quantidade, chave, nome)
-       values (v_pedido, v_item.id, v_item.grupo_id, v_grupo || ' · ' || v_item.descricao, v_item.valor, v_qtd, p ->> 'chave', p ->> 'nome');
-     end if;
-     return guias_estado() || jsonb_build_object('pedidoFeito', v_pedido);
-   end;
-   $$`,
   // p = { grupoId } — encerra o pedido aberto do grupo; o pedido encerra quando não sobra grupo aberto nele.
   `create or replace function guia_pedido_encerrar(p jsonb default '{}'::jsonb)
    returns jsonb language plpgsql as $$
@@ -6177,5 +6147,46 @@ export const MIGRACOES = [
        from asaas2_atrasos a
       where not (exists (select 1 from asaas_cobrancas c where c.id::text = a.referencia)
                  and not exists (select 1 from guias_linhas l where l.cobranca_id::text = a.referencia and l.pago_em is null))
+   $$`,
+  // ================================================== v143: doação com o valor que a pessoa digita
+  // Item de doação: a pessoa digita o valor (com centavos); vira uma linha nova com esse valor e quantidade 1, sem estoque
+  // (doação não esgota). Os outros itens continuam com o preço do item e o estoque.
+  `create or replace function guia_pedir(p jsonb)
+   returns jsonb language plpgsql as $$
+   declare
+     v_pedido int;
+     v_item guias_itens%rowtype;
+     v_grupo text;
+     v_qtd int := (p ->> 'quantidade')::int;
+     v_linha uuid;
+     v_valor numeric(10, 2);
+   begin
+     select i.* into v_item from guias_itens i join guias_grupos g on g.id = i.grupo_id
+      where i.id = (p ->> 'itemId')::uuid and i.visivel and g.visivel for update of i;
+     if not found then raise exception 'Este item não está disponível.'; end if;
+     select descricao into v_grupo from guias_grupos where id = v_item.grupo_id;
+     v_pedido := guia_pedido_do_grupo(v_item.grupo_id);
+     if v_pedido is null then raise exception 'Os pedidos de % estão fechados no momento.', v_grupo; end if;
+     if v_item.doacao then
+       v_valor := nullif(p ->> 'valor', '')::numeric;
+       if v_valor is null or v_valor <= 0 then raise exception 'Digite o valor da doação.'; end if;
+       insert into guias_linhas (pedido, item_id, grupo_id, descricao, valor, quantidade, chave, nome)
+       values (v_pedido, v_item.id, v_item.grupo_id, v_grupo || ' · ' || v_item.descricao, v_valor, 1, p ->> 'chave', p ->> 'nome');
+       return guias_estado() || jsonb_build_object('pedidoFeito', v_pedido);
+     end if;
+     if v_item.quantidade < 1 then raise exception 'Este item esgotou.'; end if;
+     if v_qtd < 1 or v_qtd > v_item.quantidade then raise exception 'Só restam % deste item.', v_item.quantidade; end if;
+     update guias_itens set quantidade = quantidade - v_qtd where id = v_item.id;
+     select id into v_linha from guias_linhas
+      where pedido = v_pedido and item_id = v_item.id and chave = p ->> 'chave' and valor = v_item.valor
+        and cobranca_id is null and pago_em is null limit 1;
+     if v_linha is not null then
+       update guias_linhas set quantidade = quantidade + v_qtd, nome = p ->> 'nome', ok = false where id = v_linha;
+     else
+       insert into guias_linhas (pedido, item_id, grupo_id, descricao, valor, quantidade, chave, nome)
+       values (v_pedido, v_item.id, v_item.grupo_id, v_grupo || ' · ' || v_item.descricao, v_item.valor, v_qtd, p ->> 'chave', p ->> 'nome');
+     end if;
+     return guias_estado() || jsonb_build_object('pedidoFeito', v_pedido);
+   end;
    $$`,
 ];

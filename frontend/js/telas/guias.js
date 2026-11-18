@@ -28,6 +28,7 @@ const ui = {
   grupoRen: null,           // id do grupo com o ✎ aberto
   item: null,               // formulário de item: { grupoId, id?, descricao, quantidade, valor, visivel, cpj, doacao, foto?: b64 | null }
   qtd: {},                  // quantidade escolhida por item (antes de Pedir)
+  doa: {},                  // valor digitado por item de doação (antes de Doar)
   pedir: null,              // janela de confirmação: { itemId, quantidade }
   exportar: null,           // pedido escolhido para exportar ('número:grupo')
   img: null,                // imagem gerada: { chave, blob, url, nome }
@@ -93,6 +94,13 @@ function cardItens(G) {
     ${g.itens.map((i) => {
       const max = Math.min(i.quantidade, 20);
       const q = Math.min(ui.qtd[i.id] || 1, Math.max(max, 1));
+      // Doação: a pessoa digita o valor (com centavos); o preço do item vem como sugestão. Doação não tem estoque.
+      if (i.doacao) {
+        return `<div class="gi-item gi-doa">${fotoItem(i, 'gi-foto', true)}
+        <div class="gi-info"><b>${esc(i.descricao)}${seloCpj(i)}</b><span class="muted gi-disp">Doação · você escolhe o valor</span></div>
+        <div class="gi-acao"><label class="gi-doa-v"><span aria-hidden="true">R$</span><input type="text" inputmode="decimal" data-guia="doacao" data-id="${i.id}" maxlength="10" placeholder="${esc(Number(i.valor) > 0 ? valorCampo(i.valor) : '0,00')}" value="${esc(ui.doa[i.id] || '')}" aria-label="Valor da doação para ${esc(i.descricao)}" ${fechado ? 'disabled' : ''}></label>
+          <button class="btn primary small" data-act="guiadoar" data-id="${i.id}" ${fechado ? 'disabled' : ''}>Doar</button></div></div>`;
+      }
       const acao = i.quantidade < 1 ? '<span class="badge re">Esgotado</span>'
         : `<select data-act="guiaqtd" data-id="${i.id}" aria-label="Quantidade de ${esc(i.descricao)}" ${fechado ? 'disabled' : ''}>${Array.from({ length: max }, (_, k) => `<option value="${k + 1}" ${k + 1 === q ? 'selected' : ''}>${k + 1}</option>`).join('')}</select>
            <button class="btn primary small" data-act="guiapedir" data-id="${i.id}" ${fechado ? 'disabled' : ''}>Pedir</button>`;
@@ -170,12 +178,12 @@ function janelaPedir() {
   const i = P && acharItem(P.itemId);
   if (!i) return '';
   return `<div class="modal-fundo" role="dialog" aria-modal="true" aria-labelledby="gp-t"><div class="modal">
-    <h3 id="gp-t">Confirmar pedido?</h3>
-    <p style="margin:0"><b>${P.quantidade}x ${esc(i.descricao)}</b> · ${R(i.valor * P.quantidade)}</p>
+    <h3 id="gp-t">${P.valor ? 'Confirmar doação?' : 'Confirmar pedido?'}</h3>
+    <p style="margin:0">${P.valor ? `<b>${esc(i.descricao)}</b> · ${R(P.valor)}` : `<b>${P.quantidade}x ${esc(i.descricao)}</b> · ${R(i.valor * P.quantidade)}`}</p>
     ${estado.guias.pix ? `<p class="muted" style="margin:0">Ao confirmar, geramos o link de pagamento Pix (ASAAS). O pedido aparece como pago quando o banco confirmar.</p>
       ${estado.guias.pixPrecisaCpf ? campoCpf('gp-cpf-pedir') : ''}` : ''}
     <p class="muted" style="margin:0">Para cancelar depois, só entrando em contato com o suporte.</p>
-    <div class="row" style="justify-content:flex-end;gap:8px"><button class="btn" data-act="guiapedircancel">Voltar</button><button class="btn primary" data-act="guiapedirok" ${ui.gerando ? 'disabled' : ''}>${ui.gerando ? girando(estado.guias.pix ? 'Gerando link…' : 'Enviando…') : 'Confirmar pedido'}</button></div>
+    <div class="row" style="justify-content:flex-end;gap:8px"><button class="btn" data-act="guiapedircancel">Voltar</button><button class="btn primary" data-act="guiapedirok" ${ui.gerando ? 'disabled' : ''}>${ui.gerando ? girando(estado.guias.pix ? 'Gerando link…' : 'Enviando…') : P.valor ? 'Confirmar doação' : 'Confirmar pedido'}</button></div>
   </div></div>`;
 }
 
@@ -518,6 +526,7 @@ async function confirmado(k, op, dados) {
 
 // Campos do formulário de item: guardados a cada letra, para um redesenho não apagar.
 export function digitando(t) {
+  if (t.dataset.guia === 'doacao') { ui.doa[t.dataset.id] = t.value; return; }
   if (t.dataset.guia === 'cpf') { ui.cpf = t.value; return; }
   if (ui.item && t.dataset.guia) ui.item[t.dataset.guia] = t.value;
 }
@@ -594,6 +603,17 @@ export const cliques = {
     ui.pedir = { itemId: i.id, quantidade: Math.min(ui.qtd[i.id] || 1, i.quantidade) };
     avisar();
   },
+  // Doar: o valor digitado (aceita 25, 25,50 ou 1.250,00); vazio, a sugestão do item (se houver).
+  guiadoar(el) {
+    const i = acharItem(el.dataset.id);
+    if (!i) return;
+    let t = String(ui.doa[i.id] ?? '').replace(/\s|R\$/g, '');
+    if (t.includes(',')) t = t.replace(/\./g, '').replace(',', '.');
+    const n = t ? Math.round(Number(t) * 100) / 100 : Number(i.valor) || 0;
+    if (!Number.isFinite(n) || n <= 0 || n > 100000) { toast('Digite o valor da doação (ex.: 25,50).'); return; }
+    ui.pedir = { itemId: i.id, quantidade: 1, valor: n };
+    avisar();
+  },
   guiapedircancel() { ui.pedir = null; avisar(); },
   guiapix(el) {
     const n = Number(el.dataset.n);
@@ -625,8 +645,9 @@ export const cliques = {
       ui.pedir = null;
       ui.cpf = '';
       delete ui.qtd[P.itemId];
+      delete ui.doa[P.itemId];
       const G = estado.guias;
-      toast(G.aviso || (G.pix ? 'Pedido feito. Pague pelo link em Seus pedidos.' : 'Pedido feito.'));
+      toast(G.aviso || (G.pix ? `${P.valor ? 'Doação registrada' : 'Pedido feito'}. Pague pelo link em Seus pedidos.` : P.valor ? 'Doação registrada.' : 'Pedido feito.'));
     }
     avisar();
     if (ok && estado.guias.pix) irParaLink();

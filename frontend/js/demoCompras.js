@@ -149,10 +149,13 @@ export function criarCompras({ euChave, euNome, pessoas, ErroDemo }) {
         const q = Math.floor(Number(b.quantidade) || 0);
         if (!i) throw new ErroDemo(404, 'Item não encontrado.');
         if (!g.aberto) throw new ErroDemo(409, 'O pedido deste grupo está encerrado.');
-        if (q < 1 || q > i.quantidade) throw new ErroDemo(409, 'Quantidade maior que a disponível.');
-        i.quantidade -= q;
+        // Doação: o valor digitado, quantidade 1, sem estoque.
+        const doa = i.doacao ? Math.round(Number(b.valor) * 100) / 100 : 0;
+        if (i.doacao && !(doa > 0)) throw new ErroDemo(400, 'Digite o valor da doação.');
+        if (!i.doacao && (q < 1 || q > i.quantidade)) throw new ErroDemo(409, 'Quantidade maior que a disponível.');
+        if (!i.doacao) i.quantidade -= q;
         const p = pedidos.find((x) => x.numero === g.aberto);
-        const l = { id: novoId(), itemId: i.id, grupoId: g.id, descricao: `${g.descricao} · ${i.descricao}`, valor: i.valor, quantidade: q,
+        const l = { id: novoId(), itemId: i.id, grupoId: g.id, descricao: `${g.descricao} · ${i.descricao}`, valor: i.doacao ? doa : i.valor, quantidade: i.doacao ? 1 : q,
           chave: euChave, nome: euNome, ok: false, criadoEm: new Date().toISOString(), pago: false, pix: null };
         p.linhas.push(l);
         if (ativo) gerarCobranca([l]);

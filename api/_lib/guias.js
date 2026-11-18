@@ -1,5 +1,6 @@
 // Aba Compras (rota: GET /api/oferendas?lista=guias · POST /api/oferendas { acao: 'guias', op, ... }).
-//   todos:  pedir { itemId, quantidade }  — no pedido aberto do grupo do item, sem passar do disponível
+//   todos:  pedir { itemId, quantidade, valor? }  — no pedido aberto do grupo do item, sem passar do disponível
+//           (item de doação: valor digitado pela pessoa, quantidade 1, sem estoque)
 //           (com o Pix ligado, pedir { ..., cpf? } já gera o link de pagamento; pix { pedido, cpf? } tenta de novo — veja api/_lib/asaas.js)
 //   admin:  publicar { publicada } · grupo { id?, descricao?, visivel? } · excluirGrupo { id }
 //           item { id?, grupoId, descricao?, foto? (base64 JPEG | null tira), quantidade?, valor?, visivel?, cpj?, doacao? (cobrado na conta B) } · excluirItem { id }
@@ -114,6 +115,8 @@ export async function acaoGuias(eu, b) {
   await exigirAba(eu);
   if (b.op === 'pedir') {
     const p = { itemId: validarId(b.itemId, 'Item'), quantidade: inteiro(b.quantidade, 'Quantidade', 1, 999), chave: chavePessoa(eu), nome: eu.nome };
+    // Item de doação: o valor que a pessoa digitou (com centavos); nos outros itens o banco usa o preço do item.
+    if (b.valor !== undefined && b.valor !== null && b.valor !== '') p.valor = valor(b.valor);
     if (!daCorrente(eu)) {
       const item = (await db.rpc('guias_estado')).grupos.flatMap((g) => g.itens).find((i) => i.id === p.itemId);
       if (item?.cpj) throw new HttpError(400, 'Este item não está disponível.');
