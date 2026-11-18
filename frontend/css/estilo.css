@@ -600,6 +600,17 @@ body.deslogado header.top{min-height:0;padding-bottom:0}
 .prox-campo{display:grid;gap:4px;font-size:.85rem;flex:0 0 auto}
 #f-data{height:44px}
 .card.eu{border-left:4px solid var(--accent);display:grid;gap:12px}
+/* Você nesta gira (médium de passe): uma parte por papel, com título e a cor da função à esquerda */
+.eu-sec{display:grid;gap:6px;border-left:3px solid var(--fn,var(--line));padding-left:10px}
+.eu-sec + .eu-sec{margin-top:4px}
+.eu-sec-t{font:700 .74rem var(--f-body);letter-spacing:.08em;text-transform:uppercase;color:var(--fn,var(--muted))}
+.eu-sec-medium{--fn:var(--gold)}
+.eu-sec-passe{--fn:var(--accent)}
+.eu-sec-cambone{--fn:var(--ok)}
+.eu-pessoa-txt{display:grid;gap:2px;min-width:0}
+.eu-guia-l{font-size:.9rem}
+.eu-guia-l b{color:var(--accent)}
+.eu-sem-guia{margin:0;font-size:.85rem}
 .eu-identidade{display:flex;align-items:center;gap:12px;min-width:0}
 .eu-identidade-dados{display:grid;gap:5px;min-width:0}
 .eu-avatar{flex:none;width:60px;height:60px;padding:0;border-radius:50%;overflow:hidden;border:3px solid var(--gold);background:var(--accent-soft);display:flex;align-items:center;justify-content:center}

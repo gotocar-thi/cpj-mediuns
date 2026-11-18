@@ -39,19 +39,23 @@ export function blocoEu(g) {
   const L = [];
   const lin = (rot, val) => L.push(`<div class="eu-l"><span class="muted">${rot}:</span> <b>${val}</b></div>`);
   // Com quem você trabalha (médium, cambone, passe): foto pequena do Perfil, para saber quem é quem; tocar amplia.
-  const comFoto = (rot, id) => {
+  // guia: o guia da pessoa nesta gira, no mesmo cartão, embaixo do nome ("Guia: …").
+  const comFoto = (rot, id, guia = '') => {
     const F = estado.fotosPessoa;
     if (F[id] === undefined) carregarFoto(id);
     const n = pessoasDe(estado.pessoas, g).find((x) => x.id === id)?.nome || nome(id);   // encerrada: nome do retrato
     const av = F[id]
       ? `<button type="button" class="eu-av" data-act="eufoto" data-id="${id}" aria-label="Ver a foto de ${esc(n)}"><img src="${F[id]}" alt=""></button>`
       : `<span class="eu-av"><span aria-hidden="true">${esc(iniciais(n))}</span></span>`;
-    L.push(`<div class="eu-l eu-pessoa">${av}<span><span class="muted">${rot}:</span> <b>${esc(n)}</b></span></div>`);
+    const linhaGuia = guia ? `<span class="eu-guia-l"><span class="muted">Guia:</span> <b>${esc(guia)}</b></span>` : '';
+    L.push(`<div class="eu-l eu-pessoa">${av}<span class="eu-pessoa-txt"><span><span class="muted">${rot}:</span> <b>${esc(n)}</b></span>${linhaGuia}</span></div>`);
   };
   const aviso = (t) => L.push(`<p class="muted" style="margin:0">${t}</p>`);
   const fora = (t) => L.push(`<div class="eu-fora">${t}</div>`);
   // Abaixo do nome do médium: o guia de atendimento dele na linha desta gira (se cadastrou no Perfil).
   const guiaDe = (id) => { const gnome = guiaNaGira(estado.pessoas.find((x) => x.id === id), g); if (gnome) L.push(`<div class="eu-l eu-guia"><span class="muted">Guia de atendimento:</span> <b>${esc(gnome)}</b></div>`); };
+  // Uma parte do bloco com título (Médium de atendimento, Médium de passe, Cambones), separada das outras.
+  const secao = (classe, titulo, conteudo) => { L.push(`<div class="eu-sec ${classe}"><div class="eu-sec-t">${titulo}</div>`); conteudo(); L.push('</div>'); };
   if (st === 'lic') {
     const l = licencaEm(p, g.data);
     fora(`📋 Você está <b>de licença</b>${l ? ` de ${dDM(l.inicio)} a ${dDM(l.fim)}` : ''}${l?.motivo ? ` · ${esc(l.motivo)}` : ''}.`);
@@ -76,12 +80,21 @@ export function blocoEu(g) {
       passesDe(m).forEach((c) => comFoto('Médium de passe', c));
     });
   } else if (funcao === 'passe') {
+    // Médium de passe: primeiro o médium de atendimento, depois você (com o seu guia) e por fim os cambones do médium.
     const meus = passes.filter((x) => x.c === p.id).map((x) => x.m);
     if (!meus.length) aviso('Você ainda está sem médium.');
     meus.forEach((m) => {
-      comFoto('Médium', m);
-      guiaDe(m);
-      camsDe(m).forEach((c) => comFoto('Cambone do médium', c));
+      secao('eu-sec-medium', 'Médium de atendimento', () => comFoto('Médium', m, guiaNaGira(estado.pessoas.find((x) => x.id === m), g)));
+      secao('eu-sec-passe', 'Médium de passe', () => {
+        const meuGuia = guiaNaGira(cad, g);
+        comFoto('Você', p.id, meuGuia);
+        if (!meuGuia) L.push('<p class="muted eu-sem-guia">Seu guia desta linha ainda não está no Perfil (Guias de atendimento).</p>');
+      });
+      const cs = camsDe(m);
+      secao('eu-sec-cambone', cs.length > 1 ? 'Cambones' : 'Cambone', () => {
+        if (!cs.length) aviso('O médium ainda está sem cambone.');
+        cs.forEach((c, i) => comFoto(cs.length > 1 ? `${i + 1}º cambone` : 'Cambone', c));
+      });
     });
   }
   // Gira em aberto ainda sem sorteio: o aviso "Sorteio de escala pendente" fica dentro deste bloco.
@@ -111,9 +124,16 @@ export function blocoEu(g) {
   // Turma da limpeza
   const Lp = g.evento ? null : limpezaDaGira(estado.pessoas, g, girasLista());
   if (Lp && st !== 'lic') {
-    if (Number(p.limpeza) === Lp.turma) L.push(`<div class="eu-limp">🧹 Hoje é sua turma de limpeza.</div>`);
+    // "Hoje" só no dia da gira; antes dele, é a próxima gira; gira que já passou fala no passado.
+    const hj = hoje();
+    const quando = g.data === hj ? 'hoje' : g.data > hj ? 'proxima' : 'passou';
+    const TXT = {
+      turma: { hoje: 'Hoje é sua turma de limpeza.', proxima: 'Próxima gira é a sua turma da limpeza.', passou: 'Nesta gira era a sua turma da limpeza.' },
+      ajuda: { hoje: 'Hoje você ajuda essa turma', proxima: 'Na próxima gira você ajuda a turma da limpeza', passou: 'Nesta gira você ajudou a turma da limpeza' },
+    };
+    if (Number(p.limpeza) === Lp.turma) L.push(`<div class="eu-limp">🧹 ${TXT.turma[quando]}</div>`);
     else if (Lp.ajudantes.some((x) => x.id === p.id)) {
-      L.push(`<div class="eu-limp">🧹 Hoje você ajuda essa turma, pois faltou na sua turma na gira passada.</div>`);
+      L.push(`<div class="eu-limp">🧹 ${TXT.ajuda[quando]}, pois faltou na sua turma na gira passada.</div>`);
     }
   }
   // Gira com mais de uma linha: com qual entidade a pessoa vai trabalhar (aparece na escala e no guia de atendimento).
