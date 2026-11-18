@@ -20,15 +20,16 @@ const INTERVALO_ATUALIZAR_MS = 10 * 60 * 1000;
 const MAX_PAGINAS = 10;
 const ehRoot = (eu) => pode(eu, 'usuarios:gerenciar');
 
-// CPF de quem está logado: pessoa da corrente (Perfil) ou aluno. Sem CPF guardado: ''.
-async function cpfDe(eu) {
+// CPF guardado de quem está logado (pessoa da corrente pelo Perfil, ou aluno), ainda cifrado: { cifrado, dono } ou null.
+// Só é decifrado quando precisa ler o ASAAS.
+async function cpfGuardado(eu) {
   if (eu.alunoId) {
     const cifrado = await db.rpc('aluno_cpf_ler', { id: eu.alunoId });
-    return cifrado ? decifrar(cifrado, eu.alunoId) : '';
+    return cifrado ? { cifrado, dono: eu.alunoId } : null;
   }
-  if (!eu.pessoaId) return '';
+  if (!eu.pessoaId) return null;
   const linha = await db.rpc('cpf_ler', { pessoaId: eu.pessoaId });
-  return linha?.cifrado ? decifrar(linha.cifrado, eu.pessoaId) : '';
+  return linha?.cifrado ? { cifrado: linha.cifrado, dono: eu.pessoaId } : null;
 }
 
 // Todas as cobranças do CPF numa conta: os clientes com esse CPF e as cobranças de cada um (páginas de 100).
@@ -47,21 +48,27 @@ async function buscarConta(k, cpf) {
 
 export async function respostaPagamentos(eu, atualizar = false) {
   if (eu.grupo && eu.grupo !== 'alunos') throw new HttpError(403, 'Este acesso não tem pagamentos.');
-  const publicada = !!(await db.rpc('pagamentos_publicada'));
+  const chave = chavePessoa(eu);
+  const contas = ['A', 'B'].filter(ligada);
+  // Visibilidade, CPF guardado e a última leitura vão ao banco ao mesmo tempo (uma ida só em vez de três em fila).
+  const [publicadaBruta, guardadoCpf, historico] = await Promise.all([
+    db.rpc('pagamentos_publicada'),
+    contas.length ? cpfGuardado(eu) : null,
+    contas.length ? db.rpc('asaas_historico_ler', { chave }) : null,
+  ]);
+  const publicada = !!publicadaBruta;
   const root = ehRoot(eu);
   if (!publicada && !root && !eu.verComo) throw new HttpError(403, 'A sub-aba Pagamentos não está disponível no momento.');
   const base = { publicada, root };
-  const contas = ['A', 'B'].filter(ligada);
   if (!contas.length) return { ...base, configurado: false, temCpf: false, pagamentos: [] };
-  const cpf = await cpfDe(eu);
-  if (!cpf) return { ...base, configurado: true, temCpf: false, pagamentos: [] };
-  const chave = chavePessoa(eu);
-  let guardado = await db.rpc('asaas_historico_ler', { chave });
+  if (!guardadoCpf) return { ...base, configurado: true, temCpf: false, pagamentos: [] };
+  let guardado = historico;
   const idade = guardado?.atualizadoEm ? Date.now() - Date.parse(guardado.atualizadoEm) : Infinity;
   const forcar = atualizar && (root || idade > INTERVALO_ATUALIZAR_MS);
   let erro;
   if (forcar || !leituraDoDia(guardado?.atualizadoEm)) {
     try {
+      const cpf = decifrar(guardadoCpf.cifrado, guardadoCpf.dono);
       const lista = (await Promise.all(contas.map((k) => buscarConta(k, cpf)))).flat();
       guardado = await db.rpc('asaas_historico_salvar', { chave, dados: lista });
     } catch (e) {

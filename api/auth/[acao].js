@@ -196,8 +196,8 @@ async function dadosDoMe(u, extras = null) {
     extras ? extras.amaciPublicada : db.rpc('amaci_publicada'),
     // Painel da Transparência: só a corrente (alunos e curimba nunca veem). Na abertura já vem pronto (extras).
     u.grupo ? false : extras && 'transparenciaPublicada' in extras ? extras.transparenciaPublicada : db.rpc('transparencia_publicada').catch(() => false),
-    // Sub-aba Pagamentos (Compras): visível para todos quando o root liga.
-    db.rpc('pagamentos_publicada').catch(() => false),
+    // Sub-aba Pagamentos (Compras): visível para todos quando o root liga. Na abertura já vem pronto (extras).
+    extras && 'pagamentosPublicada' in extras ? extras.pagamentosPublicada : db.rpc('pagamentos_publicada').catch(() => false),
   ]);
   // Sem nenhuma sub-aba visível, a aba Oferendas some para quem não administra.
   // Aba Vídeos publicada: aparece também para quem não tem a aba no perfil.
@@ -253,11 +253,13 @@ const acoes = {
       return { me, ...listas };
     }
     // Ao voltar ao app, ?versao= é a que ele já tem: sem mudança, a resposta é só { versao, semMudanca }.
-    // Na abertura, "a Transparência está visível?" vai ao banco junto com as listas (uma ida a menos em fila).
+    // Na abertura, "a Transparência está visível?" e "os Pagamentos estão visíveis?" vão ao banco junto com as listas
+    // (sem uma ida a mais em fila depois delas).
     const transparencia = atualizar ? null : db.rpc('transparencia_publicada').catch(() => false);
+    const pagamentos = atualizar ? null : db.rpc('pagamentos_publicada').catch(() => false);
     const { listas, extras } = await listasIniciais(u, { versao: atualizar ? String(req.query.versao || '') : '', me: !atualizar });
     if (atualizar) return listas;
-    return { me: await dadosDoMe(u, extras && { ...extras, transparenciaPublicada: await transparencia }), ...listas };
+    return { me: await dadosDoMe(u, extras && { ...extras, transparenciaPublicada: await transparencia, pagamentosPublicada: await pagamentos }), ...listas };
   },
 
   // Perfil da própria pessoa (todo mundo que está no cadastro da corrente).
