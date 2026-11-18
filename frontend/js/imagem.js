@@ -3,6 +3,7 @@
 // médiuns e At. Extras em linhas alternadas, com o médium de passe embaixo do nome do médium;
 // o recado do admin logo abaixo do cabeçalho; no fim, quadros para suporte, cambones de apoio, a turma da limpeza
 // (com quem ajuda) e quem não vem (ausências e faltas). Quem faz aniversário no dia da gira leva 🥳 ao lado do nome.
+// Quem faltou e ainda aparece na escala (antes do Remanejar faltas, ou com a Trava ligada) vem em vermelho e riscado.
 
 import { paresPorMedium, escalaDaGira, guiaNaGira, pessoasDe, temRetrato } from '/shared/regras.js';
 import { gruposExtras, cabecalhoGira, foraDaGira, idsAniversariantes } from './exportar.js';
@@ -70,6 +71,9 @@ function desenhar(ctx, cadastro, g, desenhar, giras = [], logo = null) {
   const cab = cabecalhoGira(g);
   const grupos = gruposExtras(pessoas, g, giras);
   const grupo = (k) => grupos.find((x) => x[2] === k);
+  const { ausentes, faltas } = foraDaGira(pessoas, g);
+  const faltou = new Set(faltas);
+  const riscar = (x, yy, w) => { ctx.strokeStyle = C.vermelho; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(x - 1, yy + 11); ctx.lineTo(x + w + 1, yy + 11); ctx.stroke(); };
   const fonte = (w, s, f) => { ctx.font = `${w} ${s}px ${f || FB}`; };
   const espaco = (v) => { try { ctx.letterSpacing = v; } catch { /* navegador antigo */ } };
   let y;
@@ -170,7 +174,7 @@ function desenhar(ctx, cadastro, g, desenhar, giras = [], logo = null) {
         l.forEach((tk, k) => {
           if (k) { ctx.fillStyle = C.muted; ctx.fillText(' · ', x, yy); x += sep; }
           ctx.fillStyle = tk.risc ? C.vermelho : C.ink; ctx.fillText(tk.n, x, yy);
-          if (tk.risc) { ctx.strokeStyle = C.vermelho; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(x - 1, yy + 11); ctx.lineTo(x + tk.w + 1, yy + 11); ctx.stroke(); }
+          if (tk.risc) riscar(x, yy, tk.w);
           x += tk.w;
         });
         yy += LQ;
@@ -185,7 +189,8 @@ function desenhar(ctx, cadastro, g, desenhar, giras = [], logo = null) {
     if (desenhar) qs.forEach((q, j) => quadro(q, ms[j], P + j * (bw + gap), bw, bh));
     y += bh + gap;
   };
-  const q = (k) => (grupo(k) ? { titulo: grupo(k)[0], nomes: grupo(k)[1], cor: COR[k] } : null);
+  const comFalta = (nomes, naoVao = []) => [...naoVao, ...nomes.filter((n) => faltou.has(n))];
+  const q = (k) => (grupo(k) ? { titulo: grupo(k)[0], nomes: grupo(k)[1], naoVao: comFalta(grupo(k)[1]), cor: COR[k] } : null);
   // ---- recado do admin (como na aba Gira): linhas já quebradas na largura do quadro, uma embaixo da outra
   if (g.recado) { fonte(400, 19); linhaDeQuadros([{ titulo: 'Recado', nomes: quebrar(ctx, g.recado, CW - 44), cor: COR.recado, porLinha: true }]); }
 
@@ -232,11 +237,14 @@ function desenhar(ctx, cadastro, g, desenhar, giras = [], logo = null) {
     rs.forEach((r, i) => {
       if (desenhar) {
         if (i % 2 === 0) { ctx.fillStyle = C.zebra; retangulo(ctx, ix - 10, yy, CW - 2 * (ix - P) + 20, r.h, 8); ctx.fill(); }
-        let ly = yy + 5; fonte(700, 20); ctx.fillStyle = C.ink;
-        r.ll.forEach((l) => { ctx.fillText(l, ix, ly); ly += LH; });
+        let ly = yy + 5; fonte(700, 20); ctx.fillStyle = r.lRisc ? C.vermelho : C.ink;
+        r.ll.forEach((l) => { ctx.fillText(l, ix, ly); if (r.lRisc) riscar(ix, ly, ctx.measureText(l).width); ly += LH; });
         if (r.junto) { fonte('italic 500', 17); ctx.fillStyle = C.guia; ctx.fillText(r.guia, ix + r.wl + 10, ly - LH + 3); }
         if (r.gl.length) { fonte('italic 500', 17); ctx.fillStyle = C.guia; r.gl.forEach((l) => { ctx.fillText(l, ix, ly); ly += 20; }); }
-        if (r.pl.length) { ly += 2; fonte(600, 17); ctx.fillStyle = r.passeRe ? C.re : COR.passe; r.pl.forEach((l) => { ctx.fillText(l, ix, ly); ly += 21; }); }
+        if (r.pl.length) {
+          ly += 2; fonte(600, 17); ctx.fillStyle = r.passeRisc ? C.vermelho : r.passeRe ? C.re : COR.passe;
+          r.pl.forEach((l) => { ctx.fillText(l, ix, ly); if (r.passeRisc) riscar(ix, ly - 1, ctx.measureText(l).width); ly += 21; });
+        }
         let ry = yy + 5;
         r.rl.forEach((linha) => {
           let x = rx;
@@ -248,7 +256,10 @@ function desenhar(ctx, cadastro, g, desenhar, giras = [], logo = null) {
               retangulo(ctx, x, ry - 4, w, LH + 2, 8); ctx.fillStyle = C.reSoft; ctx.fill();
               fonte(600, 20); ctx.fillStyle = C.re; ctx.fillText(t.n + ' ↻', x + 6, ry); x += w;
             } else {
-              ctx.fillStyle = r.vazio ? C.muted : C.ink; ctx.fillText(t.n, x, ry); x += ctx.measureText(t.n).width;
+              const w = ctx.measureText(t.n).width;
+              ctx.fillStyle = r.vazio ? C.muted : t.risc ? C.vermelho : C.ink; ctx.fillText(t.n, x, ry);
+              if (t.risc) riscar(x, ry, w);
+              x += w;
             }
             if (t.fim) { fonte(400, 20); ctx.fillStyle = C.muted; ctx.fillText(t.fim, x, ry); }
           });
@@ -259,23 +270,24 @@ function desenhar(ctx, cadastro, g, desenhar, giras = [], logo = null) {
     });
     y += ch + gap;
   };
-  const linhaCambone = (x) => ({ l: x.m.nome, guia: guiaNaGira(x.m, g),
-    r: x.cams.length ? x.cams.map((p) => ({ n: nome(p.c), re: !!p.remanejado })) : [{ n: 'sem cambone' }], vazio: !x.cams.length,
-    passe: x.passes.map((p) => nome(p.c)).join(' e ') + (x.passes.some((p) => p.remanejado) ? ' ↻' : ''), passeRe: x.passes.some((p) => p.remanejado) });
+  // O passe só vem riscado quando todos os médiuns de passe daquela linha faltaram.
+  const linhaCambone = (x) => ({ l: x.m.nome, lRisc: faltou.has(x.m.nome), guia: guiaNaGira(x.m, g),
+    r: x.cams.length ? x.cams.map((p) => ({ n: nome(p.c), re: !!p.remanejado, risc: faltou.has(nome(p.c)) })) : [{ n: 'sem cambone' }], vazio: !x.cams.length,
+    passe: x.passes.map((p) => nome(p.c)).join(' e ') + (x.passes.some((p) => p.remanejado) ? ' ↻' : ''), passeRe: x.passes.some((p) => p.remanejado),
+    passeRisc: x.passes.length > 0 && x.passes.every((p) => faltou.has(nome(p.c))) });
   secao('Médiuns', COR.medium, 'MÉDIUM', 'CAMBONE', lista.filter((x) => x.m.funcao !== 'extra').map(linhaCambone));
   secao('At. Extras', COR.extra, 'AT. EXTRA', 'CAMBONE', lista.filter((x) => x.m.funcao === 'extra').map(linhaCambone));
 
   // ---- quadros do fim: passe sem médium (se houver), suporte e cambones de apoio lado a lado,
   //      a turma da limpeza na largura toda (com quem ajuda embaixo) e, por último, ausências e faltas
-  if (semPasse.length) linhaDeQuadros([{ titulo: 'Passe sem médium', nomes: semPasse.map(nome), cor: COR.passe }]);
+  if (semPasse.length) linhaDeQuadros([{ titulo: 'Passe sem médium', nomes: semPasse.map(nome), naoVao: comFalta(semPasse.map(nome)), cor: COR.passe }]);
   linhaDeQuadros([q('suporte'), q('apoio')].filter(Boolean));
   const limp = grupo('limpeza');
   if (limp) {
     const aj = grupo('ajudam');
-    linhaDeQuadros([{ titulo: limp[0].replace(/^Limpeza · (Turma \d+)$/, '$1 da limpeza'), nomes: limp[1], naoVao: limp[3], cor: COR.limpeza,
-      sub: aj ? { t: 'Ajudam na limpeza', nomes: aj[1], naoVao: aj[3] } : null }]);
+    linhaDeQuadros([{ titulo: limp[0].replace(/^Limpeza · (Turma \d+)$/, '$1 da limpeza'), nomes: limp[1], naoVao: comFalta(limp[1], limp[3]), cor: COR.limpeza,
+      sub: aj ? { t: 'Ajudam na limpeza', nomes: aj[1], naoVao: comFalta(aj[1], aj[3]) } : null }]);
   }
-  const { ausentes, faltas } = foraDaGira(pessoas, g);
   linhaDeQuadros([ausentes.length ? { titulo: `Ausências · ${ausentes.length}`, nomes: ausentes, cor: COR.fora } : null,
     faltas.length ? { titulo: `Faltas · ${faltas.length}`, nomes: faltas, cor: COR.fora } : null].filter(Boolean));
 
