@@ -2310,7 +2310,7 @@ test('ASAAS: Pedir gera o link de pagamento; só o webhook conferido no ASAAS ma
     assert.equal((await as(USER, { op: 'ativar', ativo: true })).status, 403);
     let A = (await api('GET', '/api/oferendas?lista=asaas', ADMIN)).json;
     assert.equal(A.ativo, false);
-    assert.deepEqual(A.config, { chave: true, token: true, ambiente: 'Sandbox (testes)' });
+    assert.deepEqual(A.config, { chave: true, token: true, chaveB: !!process.env.ASAAS2_API_KEY, tokenB: !!process.env.ASAAS2_WEBHOOK_TOKEN, ambiente: 'Sandbox (testes)' });
     assert.ok(!JSON.stringify(A).includes('chave-teste'), 'a chave nunca vai para a tela');
 
     // Compras com um item de R$ 12,50 e um pedido aberto.
@@ -2508,6 +2508,75 @@ test('CPF do Perfil: cifrado, só a própria pessoa e o root', async () => {
     assert.equal(sql(`select count(*) from pessoas_cpf where pessoa_id = '${dona.id}'`), '0');
   } finally {
     if (chaveAntes === undefined) delete process.env.CPF_CHAVE; else process.env.CPF_CHAVE = chaveAntes;
+  }
+});
+
+test('Compras: item de doação é cobrado na conta B; venda e doação no mesmo pedido viram duas cobranças', async () => {
+  const fetchReal = globalThis.fetch;
+  const BASES = { A: 'http://asaasa.doacao/v3', B: 'http://asaasb.doacao/v3' };
+  const falso = { pedidos: [], n: 0, valores: {} };
+  globalThis.fetch = async (url, op = {}) => {
+    const u = String(url);
+    const conta = Object.keys(BASES).find((k) => u.startsWith(BASES[k]));
+    if (!conta) return fetchReal(url, op);
+    const caminho = u.slice(BASES[conta].length);
+    const json = (st, j) => new Response(JSON.stringify(j), { status: st, headers: { 'Content-Type': 'application/json' } });
+    falso.pedidos.push([conta, op.method, caminho, op.body ? JSON.parse(op.body) : null]);
+    if (op.method === 'POST' && caminho === '/customers') return json(200, { id: 'cus_' + conta });
+    if (op.method === 'GET' && caminho.startsWith('/customers/')) return json(200, { id: caminho.split('/')[2], cpfCnpj: '52998224725' });
+    if (op.method === 'POST' && caminho === '/payments') {
+      const b = JSON.parse(op.body);
+      const id = `pay_${conta}_${++falso.n}`;
+      falso.valores[id] = b.value;
+      return json(200, { id, value: b.value, dueDate: b.dueDate, invoiceUrl: 'https://sandbox.asaas.com/i/' + id, externalReference: b.externalReference });
+    }
+    if (op.method === 'GET' && caminho.endsWith('/pixQrCode')) return json(200, { payload: 'PIX' + conta, encodedImage: 'iVBORw0KGgo=' });
+    if (op.method === 'GET' && caminho.startsWith('/payments/')) return json(200, { id: caminho.split('/')[2], status: 'RECEIVED', value: falso.valores[caminho.split('/')[2]] });
+    if (op.method === 'GET' && caminho.startsWith('/payments?externalReference=')) return json(200, { data: [] });
+    return json(404, {});
+  };
+  const nomes = ['ASAAS_API_KEY', 'ASAAS_WEBHOOK_TOKEN', 'ASAAS_API_URL', 'ASAAS2_API_KEY', 'ASAAS2_WEBHOOK_TOKEN', 'ASAAS2_API_URL'];
+  const env = Object.fromEntries(nomes.map((k) => [k, process.env[k]]));
+  const gu = (tok, b) => api('POST', '/api/oferendas', tok, { acao: 'guias', ...b });
+  const hookB = (token, corpo) => fetchReal(base + '/api/oferendas?webhook=asaas2', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', ...(token ? { 'asaas-access-token': token } : {}) }, body: JSON.stringify(corpo),
+  }).then((r) => r.status);
+  let grupoId;
+  try {
+    Object.assign(process.env, { ASAAS_API_KEY: 'chave-a', ASAAS_WEBHOOK_TOKEN: 'token-a', ASAAS_API_URL: BASES.A });
+    delete process.env.ASAAS2_API_KEY; delete process.env.ASAAS2_WEBHOOK_TOKEN;
+    await api('POST', '/api/oferendas', ADMIN, { acao: 'asaas', op: 'ativar', ativo: true });
+    let G = (await gu(ADMIN, { op: 'grupo', descricao: 'Doação teste' })).json;
+    grupoId = G.grupos.find((x) => x.descricao === 'Doação teste').id;
+    await gu(ADMIN, { op: 'item', grupoId, descricao: 'Vela', quantidade: 10, valor: '10' });
+    G = (await gu(ADMIN, { op: 'item', grupoId, descricao: 'Doação livre', quantidade: 10, valor: '25', doacao: true })).json;
+    const grupo = G.grupos.find((x) => x.id === grupoId);
+    const vela = grupo.itens.find((i) => i.descricao === 'Vela');
+    const doacao = grupo.itens.find((i) => i.descricao === 'Doação livre');
+    assert.equal(doacao.doacao, true);
+    assert.equal(vela.doacao, false);
+    // Sem a conta B configurada, o Pix da doação avisa (a venda continua na A).
+    G = (await gu(ADMIN, { op: 'pedir', itemId: doacao.id, quantidade: 1, cpf: '52998224725' })).json;
+    assert.match(G.aviso || '', /conta B/);
+    Object.assign(process.env, { ASAAS2_API_KEY: 'chave-b', ASAAS2_WEBHOOK_TOKEN: 'token-b', ASAAS2_API_URL: BASES.B });
+    G = (await gu(ADMIN, { op: 'pedir', itemId: vela.id, quantidade: 2, cpf: '52998224725' })).json;
+    const minhas = G.cobrancas.filter((c) => c.status === 'pendente' && c.pedido === grupo.aberto);
+    assert.deepEqual(minhas.map((c) => [c.conta, c.valor]).sort(), [['A', 20], ['B', 25]], 'uma cobrança em cada conta');
+    const pagB = falso.pedidos.find(([c, m, cam]) => c === 'B' && m === 'POST' && cam === '/payments');
+    assert.match(pagB[3].description, /Doação/);
+    assert.ok(falso.pedidos.some(([c, m, cam]) => c === 'B' && m === 'POST' && cam === '/customers'), 'cliente criado também na conta B');
+    // Webhook da conta B: token próprio; confere na conta B e marca a doação como paga.
+    assert.equal(await hookB('token-a', { id: 'evt_b0', event: 'PAYMENT_CREATED' }), 401);
+    const idB = Object.keys(falso.valores).find((k) => k.startsWith('pay_B_'));
+    assert.equal(await hookB('token-b', { id: 'evt_b1', event: 'PAYMENT_RECEIVED', payment: { id: idB } }), 200);
+    const linhas = (await api('GET', '/api/oferendas?lista=guias', ADMIN)).json.pedidos.flatMap((pe) => pe.linhas).filter((l) => l.grupoId === grupoId);
+    assert.equal(linhas.find((l) => l.itemId === doacao.id).pago, true, 'doação paga pelo webhook da conta B');
+    assert.equal(linhas.find((l) => l.itemId === vela.id).pago, false, 'a venda continua esperando o Pix da conta A');
+  } finally {
+    globalThis.fetch = fetchReal;
+    for (const k of nomes) { if (env[k] === undefined) delete process.env[k]; else process.env[k] = env[k]; }
+    await api('POST', '/api/oferendas', ADMIN, { acao: 'asaas', op: 'ativar', ativo: false });
+    if (grupoId) await gu(ADMIN, { op: 'excluirGrupo', id: grupoId });
   }
 });
 

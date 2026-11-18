@@ -86,6 +86,7 @@ export default rota({
   },
   POST: async (req) => {
     if (req.query.webhook === 'asaas') return webhookAsaas(req);
+    if (req.query.webhook === 'asaas2') return webhookAsaas(req, 'B');   // conta B: Pix dos itens de doação
     const b = corpo(req);
     if (b.acao === 'iemanja') return acaoIemanja(await exigir(req), b);
     if (b.acao === 'guias') return acaoGuias(await exigir(req), b);

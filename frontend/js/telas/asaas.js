@@ -9,6 +9,8 @@ import { centavos, reais } from '/shared/ervas.js';
 const R = (v) => reais(centavos(v));
 const quando = (iso) => new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 export const URL_WEBHOOK = location.origin + '/api/oferendas?webhook=asaas';
+// Conta B: o Pix dos itens de doação das Compras.
+export const URL_WEBHOOK_B = location.origin + '/api/oferendas?webhook=asaas2';
 const STATUS = { pendente: ['Aguardando pagamento', 'new'], paga: ['Paga', 'pleno'], vencida: ['Vencida', 're'], cancelada: ['Cancelada', 're'], estornada: ['Estornada', 're'] };
 const editar = () => pode('asaas:editar');
 const badge = (s) => { const [t, c] = STATUS[s] || [s, '']; return `<span class="badge ${c}">${esc(t)}</span>`; };
@@ -29,8 +31,11 @@ function cardConexao(A) {
     <label class="of-sw"><input type="checkbox" role="switch" data-act="asaasativo" ${A.ativo ? 'checked' : ''} ${(!ok && !A.ativo) || !editar() ? 'disabled' : ''}><span class="of-sw-t" aria-hidden="true"></span><b>Pix visível nas Compras</b></label>
     <p class="muted" style="margin:0">${A.ativo ? 'Cada Pedir na aba Compras gera um link de pagamento Pix.' : 'Desligado: os pedidos da aba Compras não geram link de pagamento.'}</p>
     <ul class="as-cfg">${item(C.chave, 'ASAAS_API_KEY na Vercel')}${item(C.token, 'ASAAS_WEBHOOK_TOKEN na Vercel')}</ul>
-    <label class="field">URL do webhook (cole no ASAAS, com o mesmo token)<input type="text" id="as-url" readonly value="${esc(URL_WEBHOOK)}"></label>
+    <label class="field">URL do webhook da conta A (Compras; cole no ASAAS da conta A, com o mesmo token)<input type="text" id="as-url" readonly value="${esc(URL_WEBHOOK)}"></label>
     <div class="cp-bts"><button class="btn" data-act="asaascopiar"><span aria-hidden="true">📋</span> Copiar URL</button></div>
+    <ul class="as-cfg">${item(C.chaveB, 'ASAAS2_API_KEY na Vercel')}${item(C.tokenB, 'ASAAS2_WEBHOOK_TOKEN na Vercel')}</ul>
+    <label class="field">URL do webhook da conta B (itens de doação; cole no ASAAS da conta B, com o mesmo token)<input type="text" id="as-url-b" readonly value="${esc(URL_WEBHOOK_B)}"></label>
+    <div class="cp-bts"><button class="btn" data-act="asaascopiar" data-b="1"><span aria-hidden="true">📋</span> Copiar URL da conta B</button></div>
     <p class="muted" style="margin:0">As chaves ficam só nas variáveis da Vercel; o app nunca mostra o valor delas.</p></div>`;
 }
 
@@ -50,7 +55,7 @@ function juntar(lista, chave) {
 
 function linhaCobranca(c) {
   return `<li>
-    <span class="as-l1"><b>${esc(c.nome)}</b>${badge(c.status)}</span>
+    <span class="as-l1"><b>${esc(c.nome)}</b>${c.conta === 'B' ? ' <span class="badge new" title="Conta B do ASAAS">Doação · conta B</span>' : ''}${badge(c.status)}</span>
     ${c.itens?.length ? `<span class="as-l2">${esc(c.itens.join(', '))}</span>` : ''}
     <span class="as-l2 muted">Pedido nº ${c.pedido} · gerado ${quando(c.criadoEm)}${c.pagoEm ? ' · pago ' + quando(c.pagoEm) : c.status === 'pendente' && c.vencimento ? ' · vence ' + new Date(c.vencimento + 'T12:00:00').toLocaleDateString('pt-BR') : ''}${c.link ? ` · <a href="${esc(c.link)}" target="_blank" rel="noopener">link</a>` : ''}</span>
     <span class="as-l3"><b>${R(c.valor)}</b>${c.status === 'pendente' && editar()
@@ -142,9 +147,10 @@ export const cliques = {
   asaassub(el) { const s = ui[el.dataset.c]; const k = el.dataset.k; if (s.has(k)) s.delete(k); else s.add(k); avisar(); },
   asaasatualizar() { estado.asaas = null; avisar(); },
   async asaascancelar(el) { if (await acaoAsaas('cancelar', { id: el.dataset.id })) toast('Cobrança cancelada.'); },
-  asaascopiar() {
-    const fb = () => { const t = document.getElementById('as-url'); t.focus(); t.select(); toast('URL selecionada. Copie com o menu do aparelho.'); };
-    try { navigator.clipboard.writeText(URL_WEBHOOK).then(() => toast('Copiado.'), fb); } catch { fb(); }
+  asaascopiar(el) {
+    const b = el?.dataset?.b === '1';
+    const fb = () => { const t = document.getElementById(b ? 'as-url-b' : 'as-url'); t.focus(); t.select(); toast('URL selecionada. Copie com o menu do aparelho.'); };
+    try { navigator.clipboard.writeText(b ? URL_WEBHOOK_B : URL_WEBHOOK).then(() => toast('Copiado.'), fb); } catch { fb(); }
   },
 };
 

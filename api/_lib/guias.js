@@ -2,7 +2,7 @@
 //   todos:  pedir { itemId, quantidade }  — no pedido aberto do grupo do item, sem passar do disponível
 //           (com o Pix ligado, pedir { ..., cpf? } já gera o link de pagamento; pix { pedido, cpf? } tenta de novo — veja api/_lib/asaas.js)
 //   admin:  publicar { publicada } · grupo { id?, descricao?, visivel? } · excluirGrupo { id }
-//           item { id?, grupoId, descricao?, foto? (base64 JPEG | null tira), quantidade?, valor?, visivel?, cpj? } · excluirItem { id }
+//           item { id?, grupoId, descricao?, foto? (base64 JPEG | null tira), quantidade?, valor?, visivel?, cpj?, doacao? (cobrado na conta B) } · excluirItem { id }
 //           cancelar { id } (a quantidade volta para o item) · ok { id, ok } · encerrar { grupoId } · novo { grupoId } (próximo número)
 // Cada grupo tem o seu pedido (grupos[].aberto = número do pedido aberto ou null). pedidos[].grupos diz quais grupos
 // o pedido atende e quando cada um encerrou; as linhas trazem o grupoId.
@@ -165,6 +165,7 @@ export async function acaoGuias(eu, b) {
       if ('foto' in b) p.foto = foto(b.foto);
       if ('visivel' in b) p.visivel = booleano(b.visivel, 'o item fica visível');
       if ('cpj' in b) p.cpj = booleano(b.cpj, 'o item é só da corrente');
+      if ('doacao' in b) p.doacao = booleano(b.doacao, 'o item é doação (conta B)');
       estado = await db.rpc('guia_item_salvar', p);
       break;
     }

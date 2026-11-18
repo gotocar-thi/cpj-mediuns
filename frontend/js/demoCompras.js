@@ -21,6 +21,7 @@ export function criarCompras({ euChave, euNome, pessoas, ErroDemo }) {
       { id: id(2101), descricao: 'Guia de Oxóssi (verde)', fotoV: null, quantidade: 6, valor: 35, visivel: true, cpj: false },
       { id: id(2102), descricao: 'Guia de Iemanjá (azul claro)', fotoV: null, quantidade: 4, valor: 35, visivel: true, cpj: false },
       { id: id(2103), descricao: 'Guia de Preto Velho (preta e branca)', fotoV: null, quantidade: 0, valor: 40, visivel: true, cpj: false },
+      { id: id(2104), descricao: 'Doação para a casa', fotoV: null, quantidade: 99, valor: 20, visivel: true, cpj: false, doacao: true },
     ] },
     { id: G2, descricao: 'Roupas', visivel: true, aberto: 3, itens: [
       { id: id(2201), descricao: 'Camiseta branca CPJ', fotoV: null, quantidade: 12, valor: 45, visivel: true, cpj: true },
@@ -210,6 +211,7 @@ export function criarCompras({ euChave, euNome, pessoas, ErroDemo }) {
           ...(b.valor !== undefined ? { valor: Number(String(b.valor).replace(',', '.')) || 0 } : {}),
           ...(b.visivel !== undefined ? { visivel: !!b.visivel } : {}),
           ...(b.cpj !== undefined ? { cpj: !!b.cpj } : {}),
+          ...(b.doacao !== undefined ? { doacao: !!b.doacao } : {}),
         };
         if (atual) { Object.assign(atual, dados); break; }
         const g = grupos.find((x) => x.id === b.grupoId);

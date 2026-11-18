@@ -11,19 +11,23 @@
 //   POST { acao: 'asaas', op: 'ativar', ativo } · { acao: 'asaas', op: 'cancelar', id }   (root)
 //
 // Variáveis (só no servidor): ASAAS_API_KEY, ASAAS_WEBHOOK_TOKEN e ASAAS_API_URL (sem ela, usa o sandbox).
+// Item de doação (caixinha no item, v142): cobrado na conta B (ASAAS2_API_KEY, ASAAS2_API_URL), com o webhook dela em
+// POST ?webhook=asaas2 e o token ASAAS2_WEBHOOK_TOKEN. Um pedido com venda e doação vira uma cobrança em cada conta.
 import { HttpError, corpo, validarId, hojeBR } from './http.js';
 import { db } from './db.js';
 import { iguaisSeguro } from './senhas.js';
 import { pode } from '../../shared/permissoes.js';
 import { chavePessoa } from '../../shared/ervas.js';
 import { cpfValido } from '../../shared/perfil.js';
-import { hashCpf } from './cpf.js';
+import { hashCpf, decifrar } from './cpf.js';
 
 const SANDBOX = 'https://api-sandbox.asaas.com/v3';
 // prefixo = 'ASAAS' (conta A, Compras) ou 'ASAAS2' (conta B, pagamentos em atraso: api/_lib/atrasos.js).
 const urlDe = (prefixo) => (process.env[prefixo + '_API_URL'] || SANDBOX).replace(/\/+$/, '');
 const urlApi = () => urlDe('ASAAS');
 export const configurado = () => !!(process.env.ASAAS_API_KEY && process.env.ASAAS_WEBHOOK_TOKEN);
+// Conta B pronta para o Pix das doações: chave e token do webhook dela.
+export const configuradoB = () => !!(process.env.ASAAS2_API_KEY && process.env.ASAAS2_WEBHOOK_TOKEN);
 const PAGO = ['RECEIVED', 'CONFIRMED', 'RECEIVED_IN_CASH'];
 
 // Chamada à API do ASAAS. Erro do ASAAS vira mensagem para a tela; falha de rede, 502.
@@ -47,7 +51,6 @@ export async function chamarAsaas(prefixo, metodo, caminho, dados, ms = 8000) {
   }
   return json;
 }
-const asaas = (...a) => chamarAsaas('ASAAS', ...a);
 
 // Leitura do ASAAS 1 vez por dia, a partir das 9h de Brasília (usada pela Transparência). A leitura guardada vale enquanto
 // for posterior ao último "9h" (antes das 9h, o de ontem). O root e o Admin financeiro podem consultar de novo na hora.
@@ -118,48 +121,82 @@ function amanhaBR() {
   return new Date(Date.UTC(y, m - 1, d + 1)).toISOString().slice(0, 10);
 }
 
+// CPF para criar o cliente numa conta: o digitado; senão, o do Perfil (pessoa ou aluno); senão, o do cliente que a
+// pessoa já tem na outra conta (o ASAAS devolve). Nada disso é guardado: o app guarda só o id do cliente.
+async function cpfParaCliente(eu, chave, b, outra) {
+  const digitado = cpfValido(b.cpf);
+  if (digitado) return digitado;
+  try {
+    if (eu.alunoId) {
+      const cifrado = await db.rpc('aluno_cpf_ler', { id: eu.alunoId });
+      if (cifrado) return decifrar(cifrado, eu.alunoId);
+    } else if (eu.pessoaId) {
+      const linha = await db.rpc('cpf_ler', { pessoaId: eu.pessoaId });
+      if (linha?.cifrado) return decifrar(linha.cifrado, eu.pessoaId);
+    }
+  } catch { /* sem a CPF_CHAVE: tenta o cliente da outra conta */ }
+  if (outra?.cliente) {
+    const cli = await chamarAsaas(PREFIXO[outra.conta], 'GET', `/customers/${encodeURIComponent(outra.cliente)}`).catch(() => null);
+    const cpf = cpfValido(cli?.cpfCnpj);
+    if (cpf) return cpf;
+  }
+  return null;
+}
+
 export async function gerarPix(eu, b) {
   if (!(await pixLigado())) throw new HttpError(403, 'O pagamento por Pix não está disponível no momento.');
   const pedido = Number(b.pedido);
   if (!Number.isInteger(pedido) || pedido < 1) throw new HttpError(400, 'Pedido inválido.');
   const chave = chavePessoa(eu);
-  // Cliente no ASAAS: criado uma vez por pessoa, com o CPF que ela digita (o app guarda só o id do cliente).
-  let cliente = (await db.rpc('asaas_minhas', { chave })).cliente;
-  if (!cliente) {
-    const cpf = cpfValido(b.cpf);
-    if (!cpf) throw new HttpError(400, 'Informe um CPF válido para gerar o Pix.');
-    cliente = (await asaas('POST', '/customers', { name: eu.nome, cpfCnpj: cpf, externalReference: chave, notificationDisabled: true })).id;
-    await db.rpc('asaas_cliente_salvar', { chave, clienteId: cliente });
-  }
   // Reserva que ficou parada de uma tentativa anterior: resolve antes, para não gerar um segundo link.
-  // Se ela era deste pedido e estava no ASAAS, o link já existe: pronto.
-  if ((await conferirReservas(chave, true)).includes(pedido)) return;
-  // Reserva as linhas não pagas da pessoa neste pedido (o valor sai do banco, nunca do navegador).
-  const c = await db.rpc('asaas_cobranca_reservar', { chave, nome: eu.nome, pedido });
+  const achados = await conferirReservas(chave, true);
+  // Contas com algo a pagar neste pedido (A: vendas; B: doações). Sem nada, a reserva da conta A dá a mensagem certa.
+  let contas = await db.rpc('asaas_contas_a_pagar', { chave, pedido });
+  if (!contas.length) {
+    if (achados.includes(pedido)) return;
+    contas = ['A'];
+  }
+  if (contas.includes('B') && !configuradoB()) throw new HttpError(400, 'O Pix das doações (conta B do ASAAS) ainda não está configurado. Fale com a administração.');
+  for (const conta of contas.sort()) await gerarNaConta(eu, chave, pedido, conta, b);
+}
+
+async function gerarNaConta(eu, chave, pedido, conta, b) {
+  const pref = PREFIXO[conta];
+  const minhas = await db.rpc('asaas_minhas', { chave });
+  let cliente = conta === 'B' ? minhas.clienteB : minhas.cliente;
+  if (!cliente) {
+    const outra = conta === 'B' ? { conta: 'A', cliente: minhas.cliente } : { conta: 'B', cliente: minhas.clienteB };
+    const cpf = await cpfParaCliente(eu, chave, b, outra);
+    if (!cpf) throw new HttpError(400, 'Informe um CPF válido para gerar o Pix.');
+    cliente = (await chamarAsaas(pref, 'POST', '/customers', { name: eu.nome, cpfCnpj: cpf, externalReference: chave, notificationDisabled: true })).id;
+    await db.rpc('asaas_cliente_salvar', { chave, conta, clienteId: cliente });
+  }
+  // Reserva as linhas não pagas da pessoa neste pedido e nesta conta (o valor sai do banco, nunca do navegador).
+  const c = await db.rpc('asaas_cobranca_reservar', { chave, nome: eu.nome, pedido, conta });
   let pg;
   try {
-    pg = await asaas('POST', '/payments', {
+    pg = await chamarAsaas(pref, 'POST', '/payments', {
       customer: cliente, billingType: 'PIX', value: Number(c.valor), dueDate: amanhaBR(),
-      description: `CPJ · Compras · pedido nº ${pedido}`, externalReference: c.id,
+      description: `CPJ · ${conta === 'B' ? 'Doação' : 'Compras'} · pedido nº ${pedido}`, externalReference: c.id,
     });
   } catch (e) {
     // Sem resposta (ou erro 5xx): o ASAAS pode ter criado a cobrança mesmo assim. Apagar a reserva deixaria a pessoa
     // gerar um segundo link e a primeira cobrança ficaria solta no ASAAS. Procura agora; se ainda não está lá,
     // a reserva fica e é conferida de novo na próxima tentativa ou abertura da aba.
     if (e instanceof HttpError && e.status === 502) {
-      const achada = await buscarPelaReserva(c.id).catch(() => null);
-      if (achada) { await gravarCobranca(c.id, achada); return; }
+      const achada = await buscarPelaReserva(c.id, conta).catch(() => null);
+      if (achada) { await gravarCobranca(c.id, achada, conta); return; }
       throw new HttpError(502, 'O ASAAS está demorando para responder. Aguarde uns segundos e toque em Gerar link de novo (não vai sair um link repetido).');
     }
     await db.rpc('asaas_cobranca_desfazer', { id: c.id }).catch(() => {});
     throw e;
   }
-  await gravarCobranca(c.id, pg);
+  await gravarCobranca(c.id, pg, conta);
 }
 
-async function gravarCobranca(id, pg) {
+async function gravarCobranca(id, pg, conta = 'A') {
   let qr = null;
-  try { qr = await asaas('GET', `/payments/${encodeURIComponent(pg.id)}/pixQrCode`, null, 4000); } catch { /* o QR pode vir depois: a tela mostra o link */ }
+  try { qr = await chamarAsaas(PREFIXO[conta], 'GET', `/payments/${encodeURIComponent(pg.id)}/pixQrCode`, null, 4000); } catch { /* o QR pode vir depois: a tela mostra o link */ }
   await db.rpc('asaas_cobranca_criada', {
     id, asaasId: pg.id, link: pg.invoiceUrl || null,
     payload: qr?.payload || null, imagem: qr?.encodedImage || null, vencimento: pg.dueDate || null,
@@ -167,8 +204,8 @@ async function gravarCobranca(id, pg) {
 }
 
 // A cobrança que o ASAAS criou para a reserva (externalReference = id da reserva), ou null.
-async function buscarPelaReserva(id) {
-  const r = await asaas('GET', `/payments?externalReference=${encodeURIComponent(id)}`, null, 5000);
+async function buscarPelaReserva(id, conta = 'A') {
+  const r = await chamarAsaas(PREFIXO[conta], 'GET', `/payments?externalReference=${encodeURIComponent(id)}`, null, 5000);
   return (r?.data || []).find((x) => x.externalReference === id && !x.deleted) || null;
 }
 
@@ -178,21 +215,23 @@ async function buscarPelaReserva(id) {
 // Devolve os pedidos cujo link foi achado no ASAAS.
 export async function conferirReservas(chave, estrito = false) {
   const achados = [];
-  for (const { id, pedido } of await db.rpc('asaas_reservas_paradas', { chave })) {
+  for (const { id, pedido, conta } of await db.rpc('asaas_reservas_paradas', { chave })) {
     let achada;
-    try { achada = await buscarPelaReserva(id); } catch (e) {
+    try { achada = await buscarPelaReserva(id, conta); } catch (e) {
       if (estrito) throw new HttpError(502, 'O ASAAS não respondeu para conferir o link anterior. Tente de novo em instantes.');
       console.error('[asaas] conferir reserva', id, e?.message || e);
       continue;
     }
-    if (achada) { await gravarCobranca(id, achada); achados.push(pedido); } else await db.rpc('asaas_cobranca_desfazer', { id });
+    if (achada) { await gravarCobranca(id, achada, conta); achados.push(pedido); } else await db.rpc('asaas_cobranca_desfazer', { id });
   }
   return achados;
 }
 
 // ---------- webhook ----------
-export async function webhookAsaas(req) {
-  const esperado = process.env.ASAAS_WEBHOOK_TOKEN;
+// conta 'A' (POST ?webhook=asaas, ASAAS_WEBHOOK_TOKEN) ou 'B' (POST ?webhook=asaas2, ASAAS2_WEBHOOK_TOKEN: Pix das doações).
+export async function webhookAsaas(req, conta = 'A') {
+  const pref = PREFIXO[conta];
+  const esperado = process.env[pref + '_WEBHOOK_TOKEN'];
   if (!esperado) throw new HttpError(503, 'Webhook do ASAAS não configurado.');
   const recebido = req.headers['asaas-access-token'];
   if (typeof recebido !== 'string' || !iguaisSeguro(recebido, esperado)) throw new HttpError(401, 'Token inválido.');
@@ -205,8 +244,8 @@ export async function webhookAsaas(req) {
   const p = { id, evento, dados: b, paymentId, referencia };
   // Pagamento: confere direto no ASAAS antes de liberar. Se o ASAAS não responder, devolve erro
   // e o evento não é gravado, para o ASAAS reenviar depois.
-  if (paymentId && (evento === 'PAYMENT_RECEIVED' || evento === 'PAYMENT_CONFIRMED') && process.env.ASAAS_API_KEY) {
-    const real = await asaas('GET', `/payments/${encodeURIComponent(paymentId)}`, null, 5000);
+  if (paymentId && (evento === 'PAYMENT_RECEIVED' || evento === 'PAYMENT_CONFIRMED') && process.env[pref + '_API_KEY']) {
+    const real = await chamarAsaas(pref, 'GET', `/payments/${encodeURIComponent(paymentId)}`, null, 5000);
     p.conferido = { status: real.status, valor: Number(real.value) };
   }
   await db.rpc('asaas_evento_processar', p);
@@ -230,6 +269,9 @@ async function respostaRoot() {
     config: {
       chave: !!process.env.ASAAS_API_KEY,
       token: !!process.env.ASAAS_WEBHOOK_TOKEN,
+      // Conta B: o Pix dos itens de doação.
+      chaveB: !!process.env.ASAAS2_API_KEY,
+      tokenB: !!process.env.ASAAS2_WEBHOOK_TOKEN,
       // Só a URL de produção do ASAAS é produção; qualquer outra (sandbox, teste) não é.
       ambiente: urlApi().startsWith('https://api.asaas.com/') ? 'Produção' : 'Sandbox (testes)',
     },
@@ -252,7 +294,7 @@ export async function acaoAsaas(eu, b) {
     const c = await db.rpc('asaas_cobranca', { id });
     if (!c) throw new HttpError(404, 'Cobrança não encontrada.');
     if (c.status !== 'pendente') throw new HttpError(400, 'Só dá para cancelar cobrança pendente.');
-    if (c.asaasId) await asaas('DELETE', `/payments/${encodeURIComponent(c.asaasId)}`);
+    if (c.asaasId) await chamarAsaas(PREFIXO[c.conta || 'A'], 'DELETE', `/payments/${encodeURIComponent(c.asaasId)}`);
     await db.rpc('asaas_cobranca_cancelar', { id });
   } else {
     throw new HttpError(400, 'Ação inválida.');

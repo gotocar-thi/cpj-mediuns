@@ -26,7 +26,7 @@ const ui = {
   itemSel: {},              // grupo → { item, k: 'paga' | 'pend' }: o quadradinho de item aberto no Painel
   minimizados: new Set(),   // blocos que a pessoa minimizou: id do grupo de itens ou 'meus' (Seus pedidos)
   grupoRen: null,           // id do grupo com o ✎ aberto
-  item: null,               // formulário de item: { grupoId, id?, descricao, quantidade, valor, visivel, cpj, foto?: b64 | null }
+  item: null,               // formulário de item: { grupoId, id?, descricao, quantidade, valor, visivel, cpj, doacao, foto?: b64 | null }
   qtd: {},                  // quantidade escolhida por item (antes de Pedir)
   pedir: null,              // janela de confirmação: { itemId, quantidade }
   exportar: null,           // pedido escolhido para exportar ('número:grupo')
@@ -201,6 +201,7 @@ function formItem(I) {
     </div>
     <label class="of-sw"><input type="checkbox" role="switch" data-act="guiaitemvisform" ${I.visivel ? 'checked' : ''}><span class="of-sw-t" aria-hidden="true"></span><b>Visível</b></label>
     <label class="of-sw"><input type="checkbox" role="switch" data-act="guiaitemcpjform" ${I.cpj ? 'checked' : ''}><span class="of-sw-t" aria-hidden="true"></span><b>CPJ</b> <span class="muted">— produto e preço só para a corrente</span></label>
+    <label class="of-sw"><input type="checkbox" role="switch" data-act="guiaitemdoacaoform" ${I.doacao ? 'checked' : ''}><span class="of-sw-t" aria-hidden="true"></span><b>Doação</b> <span class="muted">— o Pix vai para a conta B do ASAAS</span></label>
     <div class="row" style="justify-content:flex-end;gap:8px"><button type="button" class="btn" data-act="guiaitemcancel">Cancelar</button><button class="btn primary" type="submit">${rot('item', 'Salvar item', 'Salvando…')}</button></div>
   </form>`;
 }
@@ -221,7 +222,7 @@ function grupoAdmin(g) {
       <button class="btn primary" type="submit">${rot('grupo', 'Salvar', 'Salvando…')}</button><button type="button" class="btn" data-act="guiarenomear" data-id="">Cancelar</button></form>`;
   }
   h += g.itens.length ? `<div class="gi-lista">${g.itens.map((i) => `<div class="gi-item gi-adm${i.visivel ? '' : ' oculto'}">${fotoItem(i, 'gi-foto', true)}
-      <div class="gi-info"><b>${esc(i.descricao)}${seloCpj(i)}</b><span class="gi-valor">${R(i.valor)}</span><span class="muted gi-disp">${plural(i.quantidade, 'disponível', 'disponíveis')}</span>
+      <div class="gi-info"><b>${esc(i.descricao)}${seloCpj(i)}${i.doacao ? ' <span class="badge new" title="Cobrado na conta B do ASAAS">Doação</span>' : ''}</b><span class="gi-valor">${R(i.valor)}</span><span class="muted gi-disp">${plural(i.quantidade, 'disponível', 'disponíveis')}</span>
         <label class="of-sw"><input type="checkbox" role="switch" data-act="guiaitemvis" data-id="${i.id}" ${i.visivel ? 'checked' : ''}><span class="of-sw-t" aria-hidden="true"></span><span class="muted">Visível</span></label></div>
       <div class="gi-acao gi-acao-adm"><button class="btn small" data-act="guiaeditaritem" data-id="${i.id}" aria-label="Editar ${esc(i.descricao)}">✎</button>
         ${estado.confirm === 'gi:' + i.id ? `<button class="btn small danger" data-act="guiaexcluiritem" data-id="${i.id}">${rot('excluirItem', 'Excluir?', 'Excluindo…')}</button>` : `<button class="btn small danger" data-act="askdel" data-k="gi:${i.id}" aria-label="Excluir ${esc(i.descricao)}">✕</button>`}</div>
@@ -552,7 +553,7 @@ export async function enviar(form) {
   } else if (form.id === 'f-guia-item') {
     const I = ui.item;
     if (!I) return;
-    const dados = { descricao: I.descricao, quantidade: I.quantidade, valor: I.valor, visivel: I.visivel, cpj: !!I.cpj };
+    const dados = { descricao: I.descricao, quantidade: I.quantidade, valor: I.valor, visivel: I.visivel, cpj: !!I.cpj, doacao: !!I.doacao };
     if (I.foto !== undefined) dados.foto = I.foto;
     if (I.id) dados.id = I.id; else dados.grupoId = I.grupoId;
     if (await fazer('item', dados)) { toast(I.id ? 'Item salvo.' : 'Item cadastrado.'); ui.item = null; avisar(); }
@@ -578,11 +579,11 @@ export const cliques = {
   guiapainel(el) { const id = el.dataset.id; if (ui.painel.has(id)) ui.painel.delete(id); else ui.painel.add(id); avisar(); },
   guiarenomear(el) { ui.grupoRen = el.dataset.id || null; avisar(); },
   async guiaexcluirgrupo(el) { if (await confirmado('gg:' + el.dataset.id, 'excluirGrupo', { id: el.dataset.id })) { ui.abertos.delete(el.dataset.id); toast('Grupo excluído.'); } },
-  guianovoitem(el) { ui.item = { grupoId: el.dataset.id, descricao: '', quantidade: '', valor: '', visivel: true, cpj: false }; avisar(); },
+  guianovoitem(el) { ui.item = { grupoId: el.dataset.id, descricao: '', quantidade: '', valor: '', visivel: true, cpj: false, doacao: false }; avisar(); },
   guiaeditaritem(el) {
     const i = acharItem(el.dataset.id);
     const g = estado.guias.grupos.find((x) => x.itens.includes(i));
-    if (i && g) { ui.item = { grupoId: g.id, id: i.id, descricao: i.descricao, quantidade: String(i.quantidade), valor: valorCampo(i.valor), visivel: i.visivel, cpj: !!i.cpj }; avisar(); }
+    if (i && g) { ui.item = { grupoId: g.id, id: i.id, descricao: i.descricao, quantidade: String(i.quantidade), valor: valorCampo(i.valor), visivel: i.visivel, cpj: !!i.cpj, doacao: !!i.doacao }; avisar(); }
   },
   guiaitemcancel() { ui.item = null; avisar(); },
   guiatirafoto() { if (ui.item) { ui.item.foto = null; avisar(); } },
@@ -659,6 +660,7 @@ export const mudancas = {
   async guiaitemvis(t) { if (!(await fazer('item', { id: t.dataset.id, visivel: t.checked }))) t.checked = !t.checked; },
   guiaitemvisform(t) { if (ui.item) ui.item.visivel = t.checked; },
   guiaitemcpjform(t) { if (ui.item) ui.item.cpj = t.checked; },
+  guiaitemdoacaoform(t) { if (ui.item) ui.item.doacao = t.checked; },
   guiaqtd(t) { ui.qtd[t.dataset.id] = Number(t.value); },
   guiaexportar(t) { ui.exportar = t.value; avisar(); },
   // Trocar o grupo leva ao pedido mais recente dele (o aberto, se houver).
