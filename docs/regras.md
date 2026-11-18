@@ -198,6 +198,7 @@ Estado atual das regras da casa e do app. Código: `shared/regras.js` (e demais 
 
 - Sub-aba **Pagamentos**, entre Compras e ASAAS: o **histórico de cobranças do ASAAS** de quem está logado, achado pelo **CPF do Perfil** (pessoa da corrente ou aluno), nas duas contas ligadas (A, das Compras, e B, das mensalidades e doações). Sem CPF no Perfil, pede para cadastrar.
 - Agrupado pelo **mês de vencimento**, do mais recente (que começa aberto); cada mês dobrável, com quantas cobranças e o total. Cada cobrança vem **minimizada** numa linha (descrição, valor e situação); tocar abre (uma por vez) **Descrição, Valor, Forma de pagamento e Vencimento**.
+- No topo, três quadradinhos com o total e quantas: **Pago** (recebida/confirmada), **Pendente** (aguardando pagamento ou em análise) e **Atraso** (vencida). Tocar num deles troca os meses por uma lista só com as cobranças daquela situação (Pendente e Atraso da que vence antes; Pago da mais recente); tocar de novo (ou **Ver todos os meses**) volta. Aberta, a cobrança que falta pagar tem o botão **Pagar**, que abre a fatura do ASAAS.
 - A leitura fica guardada e é refeita **1 vez por dia, a partir das 9h**; **↻ Atualizar** lê de novo (o da pessoa, no máximo a cada 10 minutos; o do root, sempre).
 - **Visível para todos** (interruptor do root, no topo): desligado, só o root vê a sub-aba; ligado, todos (corrente e alunos) veem os **próprios** pagamentos. Ninguém vê os de outra pessoa (o root, pelo Ver como).
 

@@ -1552,6 +1552,10 @@ button.eu-av{cursor:zoom-in}
 .pg-d-full{grid-column:1/-1}
 .pg-d dt{font-size:.72rem;letter-spacing:.04em;text-transform:uppercase;color:var(--muted)}
 .pg-d dd{margin:0;font-weight:600;overflow-wrap:anywhere}
+.pf-of-totais.pg-quads{grid-template-columns:repeat(3,minmax(0,1fr))}
+.pg-quads .pf-of-total b{font-size:1.02rem;white-space:nowrap}
+.pg-d-pagar{grid-column:1/-1}
+.pg-d-pagar .btn{width:100%;text-align:center}
 .at-rodape{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:8px;font-size:.82rem}
 .at-erro{margin:0;font-size:.82rem;color:var(--warn)}
 .at-meu{border-color:var(--off)}
