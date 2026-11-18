@@ -515,9 +515,22 @@ function cardCadastrosLogin() {
   if (!sel) return h + '</div>';
   const turmas = (estado.alunos.turmas || []).map((t) => `<option value="t:${t.id}">Aluno · ${esc(t.nome)}</option>`).join('');
   h += `<div class="cad-lista">${C[sel].map((c) => {
-    const contato = [c.celular && formatarCel(c.celular), c.email].filter(Boolean).map(esc).join(' · ');
-    return `<div class="cad-l"><div class="cad-l1"><b>${esc(c.nome)}</b>${c.em ? `<span class="muted cad-em">${dDM(c.em.slice(0, 10))}</span>` : ''}</div>
-      ${contato ? `<div class="muted cad-contato">${contato}</div>` : ''}
+    // Os dados que a pessoa cadastrou (os mesmos do bloco Alunos): nome completo, celular, e-mail e o CPF mascarado.
+    const d = estado.alunos?.dados?.[c.id] || { celular: c.celular, email: c.email };
+    if (estado.cadEditar === c.id) {
+      return `<form id="f-cad-dados" data-rascunho class="cad-l al-form" data-id="${c.id}" autocomplete="off">
+        <div class="al-form-h"><b>Dados de ${esc(c.nome)}</b></div>
+        ${camposAluno('cad', d, c.id)}
+        <div class="al-form-bts"><button class="btn small" type="button" data-act="cadeditarfechar">Cancelar</button><button class="btn small primary" type="submit">Salvar</button></div></form>`;
+    }
+    const contato = [d.celular && formatarCel(d.celular), d.email].filter(Boolean).map(esc).join(' · ');
+    const visto = estado.alunoCpfVisto?.id === c.id ? cpfBR(estado.alunoCpfVisto.cpf) : '';
+    const cpf = d.temCpf ? `<div class="muted cad-contato">CPF: ${esc(visto || d.cpf)} <button type="button" class="btn link small" data-act="alcpfver" data-id="${c.id}">${visto ? 'Ocultar' : '👁 Mostrar'}</button></div>` : '';
+    return `<div class="cad-l"><div class="cad-l1"><span><b>${esc(c.nome)}</b>${d.nomeCompleto && d.nomeCompleto !== c.nome ? `<small class="muted al-nc">${esc(d.nomeCompleto)}</small>` : ''}</span>
+        <span class="cad-l1-d">${c.em ? `<span class="muted cad-em">${dDM(c.em.slice(0, 10))}</span>` : ''}
+        ${pode('usuarios:gerenciar') ? `<button class="btn small pp-bt pp-ico" type="button" data-act="senhaaluno" data-id="${c.id}" data-nome="${esc(c.nome)}" aria-label="Nova senha de ${esc(c.nome)}" title="Nova senha"><span aria-hidden="true">🔑</span></button>` : ''}
+        <button class="btn small pp-bt pp-ico" type="button" data-act="cadeditar" data-id="${c.id}" aria-label="Editar os dados de ${esc(c.nome)}" title="Editar dados"><span aria-hidden="true">✎</span></button></span></div>
+      ${contato ? `<div class="muted cad-contato">${contato}</div>` : ''}${cpf}
       <div class="cad-acao"><select id="cad-${c.id}" aria-label="Para onde vai ${esc(c.nome)}"><option value="">— para onde vai? —</option>${turmas}${sel === 'novos' ? '<option value="consulente">Consulente</option>' : ''}<option value="corrente">Corrente (Cambone)</option></select>
         <button class="btn small primary" data-act="cadmover" data-id="${c.id}" data-nome="${esc(c.nome)}">Mover</button></div></div>`;
   }).join('')}</div>`;
@@ -526,7 +539,9 @@ function cardCadastrosLogin() {
 const formatarCel = (c) => { const d = String(c).replace(/\D/g, ''); return d.length >= 10 ? `(${d.slice(0, 2)}) ${d.slice(2, -4)}-${d.slice(-4)}` : c; };
 
 export const cliques = {
-  cadquadro(el) { estado.cadQuadro = estado.cadQuadro === el.dataset.q ? null : el.dataset.q; avisar(); },
+  cadquadro(el) { estado.cadQuadro = estado.cadQuadro === el.dataset.q ? null : el.dataset.q; estado.cadEditar = null; avisar(); },
+  cadeditar(el) { estado.cadEditar = el.dataset.id; estado.alunoCpfRemover = null; estado.alunoCpfVisto = null; estado.alunoRasc = null; avisar(); document.getElementById('cad-nc')?.focus(); },
+  cadeditarfechar() { estado.cadEditar = null; estado.alunoCpfRemover = null; estado.alunoCpfVisto = null; estado.alunoRasc = null; avisar(); },
   async cadmover(el) {
     const C = estado.alunos?.cadastros;
     const destino = document.getElementById('cad-' + el.dataset.id)?.value;
@@ -867,6 +882,22 @@ export async function enviarFormulario() {
     const novo = document.getElementById('f-nome');
     if (novo) { novo.value = ''; novo.focus(); }
   } catch (e) { toast(e.message); avisar(); }
+}
+
+// Cadastros pelo login → ✎: salva os dados da pessoa (nome completo, CPF, celular, e-mail), como no bloco Alunos.
+export async function salvarDadosCadastro(form) {
+  const id = form.dataset.id;
+  const patch = lerCamposAluno('cad', estado.alunos?.dados?.[id] || {}, id);
+  if (!Object.keys(patch).length) { estado.cadEditar = null; estado.alunoRasc = null; avisar(); return; }
+  // Se der erro (CPF ou e-mail inválido), o formulário continua aberto com o que foi digitado.
+  if (await acaoAlunos('aluno', { id, ...patch })) {
+    estado.cadEditar = null;
+    estado.alunoCpfRemover = null;
+    estado.alunoCpfVisto = null;
+    estado.alunoRasc = null;
+    toast('Dados salvos.');
+    carregarAlunos();   // contato e CPF da lista voltam atualizados
+  }
 }
 
 // Aluno em Editar: salva o nome e a turma.

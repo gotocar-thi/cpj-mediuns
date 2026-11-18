@@ -555,6 +555,8 @@ main.addEventListener('submit', async (e) => {
     await (await telaDe('pessoas')).renomear(e.target);
   } else if (id === 'f-aluno') {
     await (await telaDe('pessoas')).salvarAluno(e.target);
+  } else if (id === 'f-cad-dados') {
+    await (await telaDe('pessoas')).salvarDadosCadastro(e.target);
   } else if (id === 'f-alunos-turma') {
     await (await telaDe('pessoas')).salvarAlunosTurma(e.target);
   } else if (id === 'f-turma-ed') {

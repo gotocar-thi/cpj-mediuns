@@ -1223,7 +1223,9 @@ section.panel.pf-tela{gap:14px}
 .pessoas-tela .fn-cadcons{--fn:var(--accent)}
 .cad-lista{display:grid;gap:8px}
 .cad-l{display:grid;gap:6px;border:1px solid var(--line);border-radius:10px;padding:10px;background:var(--bg)}
-.cad-l1{display:flex;justify-content:space-between;gap:8px;align-items:baseline}
+.cad-l1{display:flex;justify-content:space-between;gap:8px;align-items:center}
+.cad-l1-d{display:flex;align-items:center;gap:6px;flex:none}
+.cad-l1 .al-nc{display:block}
 .cad-em,.cad-contato{font-size:.85rem}
 .cad-contato{overflow-wrap:anywhere}
 .cad-acao{display:flex;gap:6px}
