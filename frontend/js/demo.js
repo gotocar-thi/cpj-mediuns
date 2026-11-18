@@ -380,7 +380,14 @@ function lerGet(caminho, q) {
   if (mGira) return copia(giraDe(mGira[1]) || giraVazia(mGira[1]));
   if (caminho === '/pessoas') {
     if (!lista) return copia(db.pessoas);
-    if (lista === 'alunos') return { turmas: copia(db.turmas), alunos: copia(db.alunos) };
+    if (lista === 'alunos') {
+      // Cadastros pelo login (Criar cadastro): três novos, ainda sem destino, e um consulente.
+      const cad = (n, nome, dias, celular, email) => ({ id: id(n), nome, em: new Date(Date.now() - dias * 864e5).toISOString(), celular, email });
+      return { turmas: copia(db.turmas), alunos: copia(db.alunos), cadastros: { turmaConsulentes: id(599),
+        novos: [cad(651, 'Daniela Matos', 1, '11987654321', 'daniela@exemplo.com'), cad(652, 'Eduardo Pires', 3, '11976543210', 'edu@exemplo.com'),
+          cad(653, 'Gabriela Lopes', 6, '11965432109', 'gabi@exemplo.com')],
+        consulentes: [cad(661, 'Henrique Dias', 20, '11954321098', 'henrique@exemplo.com')] } };
+    }
     if (lista === 'curimba') return copia(db.curimba);
     if (lista === 'minhaCurimba') return null;
     if (lista === 'perfis') { const t = todosPerfis(); return { ...contagemPerfis(t), cabecaNomes: pessoasPorOrixaCabeca(t) }; }

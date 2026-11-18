@@ -1225,8 +1225,16 @@ section.panel.pf-tela{gap:14px}
 .pessoas-tela .fn-cadastros{--fn:var(--warn)}
 .pessoas-tela .fn-cadnovos{--fn:var(--warn)}
 .pessoas-tela .fn-cadcons{--fn:var(--accent)}
-.cad-lista{display:grid;gap:8px}
-.cad-l{display:grid;gap:6px;border:1px solid var(--line);border-radius:10px;padding:10px;background:var(--bg)}
+.cad-lista{display:grid;gap:6px}
+.cad-l{display:grid;gap:6px;border:1px solid var(--line);border-radius:10px;padding:0;background:var(--bg);overflow:hidden}
+.cad-l.aberta{padding:0 10px 10px}
+.cad-l.al-form{padding:10px}
+.cad-h{display:flex;justify-content:space-between;align-items:center;gap:8px;width:100%;min-height:44px;padding:8px 10px;background:none;border:0;color:var(--ink);font:inherit;text-align:left;cursor:pointer}
+.cad-l.aberta .cad-h{padding:8px 0 4px}
+.cad-h-n{min-width:0;overflow-wrap:anywhere}
+.cad-h-n .al-nc{display:block}
+.cad-h-x{display:flex;align-items:center;gap:6px;flex:none}
+.cad-h-x .seta{color:var(--accent)}
 .cad-l1{display:flex;justify-content:space-between;gap:8px;align-items:center}
 .cad-l1-d{display:flex;align-items:center;gap:6px;flex:none}
 .cad-l1 .al-nc{display:block}
