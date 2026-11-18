@@ -4,7 +4,7 @@
 import { HttpError } from './http.js';
 import { db } from './db.js';
 import { lerToken } from './senhas.js';
-import { permissoesDe, PERMISSOES_GRUPO } from '../../shared/permissoes.js';
+import { permissoesDe, permissoesConsulente, PERMISSOES_GRUPO } from '../../shared/permissoes.js';
 
 export async function exigir(req, permissao) {
   const h = req.headers.authorization || req.headers.Authorization || '';
@@ -22,9 +22,12 @@ export async function exigir(req, permissao) {
       : await db.rpc('curimba_aluno_acesso', { id: sessao.registroId });
     if (!aluno) throw new HttpError(401, 'Cadastro não encontrado. Entre de novo.');
     if (sessao.grupo === 'alunos' && aluno.pinVersao !== sessao.versao) throw new HttpError(401, 'Sessão expirada. Entre de novo.');
-    const permissoes = PERMISSOES_GRUPO[sessao.grupo] || [];
+    // Consulente (aluno na turma Consulentes): o que o perfil Consulentes vê, escolhido pelo root.
+    const consulente = sessao.grupo === 'alunos' && !!aluno.consulente;
+    const permissoes = consulente ? permissoesConsulente(aluno.abasConsulente) : PERMISSOES_GRUPO[sessao.grupo] || [];
     const quem = {
-      id: null, nome: aluno.nome, email: '', papel: sessao.grupo, papelNome: sessao.grupo === 'alunos' ? 'Aluno' : 'Curimba',
+      id: null, nome: aluno.nome, email: '', papel: sessao.grupo, papelNome: consulente ? 'Consulente' : sessao.grupo === 'alunos' ? 'Aluno' : 'Curimba',
+      consulente,
       grupo: sessao.grupo, alunoId: sessao.grupo === 'alunos' ? aluno.id : null,
       turmaId: sessao.grupo === 'alunos' ? aluno.turmaId || null : null,
       curimbaAlunoId: sessao.grupo === 'curimba' ? aluno.id : null,

@@ -126,6 +126,8 @@ function render() {
   let VE = { usuarios: pode('usuarios:gerenciar'), asaas: pode('asaas:ver'), transparencia: veTransparencia(), ervas: veErvas(), oferendas: veOferendas(), guias: veGuias(), amaci: veAmaci(),
     pessoas: pode('pessoas:ver') || pode('alunos:ver'), hist: pode('historico:ver'), perfil: pode('perfil:ver'), curimba: pode('curimba:ver'), videos: pode('videos:ver') || !!estado.me.videosPublicada, fotos: FOTOS_ATIVA && pode('fotos:ver'), gira: true, agenda: true };
   if (visao === 'alunos') VE = { usuarios: false, asaas: false, transparencia: false, ervas: false, oferendas: veOferendas(), guias: veGuias(), amaci: veAmaci(), pessoas: false, hist: false, perfil: true, curimba: false, videos: false, fotos: false, gira: true, agenda: false };
+  // Consulente: a Geral e as abas que o root marcou no perfil Consulentes (Perfil, Compras, Amaci, Vídeos).
+  if (visao === 'alunos' && estado.me.consulente) Object.assign(VE, { oferendas: false, perfil: pode('perfil:ver'), guias: veGuias(), amaci: veAmaci(), videos: pode('videos:ver') || !!estado.me.videosPublicada });
   if (visao === 'curimba') VE = { usuarios: false, asaas: false, transparencia: false, ervas: false, oferendas: false, guias: veGuias(), amaci: false, pessoas: false, hist: false, perfil: false, curimba: false, videos: !!estado.me.videosPublicada, fotos: false, gira: true, agenda: false };
   // Botão do topo de um grupo que a pessoa não vê (ex.: só o ASAAS, sem Compras): abre a primeira sub-aba que ela vê.
   const grupoAberto = grupoDa(prefs.tab);

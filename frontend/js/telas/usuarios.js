@@ -1,7 +1,7 @@
 // Aba "Admin root" (só o admin root): Acessos e perfis (um bloco só, por perfil) e, do Histórico,
 // Cadastrar gira antiga e Cadastrar escala, e os eventos da casa (cadastrar e eventos cadastrados).
 
-import { SEM_CADASTRO, ABAS, PERFIS_SISTEMA, PIN_NOVO, PIN_NOVO_MSG, normalizarAbas } from '/shared/permissoes.js';
+import { SEM_CADASTRO, ABAS, ABAS_CONSULENTE, PERFIS_SISTEMA, PIN_NOVO, PIN_NOVO_MSG, normalizarAbas } from '/shared/permissoes.js';
 import { estado, pessoasOrd, carregarUsuarios, carregarPerfil, criarUsuario, atualizarUsuario, excluirUsuario, atualizarPessoa, adicionarPessoas, acaoUsuarios, salvarApelidosEntidade, salvarConfigCasa, avisar } from '../estado.js';
 import { esc, toast, ajustarRolagem } from '../util.js';
 import { renderAjustesPerfil, formSenha } from './perfil.js';
@@ -16,8 +16,9 @@ const secao = (titulo) => `<h3 class="root-secao">${titulo}</h3>`;
 const paraBusca = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLocaleLowerCase('pt-BR');
 
 
-// Perfis que podem ser dados a um usuário com e-mail (o "Corrente" é só do acesso pelo nome).
-const papeis = () => (estado.perfisCfg || []).filter((f) => f.chave !== 'corrente');
+// Perfis que podem ser dados a um usuário com e-mail (Corrente e Consulentes são de quem entra pelo próprio cadastro).
+const SEM_EMAIL = ['corrente', 'consulente'];
+const papeis = () => (estado.perfisCfg || []).filter((f) => !SEM_EMAIL.includes(f.chave));
 const opcoesPapel = (atual) => papeis().map((f) => `<option value="${esc(f.chave)}" ${f.chave === atual ? 'selected' : ''}>${esc(f.nome)}</option>`).join('');
 
 // Todos os blocos da aba começam minimizados; tocar no título expande e recolhe (enquanto o app estiver aberto).
@@ -32,17 +33,21 @@ const cabRoot = (k, titulo, count = '', ab = abertosRoot.has(k)) => `<button cla
 function configPerfil(f) {
   if (f.chave === 'root') return '<p class="leitura" style="margin:0">O Admin root pode tudo, inclusive a aba Admin root, e não precisa estar no cadastro da corrente.</p>';
   const a = normalizarAbas(f.abas);
+  const consulente = f.chave === 'consulente';
+  const abas = consulente ? ABAS.filter((x) => ABAS_CONSULENTE.includes(x.k)) : ABAS;
   let h = `<div class="pf-config">
-    <p class="muted" style="margin:0;font-size:.85rem">Marque, em cada aba, se o perfil pode <b>Ver</b> e/ou <b>Editar</b>. Vale na hora para todos desse perfil (eles veem a mudança ao abrir o app de novo).</p>
-    ${f.chave === 'corrente' ? '' : `<form id="f-perfilnome" class="row" data-chave="${esc(f.chave)}" autocomplete="off" style="gap:6px;align-items:flex-end">
+    <p class="muted" style="margin:0;font-size:.85rem">${consulente
+      ? 'Marque as abas que os consulentes podem <b>ver</b> (a Geral, com os eventos, sempre aparece). Só aparecem aqui as abas que funcionam para quem não é da corrente; eles nunca editam.'
+      : 'Marque, em cada aba, se o perfil pode <b>Ver</b> e/ou <b>Editar</b>. Vale na hora para todos desse perfil (eles veem a mudança ao abrir o app de novo).'}</p>
+    ${SEM_EMAIL.includes(f.chave) ? '' : `<form id="f-perfilnome" class="row" data-chave="${esc(f.chave)}" autocomplete="off" style="gap:6px;align-items:flex-end">
       <label class="field grow">Nome do perfil<input type="text" id="pf-nomecfg" maxlength="40" value="${esc(f.nome)}"></label>
       <button class="btn small" type="submit">Renomear</button></form>`}
     <div class="pa-tab" role="table" aria-label="Acessos do perfil ${esc(f.nome)}">
-      <div class="pa-th" role="row"><span>Aba</span><span>Ver</span><span>Editar</span></div>
-      ${ABAS.map((x) => `<div class="pa-tr" role="row">
-        <span class="pa-aba"><b>${x.nome}</b><small class="muted">Ver: ${x.ver}<br>Editar: ${x.editar}</small></span>
+      <div class="pa-th" role="row"><span>Aba</span><span>Ver</span><span>${consulente ? '' : 'Editar'}</span></div>
+      ${abas.map((x) => `<div class="pa-tr" role="row">
+        <span class="pa-aba"><b>${x.nome}</b><small class="muted">Ver: ${x.ver}${consulente ? '' : `<br>Editar: ${x.editar}`}</small></span>
         <label class="pa-ck"><input type="checkbox" data-act="pfaba" data-chave="${esc(f.chave)}" data-k="${x.k}" data-t="ver" ${a[x.k].ver ? 'checked' : ''} aria-label="${esc(f.nome)}: ver ${x.nome}"></label>
-        <label class="pa-ck"><input type="checkbox" data-act="pfaba" data-chave="${esc(f.chave)}" data-k="${x.k}" data-t="editar" ${a[x.k].editar ? 'checked' : ''} aria-label="${esc(f.nome)}: editar ${x.nome}"></label>
+        ${consulente ? '<span></span>' : `<label class="pa-ck"><input type="checkbox" data-act="pfaba" data-chave="${esc(f.chave)}" data-k="${x.k}" data-t="editar" ${a[x.k].editar ? 'checked' : ''} aria-label="${esc(f.nome)}: editar ${x.nome}"></label>`}
       </div>`).join('')}
     </div>`;
   if (!PERFIS_SISTEMA.includes(f.chave)) {
@@ -120,13 +125,15 @@ function formNovoUsuario(chave) {
 function grupoPerfil(f, usuarios, buscando) {
   const k = 'pf:' + f.chave;
   const aberto = buscando || abertosRoot.has(k);
-  const corrente = f.chave === 'corrente';
-  const contagem = corrente ? 'toda a corrente' : `${usuarios.length} pessoa${usuarios.length === 1 ? '' : 's'}`;
+  const corrente = SEM_EMAIL.includes(f.chave);
+  const contagem = f.chave === 'corrente' ? 'toda a corrente' : f.chave === 'consulente' ? 'cadastros pelo login' : `${usuarios.length} pessoa${usuarios.length === 1 ? '' : 's'}`;
   let h = `<div class="pf-grupo${aberto ? ' aberto' : ''}"><button class="grp-h dobra" data-act="dobrarroot" data-k="${k}" aria-expanded="${aberto}">
     <h2>${esc(f.nome)}</h2><span class="count">${contagem} <span class="seta" aria-hidden="true">${aberto ? '▾' : '▸'}</span></span></button>`;
   if (!aberto) return h + '</div>';
   if (corrente) {
-    h += '<p class="muted" style="margin:0;font-size:.85rem">O acesso da corrente: quem está em Pessoas entra com e-mail, celular ou CPF e a senha de números.</p>';
+    h += f.chave === 'corrente'
+      ? '<p class="muted" style="margin:0;font-size:.85rem">O acesso da corrente: quem está em Pessoas entra com e-mail, celular ou CPF e a senha de números.</p>'
+      : '<p class="muted" style="margin:0;font-size:.85rem">Quem se cadastrou pelo login e foi posto em Consulentes (Pessoas → Cadastros pelo login). Entra com e-mail, celular ou CPF e a senha.</p>';
   } else {
     h += usuarios.length ? `<div class="pf-pessoas">${usuarios.map(linhaUsuario).join('')}</div>` : '<p class="muted" style="margin:0;font-size:.88rem">Ninguém neste perfil.</p>';
     if (!buscando) {
@@ -160,7 +167,7 @@ function cardAcessos() {
   }
   // Buscando: só os perfis com alguém achado, já abertos.
   const grupos = lista.map((f) => [f, estado.usuarios.filter((u) => u.papel === f.chave && achou(u))])
-    .filter(([f, us]) => !termo || (us.length && f.chave !== 'corrente'));
+    .filter(([f, us]) => !termo || (us.length && !SEM_EMAIL.includes(f.chave)));
   if (termo && !grupos.length) h += '<p class="muted" style="margin:0">Ninguém encontrado.</p>';
   return h + `<div class="pf-grupos">${grupos.map(([f, us]) => grupoPerfil(f, us, !!termo)).join('')}</div></div>`;
 }

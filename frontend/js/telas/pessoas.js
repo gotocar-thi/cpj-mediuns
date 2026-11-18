@@ -3,7 +3,7 @@
 import { FUNCOES, LINHAS_CADASTRO, LINHA_LABEL, LINHA_KEYS, TURMAS_LIMPEZA, CURIMBA, ehCurimba } from '/shared/regras.js';
 import { config } from '/shared/config.js';
 import { estado, prefs, salvarPrefs, pode, pessoasOrd, adicionarPessoas, atualizarPessoa, excluirPessoa, salvarLicenca, editarLicenca, removerLicenca, carregarAlunos, acaoAlunos, revelarCpfAluno, acaoUsuarios, avisar } from '../estado.js';
-import { esc, toast, hoje } from '../util.js';
+import { esc, toast, hoje, dDM } from '../util.js';
 import { PIN_NOVO, PIN_NOVO_MSG } from '/shared/permissoes.js';
 import { cardOferendasPendentes, cliques as cliquesPerfil } from './perfil.js';
 import { ICONE_WHATS } from './giraComum.js';
@@ -469,11 +469,11 @@ function renderPessoas() {
   let h = `<section class="panel pessoas-tela">`;
   const add = editar || pode('alunos:editar') ? cardAdicionar(ps) : '';
   // Perfil que só cuida dos alunos (ex.: Admin oferendas): só o Adicionar e o bloco Alunos.
-  if (!pode('pessoas:ver')) return h + add + (verAlunos ? cardAlunos() : '') + '</section>';
+  if (!pode('pessoas:ver')) return h + add + cardCadastrosLogin() + (verAlunos ? cardAlunos() : '') + '</section>';
   if (!editar) h += `<p class="leitura" style="margin:0">Lista da corrente, só para consulta.</p>`;
   h += add;
   if (!ps.length) {
-    return h + `<div class="card empty"><p class="muted">${editar ? 'Ninguém cadastrado ainda. Digite os nomes acima; pode colar uma lista inteira separada por vírgulas.' : 'Ninguém cadastrado ainda.'}</p></div>${cardTurmas(todas, editar)}${verAlunos ? cardAlunos() : ''}</section>`;
+    return h + `<div class="card empty"><p class="muted">${editar ? 'Ninguém cadastrado ainda. Digite os nomes acima; pode colar uma lista inteira separada por vírgulas.' : 'Ninguém cadastrado ainda.'}</p></div>${cardTurmas(todas, editar)}${cardCadastrosLogin()}${verAlunos ? cardAlunos() : ''}</section>`;
   }
   const funcaoCorrenteAberta = estado.correnteFuncaoAberta;
   const pessoasPorFuncao = Object.fromEntries(QUADROS_CORRENTE.map((f) => [f.k, todas.filter((p) => p.funcao === f.k)]));
@@ -494,11 +494,58 @@ function renderPessoas() {
     ${correnteListaAberta ? `<div class="ppl">${pessoasPorFuncao[correnteListaAberta].map(linhaCorrente).join('')}</div>` : ''}
     ${cardOferendasPendentes()}${listaLicencas(ps, editar)}</div>`;   // licença: só a corrente
   h += cardTurmas(todas, editar);
+  h += cardCadastrosLogin();
   if (verAlunos) h += cardAlunos();
   return h + '</section>';
 }
 
+// ---------- Cadastros pelo login ----------
+// Quem se cadastra pelo login entra sem destino (Novos). O admin decide para onde vai: uma turma de alunos, Consulentes
+// ou a corrente (UP CPJ, como Cambone). Os consulentes ficam no outro quadradinho e também podem mudar de destino.
+const QUADROS_CADASTRO = [['novos', 'Novos', 'fn-cadnovos'], ['consulentes', 'Consulentes', 'fn-cadcons']];
+function cardCadastrosLogin() {
+  const C = estado.alunos?.cadastros;
+  if (!pode('alunos:editar') || !C) return '';
+  const aberto = !!estado.cadAberto;
+  const n = C.novos.length;
+  let h = `<div class="card pp-card fn-cadastros">${cabDobra('dobrarcad', '🪪 Cadastros pelo login', n ? `${n} novo${n === 1 ? '' : 's'}` : '', aberto)}`;
+  if (!aberto) return h + '</div>';
+  const sel = C[estado.cadQuadro] ? estado.cadQuadro : null;
+  h += `<p class="muted" style="margin:0;font-size:.85rem">Quem se cadastrou pelo login (Criar cadastro). Decida para onde vai cada um: uma turma de alunos, Consulentes ou a corrente.</p>
+    <div class="pf-of-totais auto">${QUADROS_CADASTRO.map(([k, t, cls]) => `<button type="button" class="pf-of-total ${cls}${sel === k ? ' selecionado' : ''}" data-act="cadquadro" data-q="${k}" aria-expanded="${sel === k}" aria-label="${t}: ${C[k].length}"${C[k].length ? '' : ' disabled'}><b>${C[k].length}</b><span>${t}</span></button>`).join('')}</div>`;
+  if (!sel) return h + '</div>';
+  const turmas = (estado.alunos.turmas || []).map((t) => `<option value="t:${t.id}">Aluno · ${esc(t.nome)}</option>`).join('');
+  h += `<div class="cad-lista">${C[sel].map((c) => {
+    const contato = [c.celular && formatarCel(c.celular), c.email].filter(Boolean).map(esc).join(' · ');
+    return `<div class="cad-l"><div class="cad-l1"><b>${esc(c.nome)}</b>${c.em ? `<span class="muted cad-em">${dDM(c.em.slice(0, 10))}</span>` : ''}</div>
+      ${contato ? `<div class="muted cad-contato">${contato}</div>` : ''}
+      <div class="cad-acao"><select id="cad-${c.id}" aria-label="Para onde vai ${esc(c.nome)}"><option value="">— para onde vai? —</option>${turmas}${sel === 'novos' ? '<option value="consulente">Consulente</option>' : ''}<option value="corrente">Corrente (Cambone)</option></select>
+        <button class="btn small primary" data-act="cadmover" data-id="${c.id}" data-nome="${esc(c.nome)}">Mover</button></div></div>`;
+  }).join('')}</div>`;
+  return h + '</div>';
+}
+const formatarCel = (c) => { const d = String(c).replace(/\D/g, ''); return d.length >= 10 ? `(${d.slice(0, 2)}) ${d.slice(2, -4)}-${d.slice(-4)}` : c; };
+
 export const cliques = {
+  dobrarcad() { estado.cadAberto = !estado.cadAberto; avisar(); },
+  cadquadro(el) { estado.cadQuadro = estado.cadQuadro === el.dataset.q ? null : el.dataset.q; avisar(); },
+  async cadmover(el) {
+    const C = estado.alunos?.cadastros;
+    const destino = document.getElementById('cad-' + el.dataset.id)?.value;
+    if (!destino) { toast('Escolha para onde vai.'); return; }
+    const nome = el.dataset.nome;
+    let ok;
+    if (destino === 'corrente') {
+      if (!confirm(`Passar ${nome} para a corrente como Cambone? O cadastro, a senha e o CPF vão junto.`)) return;
+      ok = await acaoAlunos('promoverAlunoCPJ', { id: el.dataset.id });
+    } else {
+      const turmaId = destino === 'consulente' ? C.turmaConsulentes : destino.slice(2);
+      ok = await acaoAlunos('aluno', { id: el.dataset.id, turmaId });
+    }
+    if (!ok) return;
+    toast(destino === 'corrente' ? `${nome} agora é da corrente.` : destino === 'consulente' ? `${nome} agora é consulente.` : `${nome} foi para a turma.`);
+    carregarAlunos();   // os quadradinhos voltam com as contas novas
+  },
   // Bloco Oferendas pendentes (vem da aba Perfil).
   pfdobra: (el) => cliquesPerfil.pfdobra(el),
   pfofertas: (el) => cliquesPerfil.pfofertas(el),

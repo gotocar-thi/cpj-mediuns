@@ -50,14 +50,20 @@ export function cardAno() {
   const ano = hoje().slice(0, 4);
   const encerradas = girasLista().filter((g) => g.encerrada && g.data.startsWith(ano));
   const S = stPerfis();
+  // Orixá de cabeça: começa minimizado; tocar no título abre e fecha.
   const orixa = S && !S.erro ? blocoOrixaCabeca(S) : '';
+  const aberto = !!estado.anoOrixaAberto;
+  const secOrixa = !orixa ? '' : `<div class="ano-sec"><button class="grp-h dobra ano-orixa-h" data-act="anoorixa" aria-expanded="${aberto}">
+      <h3>Orixá de cabeça com mais pessoas</h3><span class="count"><span class="seta" aria-hidden="true">${aberto ? '▾' : '▸'}</span></span></button>
+    ${aberto ? orixa.replace(/<h3>[^<]*<\/h3>/, '') : ''}</div>`;
   return `<div class="card st ano">${totaisDoPeriodo()}
     ${minhaPresenca(encerradas)}
-    ${orixa ? `<div class="ano-sec">${orixa}</div>` : ''}</div>`;
+    ${secOrixa}</div>`;
 }
 
 export const cliquesAno = {
   anopres() { estado.anoPresAberto = !estado.anoPresAberto; avisar(); },
+  anoorixa() { estado.anoOrixaAberto = !estado.anoOrixaAberto; avisar(); },
   stcabeca() { estado.stCabecaMais = !estado.stCabecaMais; avisar(); },
 };
 

@@ -1218,6 +1218,16 @@ section.panel.pf-tela{gap:14px}
 .pessoas-tela .fn-cambone,.pessoas-tela .fn-limpeza{--fn:var(--ok)}
 .pessoas-tela .fn-senha{--fn:var(--muted)}
 .pessoas-tela .fn-curimba{--fn:var(--off)}
+.pessoas-tela .fn-cadastros{--fn:var(--warn)}
+.pessoas-tela .fn-cadnovos{--fn:var(--warn)}
+.pessoas-tela .fn-cadcons{--fn:var(--accent)}
+.cad-lista{display:grid;gap:8px}
+.cad-l{display:grid;gap:6px;border:1px solid var(--line);border-radius:10px;padding:10px;background:var(--bg)}
+.cad-l1{display:flex;justify-content:space-between;gap:8px;align-items:baseline}
+.cad-em,.cad-contato{font-size:.85rem}
+.cad-contato{overflow-wrap:anywhere}
+.cad-acao{display:flex;gap:6px}
+.cad-acao select{flex:1;min-width:0}
 .pessoas-tela .fn-alunos{--fn:var(--accent)}
 .pessoas-tela .pp-card{border-top:4px solid var(--fn)}
 .pessoas-tela .estrela-ouro{color:var(--gold)}
@@ -2027,3 +2037,4 @@ div.pf-of-total{cursor:default}
 .tr-apo{border-top:3px solid var(--gold)}
 .tr-cred{border-top:3px solid var(--ok)}
 .tr-deb{border-top:3px solid var(--off)}
+.ano-orixa-h h3{margin:0;font-size:.95rem}

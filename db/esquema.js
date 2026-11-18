@@ -9,7 +9,7 @@
 // Estrutura: veja db/ESTRUTURA-ESQUEMA.md para o mapa de versões, domínios e
 // quais migrações foram testadas no Postgres.
 
-export const VERSAO = 133;  // v133: o perfil Admin ervas sai; quem era dele vai para o Admin oferendas
+export const VERSAO = 134;  // v134: consulentes (cadastros pelo login na turma escondida Consulentes) e o perfil Consulentes
 
 import { PERFIS_PADRAO } from '../shared/permissoes.js';
 
@@ -5911,4 +5911,64 @@ export const MIGRACOES = [
   // A versão da sessão muda: quem estava logado com o perfil antigo entra de novo, já com o novo.
   `update usuarios set papel = 'admin_oferendas', sessao_versao = sessao_versao + 1 where papel = 'admin_ervas'`,
   `delete from perfis where chave = 'admin_ervas'`,
+  // ================================================== v134: consulentes e Cadastros pelo login (aba Pessoas)
+  // Quem se cadastra pelo login entra como aluno sem turma ("novo"). O admin decide para onde vai: uma turma de alunos,
+  // Consulentes ou a corrente (UP CPJ). Consulente é o mesmo cadastro (login, senha, CPF, Perfil) numa turma escondida,
+  // Consulentes: fica fora das listas de alunos, das oferendas e da Iemanjá. O que ele vê é o perfil Consulentes.
+  `create or replace function turma_consulentes()
+   returns uuid language plpgsql as $$
+   declare v uuid;
+   begin
+     select t.id into v from sistema s join turmas_alunos t on t.id::text = s.valor where s.chave = 'turma_consulentes';
+     if v is null then
+       select id into v from turmas_alunos where lower(btrim(nome)) = 'consulentes';
+       if v is null then insert into turmas_alunos (nome) values ('Consulentes') returning id into v; end if;
+       insert into sistema (chave, valor) values ('turma_consulentes', v::text)
+       on conflict (chave) do update set valor = excluded.valor;
+     end if;
+     return v;
+   end;
+   $$`,
+  `select turma_consulentes()`,
+  `create or replace function turma_consulentes_id()
+   returns uuid language sql stable as $$
+     select t.id from sistema s join turmas_alunos t on t.id::text = s.valor where s.chave = 'turma_consulentes'
+   $$`,
+  // Os grupos "Alunos" e "Alunos sem turma" das oferendas não levam os consulentes (só se a turma for marcada de propósito).
+  `create or replace function aluno_no_grupo(t uuid, g text[])
+   returns boolean language sql stable as $$
+     select coalesce((t is not null and ('turma:' || t::text) = any(g))
+       or (t is distinct from turma_consulentes_id() and ('alunos' = any(g) or (t is null and 'alunos:sem' = any(g)))), false)
+   $$`,
+  // A lista de alunos (aba Pessoas, oferendas, Iemanjá) sem a turma Consulentes e sem quem está nela.
+  `create or replace function alunos_estado(p jsonb default '{}'::jsonb)
+   returns jsonb language sql stable as $$
+     select jsonb_build_object(
+       'turmas', coalesce((select jsonb_agg(jsonb_build_object('id', id, 'nome', nome) order by lower(nome)) from turmas_alunos
+                           where id is distinct from turma_consulentes_id()), '[]'::jsonb),
+       'alunos', coalesce((select jsonb_agg(jsonb_build_object('id', id, 'nome', nome, 'turmaId', turma_id) order by lower(nome)) from alunos
+                           where saida is null and turma_id is distinct from turma_consulentes_id()), '[]'::jsonb))
+   $$`,
+  // Sessão do aluno: diz se é consulente e, se for, o que o perfil Consulentes vê.
+  `create or replace function aluno_acesso(p jsonb)
+   returns jsonb language sql stable as $$
+     select jsonb_build_object('id', a.id, 'nome', a.nome, 'turmaId', a.turma_id, 'temSenha', a.pin_hash is not null, 'pinVersao', a.pin_versao,
+                               'consulente', a.turma_id is not distinct from turma_consulentes_id() and a.turma_id is not null,
+                               'abasConsulente', (select abas from perfis where chave = 'consulente'))
+     from alunos a where a.id = (p ->> 'id')::uuid and a.saida is null
+   $$`,
+  // Bloco Cadastros pelo login: os novos (cadastro pelo login ainda sem turma) e os consulentes.
+  `create or replace function cadastros_login(p jsonb default '{}'::jsonb)
+   returns jsonb language sql stable as $$
+     select jsonb_build_object(
+       'turmaConsulentes', turma_consulentes_id(),
+       'novos', coalesce((select jsonb_agg(jsonb_build_object('id', a.id, 'nome', a.nome, 'em', a.autocadastro_em,
+                   'celular', coalesce(a.perfil -> 'info' ->> 'celular', ''), 'email', coalesce(a.perfil -> 'info' ->> 'email', ''))
+                   order by a.autocadastro_em desc)
+                 from alunos a where a.saida is null and a.autocadastro_em is not null and a.turma_id is null), '[]'::jsonb),
+       'consulentes', coalesce((select jsonb_agg(jsonb_build_object('id', a.id, 'nome', a.nome, 'em', a.autocadastro_em,
+                   'celular', coalesce(a.perfil -> 'info' ->> 'celular', ''), 'email', coalesce(a.perfil -> 'info' ->> 'email', ''))
+                   order by lower(a.nome))
+                 from alunos a where a.saida is null and a.turma_id = turma_consulentes_id()), '[]'::jsonb))
+   $$`,
 ];

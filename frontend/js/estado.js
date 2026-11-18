@@ -640,7 +640,8 @@ export async function acaoAlunos(acao, dados = {}) {
   try {
     const r = await api('POST', '/pessoas', { acao, ...dados });
     // Quem edita Alunos recebe também os dados (CPF mascarado, nome completo, e-mail, celular) e as pendências.
-    estado.alunos = { turmas: r.turmas, alunos: r.alunos, dados: r.dados, pendencias: r.pendencias, pendenciasEm: r.pendenciasEm, exAlunos: r.exAlunos };
+    estado.alunos = { turmas: r.turmas, alunos: r.alunos, dados: r.dados, pendencias: r.pendencias, pendenciasEm: r.pendenciasEm, exAlunos: r.exAlunos,
+      cadastros: r.cadastros || estado.alunos?.cadastros };
     if (Array.isArray(r.pessoas)) estado.pessoas = r.pessoas;
     avisar();
     return r;

@@ -47,6 +47,7 @@ const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 function publico(u) {
   return { id: u.id, nome: u.nome, email: u.email, papel: u.papel, papelNome: u.papelNome || '', pessoaId: u.pessoaId || null,
     ...(u.grupo ? { grupo: u.grupo } : {}),
+    ...(u.consulente ? { consulente: true } : {}),
     permissoes: u.permissoes || permissoesDe(u.papel, u.abas) };
 }
 

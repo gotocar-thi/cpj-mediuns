@@ -91,6 +91,9 @@ export const PERFIS_PADRAO = [
   { chave: 'admin_perfil', nome: 'Admin perfil', ordem: 6, abas: abasDe({ gira: tudo(true), ervas: tudo(true), oferendas: tudo(true), guias: tudo(true), perfil: tudo(true, true), amaci: tudo(true), fotos: tudo(true, true) }) },
   // Admin financeiro: o que a corrente vê e a aba ASAAS só para olhar (o root marca Editar se quiser que ligue o Pix e cancele links).
   { chave: 'admin_financeiro', nome: 'Admin financeiro', ordem: 7, abas: abasDe({ gira: tudo(true), ervas: tudo(true), oferendas: tudo(true), guias: tudo(true), perfil: tudo(true), amaci: tudo(true), fotos: tudo(true, true), asaas: tudo(true), transparencia: tudo(true, true) }) },
+  // Consulentes: quem se cadastrou pelo login e o admin pôs em Consulentes (turma escondida). O root escolhe no ⚙️ o
+  // que ele vê, entre as abas de ABAS_CONSULENTE (a Geral sempre aparece).
+  { chave: 'consulente', nome: 'Consulentes', ordem: 98, abas: abasDe({ perfil: tudo(true) }) },
   { chave: 'corrente', nome: 'Corrente', ordem: 99, abas: abasDe({ gira: tudo(true), ervas: tudo(true), oferendas: tudo(true), guias: tudo(true), perfil: tudo(true), amaci: tudo(true), fotos: tudo(true) }) },
 ];
 // Perfis do sistema: não podem ser excluídos (o root e o acesso da corrente também não mudam de nome).
@@ -112,6 +115,13 @@ export const grupoAcesso = (email) => {
 // O que os acessos de grupo podem fazer: o aluno vê o próprio registro; os dois pedem na aba Compras (quando ela está visível para todos).
 // O aluno também vê a aba Amaci (quando está visível para todos), só com os orixás liberados para a turma dele.
 export const PERMISSOES_GRUPO = { alunos: ['alunos:ver', 'guias:pedir', 'amaci:ver'], curimba: ['guias:pedir'] };
+// Consulente: só o "Ver" das abas que funcionam fora da corrente, escolhidas pelo root no perfil Consulentes. Sem os
+// nomes da corrente (pessoas:ler) e sem a escala (giras:ler), que todo perfil da corrente tem.
+export const ABAS_CONSULENTE = ['perfil', 'guias', 'amaci', 'videos'];
+export function permissoesConsulente(abas) {
+  const a = normalizarAbas(abas);
+  return [...new Set(['alunos:ver', ...ABAS_CONSULENTE.filter((k) => a[k].ver).flatMap((k) => MAPA[k].ver)])];
+}
 
 // Senha (PIN) de quem entra pelo acesso da corrente: só números, de 4 a 8 (as antigas continuam valendo).
 export const PIN_VALIDO = /^\d{4,8}$/;

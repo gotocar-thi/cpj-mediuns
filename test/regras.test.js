@@ -579,7 +579,8 @@ test('aba ASAAS: o root vê e edita; o Admin financeiro só olha; os outros perf
 });
 
 test('aba Fotos: todos veem; só os perfis de admin apagam a foto dos outros', () => {
-  for (const p of PERFIS_PADRAO) {
+  // Consulentes não são da corrente: as Fotos não estão entre as abas deles.
+  for (const p of PERFIS_PADRAO.filter((x) => x.chave !== 'consulente')) {
     const perms = permissoesDe(p.chave, p.abas);
     assert.ok(perms.includes('fotos:ver'), p.chave);
     assert.equal(perms.includes('fotos:editar'), p.chave === 'root' || p.chave.startsWith('admin'), p.chave);
@@ -767,4 +768,12 @@ test('retrato da gira encerrada: mudar o cadastro depois não muda a gira; reabr
   const r = reabrir(depois, g).patch;
   assert.equal(r.retrato, null);
   assert.equal(status(depois[1], { ...g, ...r }), 'lic');
+});
+
+test('consulente: só o Ver das abas dos consulentes, sem os nomes da corrente', async () => {
+  const { permissoesConsulente, ABAS_CONSULENTE } = await import('../shared/permissoes.js');
+  assert.deepEqual(ABAS_CONSULENTE, ['perfil', 'guias', 'amaci', 'videos']);
+  const p = permissoesConsulente({ perfil: { ver: true }, guias: { ver: true, editar: true }, pessoas: { ver: true }, gira: { ver: true } });
+  assert.deepEqual(p.sort(), ['alunos:ver', 'guias:pedir', 'perfil:ver']);
+  assert.ok(!p.includes('pessoas:ler') && !p.includes('giras:ler'));
 });

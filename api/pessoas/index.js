@@ -2,7 +2,7 @@
 // POST /api/pessoas            { nomes: [..] | nome: "A, B; C", funcao, entradaHoje? } (quem tinha saído e é cadastrado de novo volta)
 //                              { acao: 'licenca', pessoaId, inicio, fim, motivo? } · { acao: 'editarLicenca', id, inicio, fim, motivo? }
 //                              { acao: 'removerLicenca', id }  → lista da corrente
-// GET  /api/pessoas?lista=alunos  { turmas, alunos }  (alunos da CPJ: fora da corrente)
+// GET  /api/pessoas?lista=alunos  { turmas, alunos, cadastros? }  (alunos da CPJ: fora da corrente; quem edita recebe também os cadastros pelo login: { novos, consulentes, turmaConsulentes })
 //      quem edita Alunos recebe também { dados: { id: { nomeCompleto, celular, email, temCpf, cpf (mascarado) } }, pendencias: { id: [cobranças vencidas] }, pendenciasEm }
 // GET  /api/pessoas?lista=perfis  { total, chefe, frente, orixa, cabeca, cabecaPessoas }  (Histórico → Estatísticas e bloco do ano da aba Gira: só contagens do Perfil)
 // POST /api/pessoas            { acao: 'alunos', nome: "A, B", turmaId, nomeCompleto?, cpf?, email?, celular? (dados só com um nome) }
@@ -96,8 +96,11 @@ export default rota({
   GET: async (req) => {
     if (req.query.lista === 'alunos') {
       const eu = await exigir(req, 'alunos:ver');
-      const [estado, extras] = await Promise.all([db.rpc('alunos_estado'), !eu.grupo && pode(eu, 'alunos:editar') ? db.rpc('alunos_extras') : null]);
-      return eu.grupo === 'alunos' ? { ...estado, alunos: estado.alunos.filter((a) => a.id === eu.alunoId) } : comExtras(estado, eu, extras);
+      // Quem edita os alunos recebe também os cadastros pelo login (novos e consulentes).
+      const editor = !eu.grupo && pode(eu, 'alunos:editar');
+      const [estado, extras, cadastros] = await Promise.all([db.rpc('alunos_estado'), editor ? db.rpc('alunos_extras') : null, editor ? db.rpc('cadastros_login') : null]);
+      if (eu.grupo === 'alunos') return { ...estado, alunos: estado.alunos.filter((a) => a.id === eu.alunoId) };
+      return { ...(await comExtras(estado, eu, extras)), ...(cadastros ? { cadastros } : {}) };
     }
     if (req.query.lista === 'amaci') return amaci(await exigir(req, 'amaci:ver'));
     if (req.query.lista === 'curimba') {

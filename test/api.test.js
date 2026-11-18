@@ -2688,3 +2688,54 @@ test('v133: quem era do Admin ervas vai para o Admin oferendas e o perfil sai', 
   await api('DELETE', '/api/usuarios/' + u.id, ADMIN);
   sql(`update perfis set abas = '${abasOf.replace(/'/g, "''")}'::jsonb where chave = 'admin_oferendas'`);
 });
+
+test('cadastros pelo login: novo vira consulente; o consulente vê só o que o perfil Consulentes permite', async () => {
+  const chaveAntes = process.env.CPF_CHAVE;
+  process.env.CPF_CHAVE = 'chave-de-teste-do-cpf-com-32-letras-ou-mais';
+  const abasAntes = sql("select abas::text from perfis where chave = 'consulente'");
+  try {
+    const cad = await api('POST', '/api/auth/cadastrar', null, { nome: 'Consulente Teste', celular: '11977001100', email: 'consulente@exemplo.com', cpf: '10003167003', senha: '24682468' });
+    assert.equal(cad.status, 200, JSON.stringify(cad.json));
+    let A = (await api('GET', '/api/pessoas?lista=alunos', ADMIN)).json;
+    const novo = A.cadastros.novos.find((c) => c.nome === 'Consulente Teste');
+    assert.ok(novo, 'aparece em Novos');
+    assert.equal(novo.email, 'consulente@exemplo.com');
+    assert.ok(!A.turmas.some((t) => t.id === A.cadastros.turmaConsulentes), 'a turma Consulentes não aparece nas turmas');
+    assert.equal((await api('GET', '/api/pessoas?lista=alunos', USER)).json?.cadastros, undefined, 'só quem edita alunos');
+
+    // O admin põe em Consulentes: sai dos Novos e da lista de alunos.
+    assert.equal((await api('POST', '/api/pessoas', ADMIN, { acao: 'aluno', id: novo.id, turmaId: A.cadastros.turmaConsulentes })).status, 200);
+    A = (await api('GET', '/api/pessoas?lista=alunos', ADMIN)).json;
+    assert.ok(!A.cadastros.novos.some((c) => c.id === novo.id));
+    assert.ok(A.cadastros.consulentes.some((c) => c.id === novo.id), 'aparece em Consulentes');
+    assert.ok(!A.alunos.some((a) => a.id === novo.id), 'não aparece entre os alunos');
+
+    // O consulente entra pelo cadastro e vê só o que o perfil Consulentes permite (começa só com o Perfil).
+    const tok = (await api('POST', '/api/auth/entrar', null, { email: 'consulente@exemplo.com', senha: '24682468' })).json.token;
+    let me = (await api('GET', '/api/auth/me', tok)).json;
+    assert.equal(me.consulente, true);
+    assert.deepEqual(me.permissoes.sort(), ['alunos:ver', 'perfil:ver']);
+    assert.equal((await api('GET', '/api/pessoas', tok)).status, 403, 'não vê os nomes da corrente');
+    assert.equal((await api('GET', '/api/giras', tok)).status, 403, 'nem a escala');
+    // O root marca Compras no perfil Consulentes: vale na hora.
+    const abas = JSON.parse(abasAntes);
+    assert.equal((await api('POST', '/api/usuarios', ADMIN, { acao: 'perfil', chave: 'consulente', abas: { ...abas, guias: { ver: true, editar: true }, pessoas: { ver: true, editar: false } } })).status, 200);
+    me = (await api('GET', '/api/auth/me', tok)).json;
+    assert.deepEqual(me.permissoes.sort(), ['alunos:ver', 'guias:pedir', 'perfil:ver'], 'só o Ver das abas dos consulentes (Pessoas e Editar não valem)');
+    // O perfil Consulentes não vai para um usuário de e-mail.
+    await api('POST', '/api/pessoas', ADMIN, { nome: 'Pessoa Consulente Email', funcao: 'senha' });
+    const pe = (await api('GET', '/api/pessoas', ADMIN)).json.find((p) => p.nome === 'Pessoa Consulente Email');
+    assert.equal((await api('POST', '/api/usuarios', ADMIN, { pessoaId: pe.id, email: 'nao@exemplo.com', senha: 'senha-forte-9', papel: 'consulente' })).status, 400);
+
+    // Oferenda para "Alunos" não leva o consulente.
+    const of = (await api('POST', '/api/oferendas', ADMIN, { acao: 'salvar', responsavelId: RESP(), titulo: 'Só alunos', data: '2040-01-01', porMedium: true, grupos: ['alunos'] })).json.oferendas.find((o) => o.titulo === 'Só alunos');
+    assert.ok(!of.mediuns.some((m) => m.pessoaId === 'a:' + novo.id), 'consulente fora das oferendas dos alunos');
+    await api('POST', '/api/oferendas', ADMIN, { acao: 'excluir', id: of.id });
+
+    await api('POST', '/api/pessoas', ADMIN, { acao: 'excluirAluno', id: novo.id });
+    await api('POST', '/api/pessoas', ADMIN, { acao: 'apagarAluno', id: novo.id });
+  } finally {
+    sql(`update perfis set abas = '${abasAntes.replace(/'/g, "''")}'::jsonb where chave = 'consulente'`);
+    if (chaveAntes === undefined) delete process.env.CPF_CHAVE; else process.env.CPF_CHAVE = chaveAntes;
+  }
+});
