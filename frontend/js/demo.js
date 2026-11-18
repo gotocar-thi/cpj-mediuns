@@ -430,7 +430,14 @@ function lerGet(caminho, q) {
     if (lista === 'videos') return copia(db.videos);
     if (lista === 'ausencias') return [];
     if (lista === 'conduta') return { ativa: true, relatos: [] };
-    if (lista === 'atrasos') return atrasosDemo();
+    if (lista === 'atrasos') {
+      const A = atrasosDemo();
+      if (!vcAtual) return A;
+      // Ver como: só as da pessoa (como o servidor), com o aviso de quem ainda não criou a senha.
+      const [t, x] = [vcAtual.slice(0, 2), vcAtual.slice(2)];
+      const minhas = A.atrasos.filter((a) => (t === 'p:' ? a.pessoaId : a.alunoId) === x).map(({ id, conta, valor, vencimento, descricao, link }) => ({ id, conta, valor, vencimento, descricao, link }));
+      return { ...A, root: false, verComoSemSenha: true, atrasos: minhas };
+    }
     if (lista === 'fotos') return { albuns: [], fotos: [], usado: 0, limite: 0, configurado: false };
     if (lista === 'transparencia') return transparencia(q.get('mes') || '');
   }

@@ -11,8 +11,10 @@
 // o Atualizar do root renova todos. A pessoa é achada pelo hash do CPF do Perfil, sem decifrar os CPFs.
 //
 //   GET /api/giras?lista=atrasos[&atualizar=1]
-//     → { configurado, contas: { A, B } (quais estão ligadas), root, atualizadoEm, erro?, semSenha?, atrasos: [...] }
-//   Cada item traz a conta ('A' ou 'B'). Pessoa: só as próprias (id, conta, valor, vencimento, descricao, link).
+//     → { configurado, contas: { A, B } (quais estão ligadas), root, atualizadoEm, erro?, semSenha?, verComoSemSenha?, atrasos: [...] }
+//   Cada item traz a conta ('A' ou 'B'). Pessoa da corrente ou aluno: só as próprias (id, conta, valor, vencimento,
+//   descricao, link), e só com a senha criada. No "Ver como" do root, a lista vem mesmo sem a senha, com verComoSemSenha
+//   (a tela avisa que a pessoa ainda não vê o bloco).
 //   Root: todas, com nome e telefone para o lembrete.
 //
 // Variáveis (só no servidor): ASAAS2_API_KEY e ASAAS2_API_URL (conta B) · ASAAS_API_KEY e ASAAS_API_URL (conta A).
@@ -67,13 +69,15 @@ async function buscarNoAsaas(k, porHash, renovar) {
 }
 
 export async function atrasos(eu, atualizar) {
-  if (eu.grupo) throw new HttpError(403, 'Este acesso não tem pagamentos.');
+  if (eu.grupo && eu.grupo !== 'alunos') throw new HttpError(403, 'Este acesso não tem pagamentos.');
   // Visão de todos (ADMIN FINANCEIRO): quem vê a aba ASAAS (root e Admin financeiro).
   const root = pode(eu, 'asaas:ver');
   const contas = { A: ligada('A'), B: ligada('B') };
   if (!contas.A && !contas.B) return { configurado: false, contas, root, atrasos: [] };
-  // Pelo acesso da corrente, só com a senha criada: sem ela, qualquer um entra com o nome de outra pessoa.
-  if (!root && eu.papel === 'corrente' && !eu.temSenha) return { configurado: true, contas, root, semSenha: true, atrasos: [] };
+  // Pelo acesso da corrente ou dos alunos, só com a senha criada: sem ela, qualquer um entra com o nome de outra pessoa.
+  // No "Ver como" quem olha é o root: mostra o que a pessoa veria depois de criar a senha.
+  const semSenha = !root && (eu.papel === 'corrente' || eu.grupo === 'alunos') && !eu.temSenha;
+  if (semSenha && !eu.verComo) return { configurado: true, contas, root, semSenha: true, atrasos: [] };
   let s = await db.rpc('atrasos_ler');
   let erro;
   const idade = s.atualizadoEm ? Date.now() - Date.parse(s.atualizadoEm) : Infinity;
@@ -95,7 +99,7 @@ export async function atrasos(eu, atualizar) {
     s = await db.rpc('atrasos_ler');
   }
   const itens = root ? s.itens
-    : s.itens.filter((i) => eu.pessoaId && i.pessoaId === eu.pessoaId)
+    : s.itens.filter((i) => (eu.pessoaId && i.pessoaId === eu.pessoaId) || (eu.alunoId && i.alunoId === eu.alunoId))
       .map(({ id, conta, valor, vencimento, descricao, link }) => ({ id, conta, valor, vencimento, descricao, link }));
-  return { configurado: true, contas, root, atualizadoEm: s.atualizadoEm, ...(erro ? { erro } : {}), atrasos: itens };
+  return { configurado: true, contas, root, atualizadoEm: s.atualizadoEm, ...(erro ? { erro } : {}), ...(semSenha ? { verComoSemSenha: true } : {}), atrasos: itens };
 }

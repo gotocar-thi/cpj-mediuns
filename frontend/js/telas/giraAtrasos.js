@@ -1,6 +1,7 @@
 // Pagamentos em atraso (aba Geral), lidos das duas contas do ASAAS pelo servidor (api/_lib/atrasos.js):
 // a B (mensalidades e outras cobranças feitas no ASAAS) e a A (links das Compras).
-// Pessoa: só as próprias cobranças vencidas, com o link para pagar; sem nenhuma, o bloco não aparece.
+// Pessoa (corrente ou aluno, com a senha criada): só as próprias cobranças vencidas, com o link para pagar; sem nenhuma,
+// o bloco não aparece. No "Ver como" do root aparece mesmo sem a senha, com o aviso de que a pessoa ainda não vê.
 // Admin root: todas, separadas por conta, com o nome (da corrente, pelo CPF do Perfil, ou o do cliente no ASAAS) e lembrete no WhatsApp.
 // Atualizar: para todos (quem acabou de pagar vê sumir); o servidor segura toques repetidos da pessoa.
 // É o primeiro bloco da aba Geral. Para o root começa minimizado (tocar no título abre; vale até sair do app),
@@ -113,7 +114,9 @@ function quadrosGrupos(lista) {
 export function cardAtrasos() {
   if (estado.atrasos === null) { carregarAtrasos(); return ''; }
   const A = estado.atrasos;
-  const root = A.root && ehRoot();
+  // Root na visão CPJ/Alunos sem "Ver como": a lista é a de todos, mas a visão simula uma pessoa sem ninguém escolhido.
+  if (A.root && !ehRoot()) return '';
+  const root = A.root;
   const lista = A.atrasos || [];
   if (!root && (!A.configurado || A.semSenha || !lista.length)) return '';
   const titulo = root
@@ -132,6 +135,7 @@ export function cardAtrasos() {
       <button class="btn small" data-act="atatualizar">↻ Atualizar</button></div>`
     : '<div class="at-rodape"><span></span><button class="btn small" data-act="atatualizar">↻ Atualizar</button></div>';
   return `<div class="card ${root ? 'adm adm-financeiro' : 'at-meu'}">${titulo}${A.erro ? `<p class="muted at-erro">${esc(A.erro)}</p>` : ''}
+    ${A.verComoSemSenha ? '<p class="at-aviso">Esta pessoa ainda não criou a senha: ela não vê este bloco.</p>' : ''}
     ${root ? '' : '<p class="muted" style="margin:0;font-size:.85rem">Toque em Pagar para abrir o Pix ou o boleto. Já pagou? Toque em Atualizar.</p>'}${corpo}${rodape}</div>`;
 }
 

@@ -2667,6 +2667,21 @@ test('pagamentos em atraso (conta B do ASAAS): cada um os seus pelo CPF, o root 
     assert.deepEqual((await ler(tBia)).json.atrasos, [], 'sem CPF que bata, nada');
     assert.equal((await ler(semSenha)).json.semSenha, true, 'acesso da corrente sem senha não vê pagamentos');
     assert.deepEqual((await ler(semSenha)).json.atrasos, []);
+    // Ver como do root: mostra o que a pessoa veria, mesmo sem a senha, com o aviso.
+    const semSenhaId = sql("select id from pessoas where nome = 'Atraso Sem Senha'");
+    const vc = await (await fetch(base + '/api/giras?lista=atrasos', { headers: { Authorization: 'Bearer ' + ADMIN, 'X-Ver-Como': 'p:' + semSenhaId } })).json();
+    assert.equal(vc.verComoSemSenha, true);
+    assert.equal(vc.root, false);
+    // Aluno: vê só as próprias, e só com a senha.
+    await api('POST', '/api/pessoas', ADMIN, { acao: 'alunos', nome: 'Atraso Aluno' });
+    const alunoId = sql("select id from alunos where nome = 'Atraso Aluno'");
+    sql(`insert into asaas2_atrasos (conta, id, nome, valor, vencimento, descricao, aluno_id) values ('B', 'pay_al', 'Cliente', 90, '2026-10-05', 'Mensalidade aluno', '${alunoId}')`);
+    assert.equal((await ler(await tokenAluno('Atraso Aluno'))).json.semSenha, true, 'aluno sem senha não vê');
+    sql(`update alunos set pin_hash = 'x' where id = '${alunoId}'`);
+    assert.deepEqual((await ler(await tokenAluno('Atraso Aluno'))).json.atrasos.map((x) => x.id), ['pay_al']);
+    assert.ok(!(await ler(tAna)).json.atrasos.some((x) => x.id === 'pay_al'), 'a da corrente não vê a do aluno');
+    sql("delete from asaas2_atrasos where id = 'pay_al'");
+    await api('POST', '/api/pessoas', ADMIN, { acao: 'excluirAluno', id: alunoId });
 
     const root = (await ler(ADMIN)).json;
     assert.equal(root.root, true);
