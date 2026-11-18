@@ -469,11 +469,11 @@ function renderPessoas() {
   let h = `<section class="panel pessoas-tela">`;
   const add = editar || pode('alunos:editar') ? cardAdicionar(ps) : '';
   // Perfil que só cuida dos alunos (ex.: Admin oferendas): só o Adicionar e o bloco Alunos.
-  if (!pode('pessoas:ver')) return h + add + cardCadastrosLogin() + (verAlunos ? cardAlunos() : '') + '</section>';
+  if (!pode('pessoas:ver')) return h + add + (verAlunos ? cardAlunos() : '') + cardCadastrosLogin() + '</section>';
   if (!editar) h += `<p class="leitura" style="margin:0">Lista da corrente, só para consulta.</p>`;
   h += add;
   if (!ps.length) {
-    return h + `<div class="card empty"><p class="muted">${editar ? 'Ninguém cadastrado ainda. Digite os nomes acima; pode colar uma lista inteira separada por vírgulas.' : 'Ninguém cadastrado ainda.'}</p></div>${cardTurmas(todas, editar)}${cardCadastrosLogin()}${verAlunos ? cardAlunos() : ''}</section>`;
+    return h + `<div class="card empty"><p class="muted">${editar ? 'Ninguém cadastrado ainda. Digite os nomes acima; pode colar uma lista inteira separada por vírgulas.' : 'Ninguém cadastrado ainda.'}</p></div>${cardTurmas(todas, editar)}${verAlunos ? cardAlunos() : ''}${cardCadastrosLogin()}</section>`;
   }
   const funcaoCorrenteAberta = estado.correnteFuncaoAberta;
   const pessoasPorFuncao = Object.fromEntries(QUADROS_CORRENTE.map((f) => [f.k, todas.filter((p) => p.funcao === f.k)]));
@@ -494,8 +494,8 @@ function renderPessoas() {
     ${correnteListaAberta ? `<div class="ppl">${pessoasPorFuncao[correnteListaAberta].map(linhaCorrente).join('')}</div>` : ''}
     ${cardOferendasPendentes()}${listaLicencas(ps, editar)}</div>`;   // licença: só a corrente
   h += cardTurmas(todas, editar);
-  h += cardCadastrosLogin();
   if (verAlunos) h += cardAlunos();
+  h += cardCadastrosLogin();   // o último bloco da aba
   return h + '</section>';
 }
 
@@ -506,10 +506,9 @@ const QUADROS_CADASTRO = [['novos', 'Novos', 'fn-cadnovos'], ['consulentes', 'Co
 function cardCadastrosLogin() {
   const C = estado.alunos?.cadastros;
   if (!pode('alunos:editar') || !C) return '';
-  const aberto = !!estado.cadAberto;
+  // Sempre aberto: os dois quadradinhos ficam à vista; tocar num deles abre a lista.
   const n = C.novos.length;
-  let h = `<div class="card pp-card fn-cadastros">${cabDobra('dobrarcad', '🪪 Cadastros pelo login', n ? `${n} novo${n === 1 ? '' : 's'}` : '', aberto)}`;
-  if (!aberto) return h + '</div>';
+  let h = `<div class="card pp-card fn-cadastros"><div class="grp-h"><h2>🪪 Cadastros pelo login</h2>${n ? `<span class="count">${n} novo${n === 1 ? '' : 's'}</span>` : ''}</div>`;
   const sel = C[estado.cadQuadro] ? estado.cadQuadro : null;
   h += `<p class="muted" style="margin:0;font-size:.85rem">Quem se cadastrou pelo login (Criar cadastro). Decida para onde vai cada um: uma turma de alunos, Consulentes ou a corrente.</p>
     <div class="pf-of-totais auto">${QUADROS_CADASTRO.map(([k, t, cls]) => `<button type="button" class="pf-of-total ${cls}${sel === k ? ' selecionado' : ''}" data-act="cadquadro" data-q="${k}" aria-expanded="${sel === k}" aria-label="${t}: ${C[k].length}"${C[k].length ? '' : ' disabled'}><b>${C[k].length}</b><span>${t}</span></button>`).join('')}</div>`;
@@ -527,7 +526,6 @@ function cardCadastrosLogin() {
 const formatarCel = (c) => { const d = String(c).replace(/\D/g, ''); return d.length >= 10 ? `(${d.slice(0, 2)}) ${d.slice(2, -4)}-${d.slice(-4)}` : c; };
 
 export const cliques = {
-  dobrarcad() { estado.cadAberto = !estado.cadAberto; avisar(); },
   cadquadro(el) { estado.cadQuadro = estado.cadQuadro === el.dataset.q ? null : el.dataset.q; avisar(); },
   async cadmover(el) {
     const C = estado.alunos?.cadastros;

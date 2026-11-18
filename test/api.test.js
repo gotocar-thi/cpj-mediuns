@@ -2648,9 +2648,11 @@ test('oferendas: o nome de quem doou vem do cadastro; chave fora do formato não
   sql(`insert into oferenda_doacoes (item_id, pessoa_chave, pessoa_nome, quantidade) values ('${item.id}', 'n:fulano', 'Fulano', 1), ('${item.id}', 'p:antiga', 'Zé Antigo', 1)`);
   const lido = await api('GET', '/api/oferendas', ADMIN);
   assert.equal(lido.status, 200, JSON.stringify(lido.json));
+  // As duas antigas entram no mesmo instante: a ordem entre elas não importa.
   const nomes = lido.json.oferendas.find((x) => x.id === o.id).itens[0].doacoes.map((d) => [d.nome, d.quantidade]);
   const admin = (await api('GET', '/api/auth/me', ADMIN)).json.nome;
-  assert.deepEqual(nomes, [[admin, 1], ['Ana', 2], ['Fulano', 1], ['Zé Antigo', 1]]);
+  assert.deepEqual(nomes.slice(0, 2), [[admin, 1], ['Ana', 2]]);
+  assert.deepEqual(nomes.slice(2).sort(), [['Fulano', 1], ['Zé Antigo', 1]]);
   await of({ acao: 'excluir', id: o.id });
 });
 
@@ -2672,9 +2674,9 @@ test('v133: quem era do Admin ervas vai para o Admin oferendas e o perfil sai', 
   assert.equal((await api('POST', '/api/usuarios', ADMIN, { pessoaId: pe.id, email: 'ervas.antiga@corrente.org', senha: 'senha-forte-9', papel: 'admin_ervas' })).status, 200);
   const antes = (await api('POST', '/api/auth/entrar', null, { email: 'ervas.antiga@corrente.org', senha: 'senha-forte-9' })).json.token;
 
-  // As instruções da v133 (as três últimas da lista), como rodam no deploy; de novo não muda nada.
-  const v133 = MIGRACOES.slice(-3);
-  assert.ok(v133.every((q) => q.includes('admin_ervas')));
+  // As instruções da v133 (as que falam do Admin ervas), como rodam no deploy; de novo não muda nada.
+  const v133 = MIGRACOES.filter((q) => q.includes('admin_ervas'));
+  assert.equal(v133.length, 3);
   for (let i = 0; i < 2; i++) for (const q of v133) sql(q);
 
   assert.equal(sql("select papel from usuarios where email = 'ervas.antiga@corrente.org'"), 'admin_oferendas');

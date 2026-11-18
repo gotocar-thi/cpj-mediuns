@@ -38,7 +38,8 @@ test('amaci: aluno vê só a turma dele; corrente e admin veem os 14', () => {
 });
 
 test('amaci: todos os perfis veem; só root e Admin administram; o aluno vê, a curimba não', () => {
-  for (const p of PERFIS_PADRAO) {
+  // Consulentes: o root escolhe se veem o Amaci (no perfil Consulentes); por padrão, não.
+  for (const p of PERFIS_PADRAO.filter((x) => x.chave !== 'consulente')) {
     const perms = permissoesDe(p.chave, p.abas);
     assert.ok(perms.includes('amaci:ver'), p.chave);
     assert.equal(perms.includes('amaci:editar'), ['root', 'admin'].includes(p.chave), p.chave);
