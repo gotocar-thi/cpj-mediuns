@@ -1,8 +1,9 @@
 // Sub-aba "Pedidos" (aba Compras): só quem administra a aba Compras (o root e o Admin; o servidor confere).
-// Bloco "Pedidos em andamento": uma linha por pedido (cada linha das Compras, sem as doações) com descrição, quem pediu,
-// pagamento (Pago / Pendente) e andamento, agrupadas pelo andamento. O andamento muda no combo da própria linha.
+// Bloco "Pedidos em andamento": uma linha por pedido (cada linha das Compras, sem as doações e sem o grupo Axé) com quem
+// pediu, pagamento (Pago / Pendente) e andamento. Agrupadas pelo andamento e, dentro dele, pelo modelo (o item): a foto
+// pequena e o nome do modelo aparecem uma vez, com as pessoas embaixo; tocar na foto abre em tela cheia.
+// O andamento muda no combo da própria linha.
 // Quem tem cobrança vencida no ASAAS (última leitura do CPJ - Pgto atrasado) ganha o selo vermelho "pendências R$ X".
-// À esquerda, a foto pequena do modelo (a do item, pelo mesmo link da aba Compras); tocar abre em tela cheia.
 
 import { estado, carregarPedidos, mudarAndamento, avisar } from '../estado.js';
 import { esc } from '../util.js';
@@ -18,36 +19,55 @@ const ANDAMENTOS = [
   ['entregue', 'Entregue'],
 ];
 const fotoUrl = (l) => `/api/oferendas?lista=guiaFoto&id=${encodeURIComponent(l.itemId)}&v=${encodeURIComponent(l.fotoV)}`;
-// fechados: grupos minimizados (Entregue começa assim); salvando: id da linha indo ao servidor; zoom: id da linha com a foto aberta.
+// Modelo da linha: o item (o que foi excluído do cadastro fica pela descrição gravada na linha).
+const modeloDe = (l) => l.itemId || 'd:' + l.descricao;
+// fechados: grupos minimizados (Entregue começa assim); salvando: id da linha indo ao servidor; zoom: modelo com a foto aberta.
 const ui = { fechados: new Set(['entregue']), salvando: null, zoom: null };
 export function limpar() { ui.fechados = new Set(['entregue']); ui.salvando = null; ui.zoom = null; }
 
 function foto(l) {
   if (!l.fotoV || !l.itemId) return '<div class="gi-foto pd-foto"><span aria-hidden="true">📿</span></div>';
-  return `<div class="gi-foto pd-foto zoom" data-act="pdzoom" data-id="${esc(l.id)}" role="button" tabindex="0" aria-label="Ver foto de ${esc(l.descricao)}">
+  return `<div class="gi-foto pd-foto zoom" data-act="pdzoom" data-m="${esc(modeloDe(l))}" role="button" tabindex="0" aria-label="Ver foto de ${esc(l.descricao)}">
     <img src="${esc(fotoUrl(l))}" alt="" loading="lazy" decoding="async"></div>`;
 }
 
 // Foto em tela cheia (mesmo visual da aba Compras); tocar em qualquer lugar fecha.
 function telaFoto(lista) {
-  const l = ui.zoom && lista.find((x) => x.id === ui.zoom);
-  if (!l?.fotoV) return '';
+  const l = ui.zoom && lista.find((x) => modeloDe(x) === ui.zoom && x.fotoV);
+  if (!l) return '';
   return `<div class="ft-luz" role="dialog" aria-modal="true" aria-label="Foto de ${esc(l.descricao)}" data-act="pdzoomfechar">
     <div class="ft-luz-topo"><span class="ft-luz-tit">${esc(l.descricao)}</span><button class="btn small" data-act="pdzoomfechar" aria-label="Fechar">✕</button></div>
     <div class="ft-luz-img"><img src="${esc(fotoUrl(l))}" alt=""></div>
-    <div class="ft-luz-rodape"><b>${esc(l.nome)}</b><span class="muted">nº ${l.pedido}</span></div></div>`;
+    <div class="ft-luz-rodape"><b>${R(l.valor)}</b><span class="muted">${esc(l.grupo || '')}</span></div></div>`;
 }
 
+// Uma pessoa dentro do modelo: nome, quantidade, número do pedido, valor, pagamento, pendências e o combo do andamento.
 function linha(l, pend) {
   const p = pend[l.chave] || 0;
   const opcoes = ANDAMENTOS.map(([k, rot]) => `<option value="${k}"${l.andamento === k ? ' selected' : ''}>${rot}</option>`).join('');
-  return `<li class="pd-l">${foto(l)}<div class="pd-c">
-    <div class="pd-l1"><span class="pd-d">${l.quantidade > 1 ? `${l.quantidade}x ` : ''}${esc(l.descricao)}</span><span class="pd-v">${R(l.valor * l.quantidade)}</span></div>
-    <div class="pd-l2"><span class="pd-nome">${esc(l.nome)}</span><span class="muted pd-n">nº ${l.pedido}</span>
+  return `<li class="pd-l">
+    <div class="pd-l1"><span class="pd-nome">${l.quantidade > 1 ? `<b>${l.quantidade}x</b> ` : ''}${esc(l.nome)}</span><span class="pd-v">${R(l.valor * l.quantidade)}</span></div>
+    <div class="pd-l2"><span class="muted pd-n">nº ${l.pedido}</span>
       ${l.pago ? '<span class="badge pleno">Pago</span>' : '<span class="badge pd-pend">Pendente</span>'}
-      ${p > 0 ? `<span class="badge pd-divida" title="Cobranças vencidas no ASAAS">pendências ${R(p)}</span>` : ''}</div></div>
+      ${p > 0 ? `<span class="badge pd-divida" title="Cobranças vencidas no ASAAS">pendências ${R(p)}</span>` : ''}</div>
     <select class="pd-and" data-act="pdandamento" data-id="${esc(l.id)}" aria-label="Andamento do pedido de ${esc(l.nome)}"${ui.salvando === l.id ? ' disabled' : ''}>${opcoes}</select>
   </li>`;
+}
+
+// Linhas de um andamento juntas por modelo: o mais pedido primeiro; empate, pelo nome.
+function porModelo(L, pend) {
+  const m = new Map();
+  L.forEach((l) => { const k = modeloDe(l); if (!m.has(k)) m.set(k, []); m.get(k).push(l); });
+  const qtd = (ls) => ls.reduce((s, l) => s + l.quantidade, 0);
+  return [...m.values()]
+    .sort((a, b) => qtd(b) - qtd(a) || a[0].descricao.localeCompare(b[0].descricao, 'pt-BR'))
+    .map((ls) => {
+      ls.sort((a, b) => b.pedido - a.pedido || a.nome.localeCompare(b.nome, 'pt-BR'));
+      const n = qtd(ls);
+      return `<div class="pd-mod"><div class="pd-mod-h">${foto(ls[0])}<div class="pd-mod-t"><b>${esc(ls[0].descricao)}</b>
+        <small class="muted">${n} ${n === 1 ? 'unidade' : 'unidades'} · ${ls.length} ${ls.length === 1 ? 'pedido' : 'pedidos'}</small></div></div>
+        <ul class="pd-lista">${ls.map((l) => linha(l, pend)).join('')}</ul></div>`;
+    }).join('');
 }
 
 export function render() {
@@ -60,19 +80,19 @@ export function render() {
   let h = `<section class="panel pd-tela"><div class="card adm adm-compras"><div class="grp-h"><h2>📦 Pedidos em andamento</h2><span class="count">${abertos}</span></div>`;
   if (!lista.length) return h + '<p class="muted" style="margin:0">Nenhum pedido ainda.</p></div></section>';
   h += ANDAMENTOS.map(([k, rot]) => {
-    const L = lista.filter((l) => l.andamento === k).sort((a, b) => b.pedido - a.pedido || a.nome.localeCompare(b.nome, 'pt-BR'));
+    const L = lista.filter((l) => l.andamento === k);
     if (!L.length) return '';
     const aberto = !ui.fechados.has(k);
     const cab = `<button class="grp-h dobra" data-act="pddobrar" data-k="${k}" aria-expanded="${aberto}"><h3>${rot}</h3>
       <span class="count">${L.length} <span class="seta" aria-hidden="true">${aberto ? '▾' : '▸'}</span></span></button>`;
-    return `<div class="pd-grupo pd-${k}">${cab}${aberto ? `<ul class="pd-lista">${L.map((l) => linha(l, pend)).join('')}</ul>` : ''}</div>`;
+    return `<div class="pd-grupo pd-${k}">${cab}${aberto ? porModelo(L, pend) : ''}</div>`;
   }).join('');
   return h + `</div>${telaFoto(lista)}</section>`;
 }
 
 export const cliques = {
   pddobrar(el) { const k = el.dataset.k; if (ui.fechados.has(k)) ui.fechados.delete(k); else ui.fechados.add(k); avisar(); },
-  pdzoom(el) { ui.zoom = el.dataset.id; avisar(); },
+  pdzoom(el) { ui.zoom = el.dataset.m; avisar(); },
   pdzoomfechar() { ui.zoom = null; avisar(); },
   pdrecarregar() { estado.pedidos = null; avisar(); },
 };

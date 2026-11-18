@@ -2109,7 +2109,11 @@ test('pedidos de guias: aba escondida até publicar; grupos, itens, pedir baixa 
   let PD = (await api('GET', '/api/oferendas?lista=pedidos', ADMIN)).json;
   const pd = PD.pedidos.find((l) => l.id === linha.id);
   assert.deepEqual([pd.descricao, pd.nome, pd.pago, pd.andamento], [linha.descricao, linha.nome, false, 'pendente']);
-  assert.deepEqual([pd.itemId, pd.fotoV], [it.id, null], 'o item vai junto; sem foto, sem versão');
+  assert.deepEqual([pd.itemId, pd.fotoV, pd.grupo], [it.id, null, 'Guias de Oxóssi'], 'o item e o grupo vão junto; sem foto, sem versão');
+  // Grupo Axé: os itens dele não entram nos Pedidos.
+  sql(`update guias_grupos set descricao = 'AXÉ' where id = '${g.id}'`);
+  assert.equal((await api('GET', '/api/oferendas?lista=pedidos', ADMIN)).json.pedidos.some((l) => l.id === linha.id), false);
+  sql(`update guias_grupos set descricao = 'Guias de Oxóssi' where id = '${g.id}'`);
   assert.equal(typeof PD.pendencias, 'object');
   assert.equal((await gu(ADMIN, { op: 'andamento', id: linha.id, andamento: 'pronto' })).status, 400);
   PD = (await gu(ADMIN, { op: 'andamento', id: linha.id, andamento: 'em_confeccao' })).json;

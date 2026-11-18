@@ -7,8 +7,8 @@
 //           cancelar { id } (a quantidade volta para o item) · ok { id, ok } · encerrar { grupoId } · novo { grupoId } (próximo número)
 //           andamento { id, andamento } → o mesmo de GET ?lista=pedidos
 // Sub-aba Pedidos (só quem administra a aba Compras): GET /api/oferendas?lista=pedidos
-//   → { pedidos: [{ id, pedido, descricao, quantidade, valor, chave, nome, pago, andamento, itemId, fotoV }], pendencias: { chave: total }, pendenciasEm }
-//   Uma entrada por linha (as doações ficam de fora). pendencias: o total vencido no ASAAS de cada pessoa, da última leitura
+//   → { pedidos: [{ id, pedido, descricao, quantidade, valor, chave, nome, pago, andamento, itemId, fotoV, grupoId, grupo }], pendencias: { chave: total }, pendenciasEm }
+//   Uma entrada por linha (as doações e o grupo Axé ficam de fora). pendencias: o total vencido no ASAAS de cada pessoa, da última leitura
 //   do bloco CPJ - Pgto atrasado (não chama o ASAAS aqui).
 // Cada grupo tem o seu pedido (grupos[].aberto = número do pedido aberto ou null). pedidos[].grupos diz quais grupos
 // o pedido atende e quando cada um encerrou; as linhas trazem o grupoId.

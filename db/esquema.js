@@ -9,7 +9,7 @@
 // Estrutura: veja db/ESTRUTURA-ESQUEMA.md para o mapa de versões, domínios e
 // quais migrações foram testadas no Postgres.
 
-export const VERSAO = 147;  // v147: sub-aba Pedidos com a foto do item
+export const VERSAO = 148;  // v148: sub-aba Pedidos com o grupo de cada linha e sem o grupo Axé
 
 import { PERFIS_PADRAO } from '../shared/permissoes.js';
 
@@ -6314,5 +6314,20 @@ export const MIGRACOES = [
               order by l.criado_em, lower(l.nome)), '[]'::jsonb)
        from guias_linhas l left join guias_itens i on i.id = l.item_id
       where not coalesce(i.doacao, false)
+   $$`,
+  // ================================================== v148: sub-aba Pedidos sem o grupo Axé
+  // Cada linha leva o grupo (id e nome); as do grupo "Axé" (sem diferença de maiúscula e acento) ficam de fora.
+  `create or replace function guias_pedidos_andamento(p jsonb default '{}'::jsonb)
+   returns jsonb language sql stable as $$
+     select coalesce(jsonb_agg(jsonb_build_object('id', l.id, 'pedido', l.pedido, 'descricao', l.descricao, 'quantidade', l.quantidade,
+              'valor', l.valor::float8, 'chave', l.chave, 'nome', l.nome, 'pago', l.pago_em is not null, 'andamento', l.andamento, 'criadoEm', l.criado_em,
+              'itemId', l.item_id, 'fotoV', case when i.foto is null then null else substr(md5(i.foto), 1, 10) end,
+              'grupoId', l.grupo_id, 'grupo', g.descricao)
+              order by l.criado_em, lower(l.nome)), '[]'::jsonb)
+       from guias_linhas l
+       left join guias_itens i on i.id = l.item_id
+       left join guias_grupos g on g.id = l.grupo_id
+      where not coalesce(i.doacao, false)
+        and translate(lower(btrim(coalesce(g.descricao, ''))), 'áàâãéêíóôõúç', 'aaaaeeiooouc') <> 'axe'
    $$`,
 ];

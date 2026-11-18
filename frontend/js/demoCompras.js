@@ -15,7 +15,7 @@ export function criarCompras({ euChave, euNome, pessoas, ErroDemo }) {
   let seq = 5000;
   const novoId = () => id(++seq);
 
-  const G1 = id(2001), G2 = id(2002), G3 = id(2003);
+  const G1 = id(2001), G2 = id(2002), G3 = id(2003), G4 = id(2004);
   const grupos = [
     { id: G1, descricao: 'Guias', visivel: true, aberto: 3, itens: [
       { id: id(2101), descricao: 'Guia de Oxóssi (verde)', fotoV: null, quantidade: 6, valor: 35, visivel: true, cpj: false },
@@ -30,6 +30,10 @@ export function criarCompras({ euChave, euNome, pessoas, ErroDemo }) {
     { id: G3, descricao: 'Velas e defumação', visivel: false, aberto: null, itens: [
       { id: id(2301), descricao: 'Kit 7 velas coloridas', fotoV: null, quantidade: 10, valor: 18, visivel: true, cpj: false },
     ] },
+    // Axé: não entra na sub-aba Pedidos.
+    { id: G4, descricao: 'Axé', visivel: true, aberto: 3, itens: [
+      { id: id(2401), descricao: 'Axé da gira', fotoV: null, quantidade: 50, valor: 10, visivel: true, cpj: false },
+    ] },
   ];
   const linha = (n, pedido, grupoId, itemId, quem, nome, quantidade, extra = {}) => {
     const g = grupos.find((x) => x.id === grupoId);
@@ -39,7 +43,7 @@ export function criarCompras({ euChave, euNome, pessoas, ErroDemo }) {
   };
   const pedidos = [
     { numero: 3, criadoEm: horas(-72), encerradoEm: null,
-      grupos: [{ grupoId: G1, criadoEm: horas(-72), encerradoEm: null }, { grupoId: G2, criadoEm: horas(-72), encerradoEm: null }],
+      grupos: [{ grupoId: G1, criadoEm: horas(-72), encerradoEm: null }, { grupoId: G2, criadoEm: horas(-72), encerradoEm: null }, { grupoId: G4, criadoEm: horas(-72), encerradoEm: null }],
       linhas: [
         linha(2401, 3, G1, id(2101), chave(5), nomeDe(5), 1, { pago: true, ok: true, andamento: 'em_confeccao' }),
         linha(2402, 3, G2, id(2201), chave(5), nomeDe(5), 2, { pago: true, ok: true, andamento: 'concluido' }),
@@ -47,6 +51,8 @@ export function criarCompras({ euChave, euNome, pessoas, ErroDemo }) {
         linha(2404, 3, G2, id(2202), chave(3), nomeDe(3), 1, { pix: 'vencida', andamento: 'falta_materia' }),
         linha(2405, 3, G1, id(2101), chave(7), nomeDe(7), 1),
         linha(2406, 3, G2, id(2201), euChave, euNome, 1, { pix: 'pendente' }),
+        linha(2407, 3, G1, id(2102), chave(1), nomeDe(1), 2),
+        linha(2408, 3, G4, id(2401), chave(6), nomeDe(6), 1),
       ] },
     { numero: 2, criadoEm: horas(-24 * 40), encerradoEm: horas(-24 * 30),
       grupos: [{ grupoId: G3, criadoEm: horas(-24 * 40), encerradoEm: horas(-24 * 30) }],
@@ -283,10 +289,12 @@ export function criarCompras({ euChave, euNome, pessoas, ErroDemo }) {
   function pedidosAndamento(pendencias) {
     sincronizar();
     const doacao = new Set(grupos.flatMap((g) => g.itens.filter((i) => i.doacao).map((i) => i.id)));
+    const nomeGrupo = (gid) => grupos.find((g) => g.id === gid)?.descricao || null;
+    const axe = (gid) => (nomeGrupo(gid) || '').normalize('NFD').replace(/[̀-ͯ]/g, '').trim().toLowerCase() === 'axe';
     return {
-      pedidos: todasLinhas().filter((l) => !doacao.has(l.itemId))
-        .map(({ id: lid, pedido, descricao, quantidade, valor, chave: ch, nome, pago, andamento, itemId }) => ({ id: lid, pedido, descricao, quantidade, valor, chave: ch, nome, pago, andamento,
-          itemId, fotoV: grupos.flatMap((g) => g.itens).find((i) => i.id === itemId)?.fotoV || null })),
+      pedidos: todasLinhas().filter((l) => !doacao.has(l.itemId) && !axe(l.grupoId))
+        .map(({ id: lid, pedido, descricao, quantidade, valor, chave: ch, nome, pago, andamento, itemId, grupoId }) => ({ id: lid, pedido, descricao, quantidade, valor, chave: ch, nome, pago, andamento,
+          itemId, fotoV: grupos.flatMap((g) => g.itens).find((i) => i.id === itemId)?.fotoV || null, grupoId, grupo: nomeGrupo(grupoId) })),
       pendencias, pendenciasEm: new Date().toISOString(),
     };
   }
