@@ -692,6 +692,16 @@ button.eu-avatar{cursor:zoom-in}
 .versao-app{display:block;margin-top:-10px;text-align:center;font-size:.72rem;color:var(--muted)}
 .versao-app[hidden]{display:none}
 .root-secao{margin:8px 0 -6px;font:700 .8rem var(--f-body);letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+/* Admin root → Acessos e perfis: um grupo por perfil */
+.acessos-topo{display:flex;gap:8px;align-items:center}
+.acessos-topo input{flex:1;min-width:0}
+.pf-grupos{display:grid;gap:8px}
+.pf-grupo{display:grid;gap:8px;border:1px solid var(--line);border-radius:12px;padding:8px 12px;background:var(--surface)}
+.pf-grupo.aberto{padding-bottom:12px}
+.pf-grupo > .grp-h h2{font-size:1rem}
+.pf-pessoas .us:last-child{border-bottom:0}
+.pf-mais,.pf-cfg-bt{justify-self:start}
+.pf-novo,.pf-config{display:grid;gap:10px;border-top:1px solid var(--line);padding-top:10px}
 .root-sub{margin:4px 0 0;font:700 1rem var(--f-body)}
 .cfg-form{display:grid;gap:12px}
 .cfg-form small{font-size:.78rem;font-weight:400;text-transform:none;letter-spacing:0}

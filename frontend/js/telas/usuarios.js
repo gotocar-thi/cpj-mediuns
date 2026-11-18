@@ -1,4 +1,4 @@
-// Aba "Admin root" (só o admin root): quem acessa o app e com qual perfil, os perfis e, do Histórico,
+// Aba "Admin root" (só o admin root): Acessos e perfis (um bloco só, por perfil) e, do Histórico,
 // Cadastrar gira antiga e Cadastrar escala, e os eventos da casa (cadastrar e eventos cadastrados).
 
 import { SEM_CADASTRO, ABAS, PERFIS_SISTEMA, PIN_NOVO, PIN_NOVO_MSG, normalizarAbas } from '/shared/permissoes.js';
@@ -24,42 +24,30 @@ const opcoesPapel = (atual) => papeis().map((f) => `<option value="${esc(f.chave
 const abertosRoot = new Set();
 const cabRoot = (k, titulo, count = '', ab = abertosRoot.has(k)) => `<button class="grp-h dobra" data-act="dobrarroot" data-k="${k}" aria-expanded="${ab}"><h2>${titulo}</h2><span class="count">${count} <span class="seta" aria-hidden="true">${ab ? '▾' : '▸'}</span></span></button>`;
 
-// ---------- perfis: o que cada um vê e edita, por aba ----------
-function cardPerfis() {
-  const lista = estado.perfisCfg || [];
-  const aberto = abertosRoot.has('perfis');
-  let h = `<div class="card adm root">${cabRoot('perfis', 'Perfis e acessos', lista.length)}`;
-  if (!aberto) return h + '</div>';
-  const sel = lista.find((f) => f.chave === estado.perfilSel) || lista.find((f) => f.chave === 'admin') || lista[0];
-  h += `<p class="muted" style="margin:0;font-size:.85rem">Escolha o perfil e marque, em cada aba, se ele pode <b>Ver</b> e/ou <b>Editar</b>. Vale na hora para todos os usuários desse perfil (eles veem a mudança ao abrir o app de novo). A aba Admin root é sempre só do Admin root.</p>
-    <div class="row" style="gap:6px;align-items:flex-end">
-      <label class="field grow">Perfil<select data-act="perfilsel">${lista.map((f) => `<option value="${esc(f.chave)}" ${f === sel ? 'selected' : ''}>${esc(f.nome)}${f.usuarios ? ` (${f.usuarios})` : ''}</option>`).join('')}</select></label>
-      <button class="btn small" data-act="novoperfil">＋ Novo perfil</button>
-    </div>`;
-  if (estado.novoPerfil) {
-    h += `<form id="f-perfilnovo" class="row" autocomplete="off" style="gap:6px;align-items:flex-end">
-      <label class="field grow">Nome do novo perfil<input type="text" id="pn-nome" maxlength="40" required placeholder="Ex.: Admin giras"></label>
-      <label class="field grow">Copiar acessos de<select id="pn-base"><option value="">— nenhum —</option>${lista.filter((f) => f.chave !== 'root').map((f) => `<option value="${esc(f.chave)}">${esc(f.nome)}</option>`).join('')}</select></label>
-      <button class="btn small primary" type="submit">Criar</button><button class="btn small" type="button" data-act="cancelanovoperfil">Cancelar</button></form>`;
-  }
-  if (!sel) return h + '</div>';
-  if (sel.chave === 'root') return h + `<p class="leitura" style="margin:0">O Admin root pode tudo, inclusive a aba Admin root, e não precisa estar no cadastro da corrente.</p></div>`;
-  const a = normalizarAbas(sel.abas);
-  const fixo = sel.chave === 'corrente';
-  h += `${fixo ? '<p class="muted" style="margin:0;font-size:.85rem">Este é o acesso da corrente: quem entra com e-mail, celular ou CPF e a senha de números.</p>' : `<form id="f-perfilnome" class="row" data-chave="${esc(sel.chave)}" autocomplete="off" style="gap:6px;align-items:flex-end">
-      <label class="field grow">Nome<input type="text" id="pf-nomecfg" maxlength="40" value="${esc(sel.nome)}"></label>
+// ---------- acessos: um bloco só, por perfil ----------
+// Cada perfil é um grupo que minimiza, com as pessoas que têm acesso por e-mail nele, o ＋ para dar acesso a mais
+// alguém já nesse perfil e, em ⚙️, o que o perfil pode ver e editar em cada aba (Renomear e Excluir perfil também).
+
+// O que o perfil pode fazer: Ver/Editar por aba (vale na hora para todos do perfil), Renomear e Excluir.
+function configPerfil(f) {
+  if (f.chave === 'root') return '<p class="leitura" style="margin:0">O Admin root pode tudo, inclusive a aba Admin root, e não precisa estar no cadastro da corrente.</p>';
+  const a = normalizarAbas(f.abas);
+  let h = `<div class="pf-config">
+    <p class="muted" style="margin:0;font-size:.85rem">Marque, em cada aba, se o perfil pode <b>Ver</b> e/ou <b>Editar</b>. Vale na hora para todos desse perfil (eles veem a mudança ao abrir o app de novo).</p>
+    ${f.chave === 'corrente' ? '' : `<form id="f-perfilnome" class="row" data-chave="${esc(f.chave)}" autocomplete="off" style="gap:6px;align-items:flex-end">
+      <label class="field grow">Nome do perfil<input type="text" id="pf-nomecfg" maxlength="40" value="${esc(f.nome)}"></label>
       <button class="btn small" type="submit">Renomear</button></form>`}
-    <div class="pa-tab" role="table" aria-label="Acessos do perfil ${esc(sel.nome)}">
+    <div class="pa-tab" role="table" aria-label="Acessos do perfil ${esc(f.nome)}">
       <div class="pa-th" role="row"><span>Aba</span><span>Ver</span><span>Editar</span></div>
       ${ABAS.map((x) => `<div class="pa-tr" role="row">
         <span class="pa-aba"><b>${x.nome}</b><small class="muted">Ver: ${x.ver}<br>Editar: ${x.editar}</small></span>
-        <label class="pa-ck"><input type="checkbox" data-act="pfaba" data-chave="${esc(sel.chave)}" data-k="${x.k}" data-t="ver" ${a[x.k].ver ? 'checked' : ''} aria-label="${esc(sel.nome)}: ver ${x.nome}"></label>
-        <label class="pa-ck"><input type="checkbox" data-act="pfaba" data-chave="${esc(sel.chave)}" data-k="${x.k}" data-t="editar" ${a[x.k].editar ? 'checked' : ''} aria-label="${esc(sel.nome)}: editar ${x.nome}"></label>
+        <label class="pa-ck"><input type="checkbox" data-act="pfaba" data-chave="${esc(f.chave)}" data-k="${x.k}" data-t="ver" ${a[x.k].ver ? 'checked' : ''} aria-label="${esc(f.nome)}: ver ${x.nome}"></label>
+        <label class="pa-ck"><input type="checkbox" data-act="pfaba" data-chave="${esc(f.chave)}" data-k="${x.k}" data-t="editar" ${a[x.k].editar ? 'checked' : ''} aria-label="${esc(f.nome)}: editar ${x.nome}"></label>
       </div>`).join('')}
     </div>`;
-  if (!PERFIS_SISTEMA.includes(sel.chave)) {
-    const conf = estado.confirm === 'pf:' + sel.chave;
-    h += `<div class="row" style="justify-content:flex-end">${conf ? `<button class="btn small danger" data-act="delperfil" data-chave="${esc(sel.chave)}">Confirmar exclusão</button>` : `<button class="btn small" data-act="askdel" data-k="pf:${esc(sel.chave)}">Excluir perfil</button>`}</div>`;
+  if (!PERFIS_SISTEMA.includes(f.chave)) {
+    const conf = estado.confirm === 'pf:' + f.chave;
+    h += `<div class="row" style="justify-content:flex-end">${conf ? `<button class="btn small danger" data-act="delperfil" data-chave="${esc(f.chave)}">Confirmar exclusão</button>` : `<button class="btn small" data-act="askdel" data-k="pf:${esc(f.chave)}">Excluir perfil</button>`}</div>`;
   }
   return h + '</div>';
 }
@@ -76,60 +64,105 @@ const pessoasLivres = (manter = null) => {
 export function render() {
   if (estado.usuarios === null) { carregarUsuarios(); return `<div class="loading">Carregando usuários…</div>`; }
   if (abertosRoot.has('ajperfil') && estado.perfil === null) { estado.perfil = undefined; carregarPerfil(); }
-  const livres = pessoasLivres();
-  const semLigacao = estado.usuarios.filter((u) => !u.pessoaId && !semCadastro(u.papel)).length;
-  const termo = paraBusca(estado.usBusca).trim();
-  const achados = estado.usuarios.filter((u) => !termo || paraBusca(nomeDe(u) + ' ' + u.email).includes(termo));
-  let h = `<section class="panel">${secao('Acessos')}
-  <div class="card adm root">${cabRoot('novo', 'Novo usuário')}${!abertosRoot.has('novo') ? '' : `
-    <form id="f-user" class="row" autocomplete="off">
-      <label class="field" style="flex:0 1 170px">Perfil<select id="u-papel" data-act="papelnovo">${opcoesPapel('usuario')}</select></label>
-      <label class="field grow" id="u-pessoa-campo"><span id="u-pessoa-rotulo">Pessoa da corrente</span><select id="u-pessoa" data-act="pessoanova"><option value="">— escolha a pessoa —</option><option value="${PESSOA_NOVA}">＋ Cadastrar pessoa nova</option>${livres.map((p) => `<option value="${p.id}">${esc(p.nome)}</option>`).join('')}</select></label>
-      <label class="field grow" id="u-nova-nome" hidden>Nome da pessoa<input type="text" id="u-nova-n" maxlength="80"></label>
-      <label class="field" id="u-nova-funcao" hidden style="flex:0 1 150px">Função<select id="u-nova-f">${FUNCOES.map((f) => `<option value="${f.k}">${f.label}</option>`).join('')}<option value="${CURIMBA}">Curimba</option></select></label>
-      <label class="field grow" id="u-nome-campo" hidden>Nome<input type="text" id="u-nome" maxlength="80"></label>
-      <label class="field grow">E-mail<input type="email" id="u-email" required></label>
-      <label class="field" style="flex:1 1 140px">Senha inicial<input type="password" id="u-senha" required minlength="8" autocomplete="new-password"></label>
-      <button class="btn primary" type="submit">Criar</button>
-    </form>
-    <p class="muted" style="margin:0;font-size:.85rem">O usuário é uma pessoa da corrente: o nome vem do cadastro em Pessoas (quem não está lá pode ser cadastrado aqui mesmo). No <b>Admin root</b> a pessoa é opcional: sem ela, vale o nome digitado. Passe o e-mail e a senha inicial para a pessoa; ela pode trocar a senha depois.</p>`}
-  </div>
-  <div class="card adm root">${cabRoot('acesso', 'Quem tem acesso', `${estado.usuarios.length}${semLigacao ? ` <span class="badge lic">${semLigacao} sem cadastro</span>` : ''}`)}
-  ${abertosRoot.has('acesso') ? `<input type="text" id="us-busca" value="${esc(estado.usBusca || '')}" placeholder="Buscar por nome ou e-mail" aria-label="Buscar usuário" autocomplete="off">
-    ${termo && !achados.length ? '<p class="muted" style="margin:0">Ninguém encontrado.</p>' : ''}` : ''}<div>`;
-  if (abertosRoot.has('acesso')) achados.forEach((u) => {
-    const eu = u.id === estado.me.id;
-    const conf = estado.confirm === 'u:' + u.id;
-    const nome = nomeDe(u);
-    const faltaCadastro = !u.pessoaId && !semCadastro(u.papel);
-    let nomeHtml;
-    const modo = estado.renomearModo;
-    if (estado.renomearUsuario === u.id) {
-      nomeHtml = modo === 'nome'
-        ? `<form id="f-uren" class="ren" data-id="${u.id}" data-modo="nome"><input type="text" id="uren-in" value="${esc(u.nome)}" maxlength="80" autocomplete="off" aria-label="Nome de ${esc(nome)}">
-            <button class="btn small primary" type="submit">Salvar</button><button class="btn small" type="button" data-act="cancelauren">Cancelar</button></form>`
-        : `<form id="f-uren" class="ren" data-id="${u.id}" data-modo="pessoa"><select id="uren-in" aria-label="Pessoa da corrente de ${esc(nome)}">${semCadastro(u.papel) ? '' : '<option value="">— escolha a pessoa —</option>'}
-            ${semCadastro(u.papel) ? `<option value="" ${u.pessoaId ? '' : 'selected'}>(sem cadastro: usar só o nome)</option>` : ''}
-            ${pessoasLivres(u.pessoaId).map((p) => `<option value="${p.id}" ${p.id === u.pessoaId ? 'selected' : ''}>${esc(p.nome)}</option>`).join('')}</select>
-            <button class="btn small primary" type="submit">Salvar</button><button class="btn small" type="button" data-act="cancelauren">Cancelar</button></form>`;
-    } else {
-      const botoes = [
-        ...(!u.pessoaId && semCadastro(u.papel) ? [['nome', '✎ editar nome']] : []),
-        ['pessoa', u.pessoaId ? '✎ trocar pessoa' : semCadastro(u.papel) ? '✎ ligar à pessoa (opcional)' : '✎ ligar à pessoa'],
-      ].map(([m, t]) => `<button class="btn link small" data-act="uren" data-id="${u.id}" data-modo="${m}">${t}</button>`).join(' ');
-      nomeHtml = `<div class="nm">${esc(nome)}${eu ? ' <span class="muted" style="font-weight:400">(você)</span>' : ''} ${botoes}</div>
-        ${faltaCadastro ? '<span class="badge lic">sem cadastro na corrente: ligue a uma pessoa</span>' : ''}`;
-    }
-    h += `<div class="us"><div style="min-width:0">${nomeHtml}<div class="em">${esc(u.email)}</div></div>
-      <select data-act="papel" data-id="${u.id}" aria-label="Perfil de ${esc(nome)}" ${eu ? 'disabled title="Você não pode mudar o seu próprio perfil"' : ''}>${opcoesPapel(u.papel)}</select>
-      <div class="acts" style="display:contents"><button class="btn small" data-act="snabrir" data-tipo="email" data-id="${u.id}">Nova senha</button>
-      ${eu ? '<span></span>' : conf ? `<button class="btn small danger" data-act="deluser" data-id="${u.id}">Confirmar</button>` : `<button class="btn small" data-act="askdel" data-k="u:${u.id}">Excluir</button>`}</div>
-      ${estado.senhaEdit?.tipo === 'email' && estado.senhaEdit.id === u.id ? formSenha('email', u.id, nome) : ''}</div>`;
-  });
-  h += `</div></div>${cardPerfis()}
+  let h = `<section class="panel">${cardAcessos()}
     ${secao('Configurações da casa')}${cardConfig()}${cardEntidades()}${cardEventos()}
     ${secao('Pessoas e histórico')}${cardAjustesPerfil()}${cardRegistros()}${cardBackup()}</section>`;
   return h;
+}
+
+// Uma pessoa com acesso: nome (do cadastro), e-mail, troca de perfil, Nova senha e Excluir.
+function linhaUsuario(u) {
+  const eu = u.id === estado.me.id;
+  const conf = estado.confirm === 'u:' + u.id;
+  const nome = nomeDe(u);
+  const faltaCadastro = !u.pessoaId && !semCadastro(u.papel);
+  let nomeHtml;
+  if (estado.renomearUsuario === u.id) {
+    nomeHtml = estado.renomearModo === 'nome'
+      ? `<form id="f-uren" class="ren" data-id="${u.id}" data-modo="nome"><input type="text" id="uren-in" value="${esc(u.nome)}" maxlength="80" autocomplete="off" aria-label="Nome de ${esc(nome)}">
+          <button class="btn small primary" type="submit">Salvar</button><button class="btn small" type="button" data-act="cancelauren">Cancelar</button></form>`
+      : `<form id="f-uren" class="ren" data-id="${u.id}" data-modo="pessoa"><select id="uren-in" aria-label="Pessoa da corrente de ${esc(nome)}">${semCadastro(u.papel) ? '' : '<option value="">— escolha a pessoa —</option>'}
+          ${semCadastro(u.papel) ? `<option value="" ${u.pessoaId ? '' : 'selected'}>(sem cadastro: usar só o nome)</option>` : ''}
+          ${pessoasLivres(u.pessoaId).map((p) => `<option value="${p.id}" ${p.id === u.pessoaId ? 'selected' : ''}>${esc(p.nome)}</option>`).join('')}</select>
+          <button class="btn small primary" type="submit">Salvar</button><button class="btn small" type="button" data-act="cancelauren">Cancelar</button></form>`;
+  } else {
+    const botoes = [
+      ...(!u.pessoaId && semCadastro(u.papel) ? [['nome', '✎ editar nome']] : []),
+      ['pessoa', u.pessoaId ? '✎ trocar pessoa' : semCadastro(u.papel) ? '✎ ligar à pessoa (opcional)' : '✎ ligar à pessoa'],
+    ].map(([m, t]) => `<button class="btn link small" data-act="uren" data-id="${u.id}" data-modo="${m}">${t}</button>`).join(' ');
+    nomeHtml = `<div class="nm">${esc(nome)}${eu ? ' <span class="muted" style="font-weight:400">(você)</span>' : ''} ${botoes}</div>
+      ${faltaCadastro ? '<span class="badge lic">sem cadastro na corrente: ligue a uma pessoa</span>' : ''}`;
+  }
+  return `<div class="us"><div style="min-width:0">${nomeHtml}<div class="em">${esc(u.email)}</div></div>
+    <select data-act="papel" data-id="${u.id}" aria-label="Perfil de ${esc(nome)}" title="Mudar de perfil" ${eu ? 'disabled title="Você não pode mudar o seu próprio perfil"' : ''}>${opcoesPapel(u.papel)}</select>
+    <div class="acts" style="display:contents"><button class="btn small" data-act="snabrir" data-tipo="email" data-id="${u.id}">Nova senha</button>
+    ${eu ? '<span></span>' : conf ? `<button class="btn small danger" data-act="deluser" data-id="${u.id}">Confirmar</button>` : `<button class="btn small" data-act="askdel" data-k="u:${u.id}">Excluir</button>`}</div>
+    ${estado.senhaEdit?.tipo === 'email' && estado.senhaEdit.id === u.id ? formSenha('email', u.id, nome) : ''}</div>`;
+}
+
+// ＋ Adicionar pessoa num perfil: o perfil já vem escolhido. No Admin root a pessoa é opcional (vale o nome digitado).
+function formNovoUsuario(chave) {
+  const root = semCadastro(chave);
+  return `<form id="f-user" class="pf-novo" autocomplete="off">
+    <input type="hidden" id="u-papel" value="${esc(chave)}">
+    <label class="field">${root ? 'Pessoa da corrente (opcional)' : 'Pessoa da corrente'}<select id="u-pessoa" data-act="pessoanova"><option value="">— escolha a pessoa —</option><option value="${PESSOA_NOVA}">＋ Cadastrar pessoa nova</option>${pessoasLivres().map((p) => `<option value="${p.id}">${esc(p.nome)}</option>`).join('')}</select></label>
+    <label class="field" id="u-nova-nome" hidden>Nome da pessoa<input type="text" id="u-nova-n" maxlength="80"></label>
+    <label class="field" id="u-nova-funcao" hidden>Função<select id="u-nova-f">${FUNCOES.map((f) => `<option value="${f.k}">${f.label}</option>`).join('')}<option value="${CURIMBA}">Curimba</option></select></label>
+    ${root ? '<label class="field" id="u-nome-campo">Nome (sem pessoa da corrente)<input type="text" id="u-nome" maxlength="80"></label>' : ''}
+    <label class="field">E-mail<input type="email" id="u-email" required autocomplete="off"></label>
+    <label class="field">Senha inicial<input type="password" id="u-senha" required minlength="8" autocomplete="new-password"></label>
+    <p class="muted" style="margin:0;font-size:.82rem">O nome vem do cadastro em Pessoas (quem não está lá pode ser cadastrado aqui mesmo). Passe o e-mail e a senha inicial para a pessoa; ela pode trocar a senha depois.</p>
+    <div class="row" style="gap:6px"><button class="btn primary small" type="submit">Dar acesso</button><button class="btn small" type="button" data-act="pfnovocancelar">Cancelar</button></div>
+  </form>`;
+}
+
+// Um perfil: as pessoas, o ＋ e o ⚙️. O Corrente não tem lista (é quem entra pela corrente), só o que ele pode fazer.
+function grupoPerfil(f, usuarios, buscando) {
+  const k = 'pf:' + f.chave;
+  const aberto = buscando || abertosRoot.has(k);
+  const corrente = f.chave === 'corrente';
+  const contagem = corrente ? 'toda a corrente' : `${usuarios.length} pessoa${usuarios.length === 1 ? '' : 's'}`;
+  let h = `<div class="pf-grupo${aberto ? ' aberto' : ''}"><button class="grp-h dobra" data-act="dobrarroot" data-k="${k}" aria-expanded="${aberto}">
+    <h2>${esc(f.nome)}</h2><span class="count">${contagem} <span class="seta" aria-hidden="true">${aberto ? '▾' : '▸'}</span></span></button>`;
+  if (!aberto) return h + '</div>';
+  if (corrente) {
+    h += '<p class="muted" style="margin:0;font-size:.85rem">O acesso da corrente: quem está em Pessoas entra com e-mail, celular ou CPF e a senha de números.</p>';
+  } else {
+    h += usuarios.length ? `<div class="pf-pessoas">${usuarios.map(linhaUsuario).join('')}</div>` : '<p class="muted" style="margin:0;font-size:.88rem">Ninguém neste perfil.</p>';
+    if (!buscando) {
+      h += estado.novoUsuarioPerfil === f.chave ? formNovoUsuario(f.chave)
+        : `<button class="btn small pf-mais" data-act="pfnovo" data-chave="${esc(f.chave)}">＋ Adicionar pessoa</button>`;
+    }
+  }
+  if (!buscando) {
+    const cfg = estado.perfilCfgAberto === f.chave;
+    h += `<button class="btn link small pf-cfg-bt" data-act="pfcfg" data-chave="${esc(f.chave)}" aria-expanded="${cfg}"><span aria-hidden="true">⚙️</span> O que este perfil pode fazer <span aria-hidden="true">${cfg ? '▾' : '▸'}</span></button>`;
+    if (cfg) h += configPerfil(f);
+  }
+  return h + '</div>';
+}
+
+function cardAcessos() {
+  const lista = estado.perfisCfg || [];
+  const semLigacao = estado.usuarios.filter((u) => !u.pessoaId && !semCadastro(u.papel)).length;
+  let h = `<div class="card adm root acessos">${cabRoot('acessos', '<span aria-hidden="true">👥</span> Acessos e perfis', `${estado.usuarios.length}${semLigacao ? ` <span class="badge lic">${semLigacao} sem cadastro</span>` : ''}`)}`;
+  if (!abertosRoot.has('acessos')) return h + '</div>';
+  const termo = paraBusca(estado.usBusca).trim();
+  const achou = (u) => !termo || paraBusca(nomeDe(u) + ' ' + u.email).includes(termo);
+  h += `<p class="muted" style="margin:0;font-size:.85rem">Toque no perfil para ver quem tem acesso e dar acesso a mais alguém. Em <b>⚙️</b>, o que o perfil pode ver e editar.</p>
+    <div class="acessos-topo"><input type="text" id="us-busca" value="${esc(estado.usBusca || '')}" placeholder="Buscar pessoa por nome ou e-mail" aria-label="Buscar pessoa com acesso" autocomplete="off">
+      <button class="btn small" data-act="novoperfil">＋ Novo perfil</button></div>`;
+  if (estado.novoPerfil) {
+    h += `<form id="f-perfilnovo" class="pf-novo" autocomplete="off">
+      <label class="field">Nome do novo perfil<input type="text" id="pn-nome" maxlength="40" required placeholder="Ex.: Admin giras"></label>
+      <label class="field">Copiar acessos de<select id="pn-base"><option value="">— nenhum —</option>${lista.filter((f) => f.chave !== 'root').map((f) => `<option value="${esc(f.chave)}">${esc(f.nome)}</option>`).join('')}</select></label>
+      <div class="row" style="gap:6px"><button class="btn small primary" type="submit">Criar</button><button class="btn small" type="button" data-act="cancelanovoperfil">Cancelar</button></div></form>`;
+  }
+  // Buscando: só os perfis com alguém achado, já abertos.
+  const grupos = lista.map((f) => [f, estado.usuarios.filter((u) => u.papel === f.chave && achou(u))])
+    .filter(([f, us]) => !termo || (us.length && f.chave !== 'corrente'));
+  if (termo && !grupos.length) h += '<p class="muted" style="margin:0">Ninguém encontrado.</p>';
+  return h + `<div class="pf-grupos">${grupos.map(([f, us]) => grupoPerfil(f, us, !!termo)).join('')}</div></div>`;
 }
 
 // Nomes e textos da casa que antes ficavam fixos no app (shared/config.js).
@@ -253,10 +286,14 @@ export const cliques = {
   ajsemdobrar() { estado.ajUi.semAberto = !estado.ajUi.semAberto; avisar(); },
   ajsemsenha(el) { Object.assign(estado.ajUi, { pessoa: el.dataset.id, campo: 'senha' }); estado.senhaEdit = null; avisar(); },
   novoperfil() { estado.novoPerfil = true; avisar(); document.getElementById('pn-nome')?.focus(); },
+  // ＋ Adicionar pessoa (um formulário aberto por vez) e ⚙️ O que este perfil pode fazer (um por vez).
+  pfnovo(el) { estado.novoUsuarioPerfil = el.dataset.chave; avisar(); document.getElementById('u-pessoa')?.focus(); },
+  pfnovocancelar() { estado.novoUsuarioPerfil = null; avisar(); },
+  pfcfg(el) { estado.perfilCfgAberto = estado.perfilCfgAberto === el.dataset.chave ? null : el.dataset.chave; estado.confirm = null; avisar(); },
   cancelanovoperfil() { estado.novoPerfil = false; avisar(); },
   async delperfil(el) {
     estado.confirm = null;
-    if (await acaoUsuarios('excluirPerfil', { chave: el.dataset.chave })) { estado.perfilSel = 'admin'; toast('Perfil excluído.'); }
+    if (await acaoUsuarios('excluirPerfil', { chave: el.dataset.chave })) { estado.perfilCfgAberto = null; toast('Perfil excluído.'); }
   },
 };
 
@@ -268,7 +305,9 @@ export async function criarPerfil() {
   const base = (estado.perfisCfg || []).find((f) => f.chave === document.getElementById('pn-base').value);
   if (await acaoUsuarios('perfil', { nome, abas: base?.abas || {} })) {
     estado.novoPerfil = false;
-    estado.perfilSel = (estado.perfisCfg.find((f) => !antes.has(f.chave)) || {}).chave || estado.perfilSel;
+    // O perfil novo já abre, com o ⚙️ aberto para marcar as abas.
+    const chave = (estado.perfisCfg.find((f) => !antes.has(f.chave)) || {}).chave;
+    if (chave) { abertosRoot.add('pf:' + chave); estado.perfilCfgAberto = chave; }
     toast(base ? `Perfil ${nome} criado com os acessos de ${base.nome}.` : `Perfil ${nome} criado. Marque as abas que ele pode ver e editar.`);
     avisar();
   }
@@ -314,7 +353,6 @@ export async function renomear(form) {
 export const mudancas = {
   ...mudancasGiraAntiga,
   ...mudancasEscala,
-  perfilsel(t) { estado.perfilSel = t.value; estado.confirm = null; avisar(); },
   // Editar inclui ver; tirar o ver tira o editar.
   pfaba(t) {
     const f = (estado.perfisCfg || []).find((x) => x.chave === t.dataset.chave);
@@ -335,12 +373,6 @@ export const mudancas = {
     document.getElementById('u-nova-nome').hidden = !nova;
     document.getElementById('u-nova-funcao').hidden = !nova;
     if (nova) document.getElementById('u-nova-n').focus();
-  },
-  // Novo usuário: root pode ter só um nome; os outros escolhem a pessoa da corrente.
-  papelnovo(t) {
-    const root = semCadastro(t.value);
-    document.getElementById('u-nome-campo').hidden = !root;
-    document.getElementById('u-pessoa-rotulo').textContent = root ? 'Pessoa da corrente (opcional)' : 'Pessoa da corrente';
   },
 };
 
@@ -384,6 +416,8 @@ export async function enviarFormulario() {
   }
   try {
     await criarUsuario({ email, senha, papel, ...(pessoaId ? { pessoaId } : { nome }) });
-    toast(`Usuário ${nome} criado.`);
+    estado.novoUsuarioPerfil = null;
+    toast(`${nome} agora tem acesso.`);
+    avisar();
   } catch (e) { toast(nova ? `${nome} foi cadastrada em Pessoas, mas o usuário não foi criado: ${e.message}` : e.message); avisar(); }
 }
