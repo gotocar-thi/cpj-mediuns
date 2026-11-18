@@ -216,7 +216,7 @@ function amaci() {
     ...copia(AMACI_DEMO), turmaNome, admin: true, turmas: db.turmas.map((t) => ({ ...t, orixas: t.id === id(501) ? ['oxala'] : [] })),
     presenca: { hoje, amacis, pct: feitos.length ? Math.round((feitos.filter((a) => a.status === 'p').length / feitos.length) * 100) : null },
     presencaAdmin: {
-      hoje, amacis: evs.filter((e) => e.data <= hoje).reverse().map(({ id: i, data, nome, turmas }) => ({ id: i, data, nome, turmas })),
+      hoje, amacis: evs.filter((e) => e.data <= hoje).reverse().map(({ id: i, data, nome, turmas, retroativo }) => ({ id: i, data, nome, turmas, retroativo: !!retroativo })),
       turmas: copia(db.turmas), alunos: copia(db.alunos), marcas: copia(presAmaci),
     },
   };
@@ -466,6 +466,10 @@ function escrever(metodo, caminho, b) {
     if (!p) throw new ErroDemo(404, 'Pessoa não encontrada.');
     Object.assign(p, b);
     return copia(p);
+  }
+  if (caminho === '/giras' && b?.acao === 'excluirEvento') {
+    db.eventos = db.eventos.filter((e) => e.id !== b.id);
+    return copia(db.eventos);
   }
   if (caminho === '/giras' && b?.acao === 'evento' && !b.id) {
     db.eventos.push({ id: id(3000 + db.eventos.length), data: b.data, nome: String(b.nome || '').trim(), tipo: b.tipo, retroativo: b.retroativo === true });
