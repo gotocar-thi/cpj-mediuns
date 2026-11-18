@@ -1967,6 +1967,25 @@ test('ver como: o root vê o app como uma pessoa ou um aluno, só leitura; os ou
   assert.notEqual((await comVerComo(USER, 'p:' + ana.id)).json.nome, 'Ana');
 });
 
+test('aluno com o acesso bloqueado: não entra e a sessão aberta cai; desbloquear devolve', async () => {
+  const t09 = (await api('GET', '/api/pessoas?lista=alunos', ADMIN)).json.turmas.find((t) => t.nome === 'Turma 09').id;
+  await api('POST', '/api/pessoas', ADMIN, { acao: 'alunos', nome: 'Aluno Bloqueado', turmaId: t09 });
+  const aluno = await tokenAluno('aluno bloqueado');
+  const id = (await api('GET', '/api/pessoas?lista=alunos', ADMIN)).json.alunos.find((a) => a.nome === 'Aluno Bloqueado').id;
+  const bloq = (v) => api('POST', '/api/pessoas', ADMIN, { acao: 'aluno', id, bloqueado: v });
+  assert.equal((await api('GET', '/api/auth/me', aluno)).status, 200);
+  assert.equal((await api('POST', '/api/pessoas', ADMIN, { acao: 'aluno', id, bloqueado: 'sim' })).status, 400);
+  assert.equal((await api('POST', '/api/pessoas', USER, { acao: 'aluno', id, bloqueado: true })).status, 403, 'só quem edita Alunos');
+  const r = (await bloq(true)).json;
+  assert.equal(r.alunos.find((a) => a.id === id).bloqueado, true);
+  const me = await api('GET', '/api/auth/me', aluno);
+  assert.equal(me.status, 401);
+  assert.match(me.json.erro, /bloqueado/);
+  await bloq(false);
+  assert.equal((await api('GET', '/api/auth/me', aluno)).status, 200, 'desbloqueado: a mesma sessão volta a valer');
+  await api('POST', '/api/pessoas', ADMIN, { acao: 'excluirAluno', id });
+});
+
 test('gestão de conduta e risco: interruptor do root; só o root lê; quem abriu edita até ser lido e vê só a resposta publicada', async () => {
   const ana = await entrarComSenha('Ana');
   const lista = async (t) => (await api('GET', '/api/giras?lista=conduta', t)).json.relatos;

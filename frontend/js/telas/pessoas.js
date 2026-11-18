@@ -367,11 +367,12 @@ function linhaAluno(a, turmas, editar, escolhendo) {
         <label class="field">Turma<select id="al-turma">${!a.turmaId ? '<option value="" selected>Sem turma</option>' : ''}${turmas.map((t) => `<option value="${t.id}" ${t.id === a.turmaId ? 'selected' : ''}>${esc(t.nome)}</option>`).join('')}</select></label>
       </div>
       ${camposAluno('al', d, a.id)}
+      <label class="of-sw al-bloq"><input type="checkbox" role="switch" id="al-bloq" ${a.bloqueado ? 'checked' : ''}><span class="of-sw-t" aria-hidden="true"></span><span><b>Bloquear acesso ao app</b><small class="muted">Não entra; o cadastro continua.</small></span></label>
       <div class="al-form-bts"><button class="btn small" type="button" data-act="cancelaluno">Cancelar</button><button class="btn small primary" type="submit">Salvar</button></div></form>`;
   }
   const d = estado.alunos?.dados?.[a.id];
   const np = estado.alunos?.pendencias?.[a.id]?.length || 0;
-  return `<div class="pp al-l"><div class="pp-l1"><span class="nm">${esc(a.nome)}${np ? ` <span class="badge re" title="Pagamentos em atraso">${np} em atraso</span>` : ''}${d?.nomeCompleto && d.nomeCompleto !== a.nome ? `<small class="muted al-nc">${esc(d.nomeCompleto)}</small>` : ''}</span>
+  return `<div class="pp al-l${a.bloqueado ? ' al-bloqueado' : ''}"><div class="pp-l1"><span class="nm">${esc(a.nome)}${a.bloqueado ? ' <span class="badge re" title="Acesso ao app bloqueado">🚫 bloqueado</span>' : ''}${np ? ` <span class="badge re" title="Pagamentos em atraso">${np} em atraso</span>` : ''}${d?.nomeCompleto && d.nomeCompleto !== a.nome ? `<small class="muted al-nc">${esc(d.nomeCompleto)}</small>` : ''}</span>
     <span class="pp-bts">${pode('usuarios:gerenciar') ? `<button class="btn small pp-bt pp-ico" type="button" data-act="senhaaluno" data-id="${a.id}" data-nome="${esc(a.nome)}" aria-label="Definir senha de ${esc(a.nome)}" title="Definir senha"><span aria-hidden="true">🔑</span></button>` : ''}<button class="btn small pp-bt pp-ico" data-act="editaluno" data-id="${a.id}" aria-label="Editar ${esc(a.nome)}" title="Editar"><span aria-hidden="true">✎</span></button><button class="btn small pp-bt pp-ico pp-del" data-act="excluirask" data-tipo="al" data-id="${a.id}" aria-label="Excluir ${esc(a.nome)}" title="Excluir"><span aria-hidden="true">🗑️</span></button></span></div></div>`;
 }
 
@@ -910,6 +911,8 @@ export async function salvarAluno(form) {
   const patch = lerCamposAluno('al', estado.alunos?.dados?.[id] || {}, id);
   if (!a || nome !== a.nome) patch.nome = nome;
   if (!a || turmaId !== (a.turmaId || '')) patch.turmaId = turmaId;
+  const bloqueado = !!document.getElementById('al-bloq')?.checked;
+  if (!!a?.bloqueado !== bloqueado) patch.bloqueado = bloqueado;
   if (!Object.keys(patch).length) { estado.editAluno = null; estado.alunoCpfRemover = null; estado.alunoRasc = null; avisar(); return; }
   // Se der erro (CPF ou e-mail inválido), o formulário continua aberto com o que foi digitado.
   if (await acaoAlunos('aluno', { id, ...patch })) {
@@ -918,7 +921,7 @@ export async function salvarAluno(form) {
     estado.alunoCpfRemover = null;
     estado.alunoCpfVisto = null;
     estado.alunoRasc = null;
-    toast('Aluno alterado.');
+    toast('bloqueado' in patch ? (patch.bloqueado ? 'Acesso ao app bloqueado.' : 'Acesso ao app liberado.') : 'Aluno alterado.');
     avisar();
   }
 }

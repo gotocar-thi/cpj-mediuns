@@ -9,7 +9,7 @@
 // Estrutura: veja db/ESTRUTURA-ESQUEMA.md para o mapa de versões, domínios e
 // quais migrações foram testadas no Postgres.
 
-export const VERSAO = 138;  // v138: Pgto atrasado com a turma do aluno e leitura do ASAAS mais leve (clientes guardados)
+export const VERSAO = 139;  // v139: bloquear o acesso do aluno ao app (aba Pessoas → Alunos)
 
 import { PERFIS_PADRAO } from '../shared/permissoes.js';
 
@@ -5906,22 +5906,6 @@ export const MIGRACOES = [
        or (t is distinct from turma_consulentes_id() and ('alunos' = any(g) or (t is null and 'alunos:sem' = any(g)))), false)
    $$`,
   // A lista de alunos (aba Pessoas, oferendas, Iemanjá) sem a turma Consulentes e sem quem está nela.
-  `create or replace function alunos_estado(p jsonb default '{}'::jsonb)
-   returns jsonb language sql stable as $$
-     select jsonb_build_object(
-       'turmas', coalesce((select jsonb_agg(jsonb_build_object('id', id, 'nome', nome) order by lower(nome)) from turmas_alunos
-                           where id is distinct from turma_consulentes_id()), '[]'::jsonb),
-       'alunos', coalesce((select jsonb_agg(jsonb_build_object('id', id, 'nome', nome, 'turmaId', turma_id) order by lower(nome)) from alunos
-                           where saida is null and turma_id is distinct from turma_consulentes_id()), '[]'::jsonb))
-   $$`,
-  // Sessão do aluno: diz se é consulente e, se for, o que o perfil Consulentes vê.
-  `create or replace function aluno_acesso(p jsonb)
-   returns jsonb language sql stable as $$
-     select jsonb_build_object('id', a.id, 'nome', a.nome, 'turmaId', a.turma_id, 'temSenha', a.pin_hash is not null, 'pinVersao', a.pin_versao,
-                               'consulente', a.turma_id is not distinct from turma_consulentes_id() and a.turma_id is not null,
-                               'abasConsulente', (select abas from perfis where chave = 'consulente'))
-     from alunos a where a.id = (p ->> 'id')::uuid and a.saida is null
-   $$`,
   // Bloco Cadastros pelo login: os novos (cadastro pelo login ainda sem turma) e os consulentes.
   `create or replace function cadastros_login(p jsonb default '{}'::jsonb)
    returns jsonb language sql stable as $$
@@ -6064,5 +6048,34 @@ export const MIGRACOES = [
    returns jsonb language sql stable as $$
      select coalesce(jsonb_agg(jsonb_build_object('pessoaId', c.pessoa_id, 'hash', c.hash)), '[]'::jsonb)
        from pessoas_cpf c join pessoas pe on pe.id = c.pessoa_id where pe.saida is null and c.hash <> ''
+   $$`,
+  // ================================================== v139: bloquear o acesso do aluno ao app
+  // Quem edita Alunos marca "Bloquear acesso ao app": o login recusa e a sessão aberta cai no próximo pedido.
+  // O cadastro, as presenças e o resto ficam como estão; desmarcar devolve o acesso.
+  `alter table alunos add column if not exists bloqueado boolean not null default false`,
+  `create or replace function alunos_estado(p jsonb default '{}'::jsonb)
+   returns jsonb language sql stable as $$
+     select jsonb_build_object(
+       'turmas', coalesce((select jsonb_agg(jsonb_build_object('id', id, 'nome', nome) order by lower(nome)) from turmas_alunos
+                           where id is distinct from turma_consulentes_id()), '[]'::jsonb),
+       'alunos', coalesce((select jsonb_agg(jsonb_build_object('id', id, 'nome', nome, 'turmaId', turma_id, 'bloqueado', bloqueado) order by lower(nome)) from alunos
+                           where saida is null and turma_id is distinct from turma_consulentes_id()), '[]'::jsonb))
+   $$`,
+  // Sessão do aluno: diz se é consulente (e o que o perfil Consulentes vê) e se o acesso está bloqueado.
+  `create or replace function aluno_acesso(p jsonb)
+   returns jsonb language sql stable as $$
+     select jsonb_build_object('id', a.id, 'nome', a.nome, 'turmaId', a.turma_id, 'temSenha', a.pin_hash is not null, 'pinVersao', a.pin_versao,
+                               'consulente', a.turma_id is not distinct from turma_consulentes_id() and a.turma_id is not null,
+                               'abasConsulente', (select abas from perfis where chave = 'consulente'), 'bloqueado', a.bloqueado)
+     from alunos a where a.id = (p ->> 'id')::uuid and a.saida is null
+   $$`,
+  // p = { id, bloqueado }
+  `create or replace function aluno_bloquear(p jsonb)
+   returns jsonb language plpgsql as $$
+   begin
+     update alunos set bloqueado = coalesce((p ->> 'bloqueado')::boolean, false) where id = (p ->> 'id')::uuid and saida is null;
+     if not found then raise exception 'Aluno não encontrado.'; end if;
+     return alunos_estado();
+   end;
    $$`,
 ];

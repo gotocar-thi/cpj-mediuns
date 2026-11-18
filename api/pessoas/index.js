@@ -6,7 +6,7 @@
 //      quem edita Alunos recebe também { dados: { id: { nomeCompleto, celular, email, temCpf, cpf (mascarado) } }, pendencias: { id: [cobranças vencidas] }, pendenciasEm }
 // GET  /api/pessoas?lista=perfis  { total, chefe, frente, orixa, cabeca, cabecaPessoas }  (Histórico → Estatísticas e bloco do ano da aba Gira: só contagens do Perfil)
 // POST /api/pessoas            { acao: 'alunos', nome: "A, B", turmaId, nomeCompleto?, cpf?, email?, celular? (dados só com um nome) }
-//                              · { acao: 'aluno', id, nome?, turmaId?, nomeCompleto?, cpf? ('' apaga), email?, celular? } · { acao: 'alunoCpf', id } → { cpf }
+//                              · { acao: 'aluno', id, nome?, turmaId?, nomeCompleto?, cpf? ('' apaga), email?, celular?, bloqueado? } · { acao: 'alunoCpf', id } → { cpf }
 //                              { acao: 'promoverAlunoCPJ', id } (aluno → Corrente como Cambone)
 //                              { acao: 'excluirAluno', id } · { acao: 'turma', id?, nome } (com id = renomear)
 //                              · { acao: 'excluirTurma', id } (alunos passam para sem turma) → { turmas, alunos }
@@ -56,9 +56,11 @@ async function acaoAlunos(b, eu) {
     }
     if ('turmaId' in b) p.turmaId = turmaId(b.turmaId);
     const d = dadosAluno(b);   // CPF, nome completo, e-mail e celular (o que vier)
+    if ('bloqueado' in b && typeof b.bloqueado !== 'boolean') throw new HttpError(400, 'Informe se o acesso fica bloqueado.');
     let estado = null;
     if ('nome' in p || 'turmaId' in p) estado = await db.rpc('aluno_atualizar', p);
     if (temDados(d)) await salvarDadosAluno(p.id, d, eu);
+    if ('bloqueado' in b) estado = await db.rpc('aluno_bloquear', { id: p.id, bloqueado: b.bloqueado });   // o login e a sessão do aluno recusam
     return estado && !temDados(d) ? estado : db.rpc('alunos_estado');
   }
   const brutos = Array.isArray(b.nomes) ? b.nomes : String(b.nome || '').split(/[,;\n]+/);

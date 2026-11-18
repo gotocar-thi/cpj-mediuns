@@ -72,7 +72,7 @@ const db = {
   alunos: [
     { id: id(601), nome: 'Aline Ferreira', turmaId: id(501) },
     { id: id(602), nome: 'Bruno Costa', turmaId: id(501) },
-    { id: id(603), nome: 'Cecília Ramos', turmaId: id(502) },
+    { id: id(603), nome: 'Cecília Ramos', turmaId: id(502), bloqueado: true },
   ],
   videos: [
     { id: id(701), data: dia(proximoSabado - 7), evento: 'Gira de Preto Velho', youtube: 'dQw4w9WgXcQ', classes: [] },
@@ -477,6 +477,12 @@ function escrever(metodo, caminho, b) {
   if (caminho === '/oferendas' && b?.acao === 'guias') return compras.acaoGuias(b);
   if (caminho === '/oferendas' && b?.acao === 'asaas') return compras.acaoAsaas(b);
   if (caminho === '/oferendas' && b?.acao === 'iemanja') return acaoIemanja(b);
+  // Bloquear / liberar o acesso do aluno (Editar aluno): só esse campo funciona na demonstração.
+  if (caminho === '/pessoas' && b?.acao === 'aluno' && 'bloqueado' in b && Object.keys(b).length === 3) {
+    const a = db.alunos.find((x) => x.id === b.id);
+    if (a) a.bloqueado = !!b.bloqueado;
+    return { turmas: copia(db.turmas), alunos: copia(db.alunos) };
+  }
   if (caminho === '/pessoas' && b?.acao === 'amaciPresenca') {
     const ev = db.eventos.find((e) => e.id === b.eventoId && e.tipo === 'amaci');
     if (!ev || ev.data > dia(0)) throw new ErroDemo(409, 'A presença só pode ser confirmada no dia do amaci.');

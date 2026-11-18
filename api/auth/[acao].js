@@ -172,6 +172,8 @@ async function sessaoDe(c, versao) {
     const usuario = { id: null, nome: c.nome, email: '', papel: 'corrente', papelNome: s.papelNome, pessoaId: c.id, abas: s.abas };
     return { token: await emitirTokenCorrente(c.nome, c.id, s.pinVersao), usuario: publico(usuario) };
   }
+  // Aluno com o acesso bloqueado (aba Pessoas): não entra.
+  if ((await db.rpc('aluno_acesso', { id: c.id }))?.bloqueado) throw new HttpError(403, 'Seu acesso ao app está bloqueado. Fale com a administração.');
   const usuario = { id: null, nome: c.nome, email: '', papel: 'alunos', papelNome: 'Aluno', grupo: 'alunos', pessoaId: null,
     permissoes: PERMISSOES_GRUPO.alunos || [] };
   return { token: await emitirTokenGrupo('alunos', c.id, c.nome, versao), usuario: publico(usuario) };

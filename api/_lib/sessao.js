@@ -22,6 +22,8 @@ export async function exigir(req, permissao) {
       : await db.rpc('curimba_aluno_acesso', { id: sessao.registroId });
     if (!aluno) throw new HttpError(401, 'Cadastro não encontrado. Entre de novo.');
     if (sessao.grupo === 'alunos' && aluno.pinVersao !== sessao.versao) throw new HttpError(401, 'Sessão expirada. Entre de novo.');
+    // Acesso bloqueado na aba Pessoas: a sessão aberta cai.
+    if (sessao.grupo === 'alunos' && aluno.bloqueado) throw new HttpError(401, 'Seu acesso ao app está bloqueado. Fale com a administração.');
     // Consulente (aluno na turma Consulentes): o que o perfil Consulentes vê, escolhido pelo root.
     const consulente = sessao.grupo === 'alunos' && !!aluno.consulente;
     const permissoes = consulente ? permissoesConsulente(aluno.abasConsulente) : PERMISSOES_GRUPO[sessao.grupo] || [];

@@ -438,6 +438,10 @@ body.deslogado header.top{min-height:0;padding-bottom:0}
 .of-sw{display:flex;align-items:center;gap:8px;font-size:.9rem;cursor:pointer;flex-wrap:wrap}
 .of-sw input{position:absolute;opacity:0;width:1px;height:1px}
 .of-sw-t{flex:none;width:38px;height:22px;border-radius:22px;background:var(--line);position:relative;transition:background .15s}
+.al-bloq{padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:var(--bg)}
+.al-bloq>span:last-child{display:grid;gap:1px}
+.al-bloq small{font-size:.8rem}
+.al-bloqueado .nm{opacity:.75}
 .of-sw-t::after{content:"";position:absolute;top:3px;left:3px;width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.3);transition:transform .15s}
 .of-sw input:checked + .of-sw-t{background:var(--ok)}
 .of-sw input:checked + .of-sw-t::after{transform:translateX(16px)}
