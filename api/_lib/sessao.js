@@ -1,7 +1,7 @@
 // Identifica quem está chamando e confere a permissão.
 // As permissões saem das abas do perfil (tabela perfis), que o admin root edita.
 
-import { HttpError } from './http.js';
+import { HttpError, validarId } from './http.js';
 import { db } from './db.js';
 import { lerToken } from './senhas.js';
 import { permissoesDe, permissoesConsulente, PERMISSOES_GRUPO } from '../../shared/permissoes.js';
@@ -55,8 +55,37 @@ export async function exigir(req, permissao) {
   // Trocar a senha ou o perfil muda a versão e encerra as sessões antigas.
   if (!usuario || usuario.sessaoVersao !== sessao.versao) throw new HttpError(401, 'Sessão expirada. Entre de novo.');
   usuario.permissoes = permissoesDe(usuario.papel, usuario.abas);
+  // Root vendo o app como outra pessoa (cabeçalho X-Ver-Como: p:<pessoa> ou a:<aluno>).
+  const alvo = String(req.headers['x-ver-como'] || '').trim();
+  if (alvo && usuario.permissoes.includes('usuarios:gerenciar')) return verComo(req, alvo, permissao);
   if (permissao && !usuario.permissoes.includes(permissao)) throw new HttpError(403, 'Seu perfil não tem permissão para isso.');
   return usuario;
+}
+
+// Root vê o app como uma pessoa da corrente (CPJ ou curimba) ou um aluno, com os dados reais dela, só para olhar:
+// qualquer gravação é recusada. As permissões são as da pessoa.
+async function verComo(req, alvo, permissao) {
+  if (req.method !== 'GET') throw new HttpError(403, 'Vendo como outra pessoa: só para olhar. Volte para a visão Root para alterar.');
+  const [tipo, id] = [alvo.slice(0, 2), alvo.slice(2)];
+  let quem;
+  if (tipo === 'p:') {
+    const s = await db.rpc('corrente_sessao', { pessoaId: validarId(id, 'Pessoa') });
+    if (!s) throw new HttpError(404, 'Pessoa não encontrada no cadastro.');
+    quem = { id: null, nome: s.nome, email: '', papel: 'corrente', papelNome: s.papelNome, pessoaId: id,
+      temSenha: s.temSenha, permissoes: permissoesDe('corrente', s.abas) };
+  } else if (tipo === 'a:') {
+    const aluno = await db.rpc('aluno_acesso', { id: validarId(id, 'Aluno') });
+    if (!aluno) throw new HttpError(404, 'Aluno não encontrado no cadastro.');
+    const consulente = !!aluno.consulente;
+    quem = { id: null, nome: aluno.nome, email: '', papel: 'alunos', papelNome: consulente ? 'Consulente' : 'Aluno', consulente,
+      grupo: 'alunos', alunoId: aluno.id, turmaId: aluno.turmaId || null, curimbaAlunoId: null, pessoaId: null, temSenha: !!aluno.temSenha,
+      permissoes: consulente ? permissoesConsulente(aluno.abasConsulente) : PERMISSOES_GRUPO.alunos || [] };
+  } else {
+    throw new HttpError(400, 'Visão inválida.');
+  }
+  quem.verComo = true;
+  if (permissao && !quem.permissoes.includes(permissao)) throw new HttpError(403, 'Este acesso não tem permissão para isso.');
+  return quem;
 }
 
 // Dono de uma oração ou foto: a pessoa da corrente (a mesma pelo acesso da corrente ou pelo e-mail) ou o usuário sem cadastro.

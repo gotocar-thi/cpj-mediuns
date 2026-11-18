@@ -1,7 +1,7 @@
 // Estado da tela e todas as chamadas ao backend.
 // As telas leem "estado" e chamam as funções daqui; nada fala com a API direto.
 
-import { api } from './api.js';
+import { api, definirVerComo } from './api.js';
 import { token, emDemo } from './auth.js';
 import { giraVazia, ordenarPessoas, pessoasDe, expandirRetrato } from '/shared/regras.js';
 import { permissoesDe, PERFIS_PADRAO, PERMISSOES_GRUPO } from '/shared/permissoes.js';
@@ -66,6 +66,9 @@ export const estado = {
   ofUi: { editar: null, editarItem: null, compartilhar: null, img: null },    // formulário "Cadastrar gira antiga" (aba Histórico)       // id da licença em edição (aba Pessoas)      // id da pessoa com o nome em edição (aba Pessoas)        // data da gira com "Ajuste manual" ligado (giras passadas já vêm ligadas)
   salvando: 0,
   visaoRoot: 'root',    // visão simulada pelo root: root, cpj, alunos ou curimba
+  verComo: '',          // root vendo como uma pessoa do cadastro: 'p:<pessoa>' ou 'a:<aluno>' ('' = visão genérica)
+  meRoot: null,         // o "me" do root enquanto estado.me é o da pessoa escolhida
+  vcLista: { pessoas: [], alunos: [] }, // quem o root pode escolher em cada visão (do cadastro, lido como root)
   permCorrente: [],     // permissões do perfil Corrente, usadas na visão CPJ
 };
 
@@ -81,6 +84,8 @@ export function aoMudar(fn) { ouvinte = fn; }
 export const avisar = () => ouvinte();
 
 // ---------- leitura ----------
+// Root de verdade, mesmo vendo o app como outra pessoa.
+export const ehRootReal = () => (estado.meRoot || estado.me)?.papel === 'root';
 export const visaoAtiva = () => estado.me?.papel === 'root' ? estado.visaoRoot : estado.me?.grupo || '';
 // Sub-aba Iemanjá: na visão CPJ/Alunos do root, vale o que a corrente vê.
 export const veIemanja = () => visaoAtiva() !== 'curimba' && !!(estado.me?.papel === 'root' && estado.visaoRoot !== 'root' ? estado.me.iemanjaPublica : estado.me?.iemanjaAba);
@@ -122,7 +127,7 @@ export async function carregarTudo() {
   estado.me = me;
   estado.conduta = null;   // relatos são de quem está logado: busca de novo
   estado.atrasos = null;   // idem para os pagamentos em atraso
-  estado.visaoRoot = 'root';
+  if (!estado.verComo) estado.visaoRoot = 'root';
   if (me.grupo === 'alunos') {
     estado.eventos = r.eventos;
     estado.pessoas = [];
@@ -154,10 +159,58 @@ export async function carregarTudo() {
   avisar();
 }
 
+// Listas das abas que dependem de quem está logado: trocar de pessoa busca de novo.
+function limparListasDaPessoa() {
+  Object.assign(estado, { oferendas: null, iemanja: null, ervas: null, guias: null, amaci: null, asaas: null, transparencia: null, perfil: null,
+    anamnese: null, fotosPessoa: {}, curimba: null, minhaCurimba: null, videos: null, fotos: null, conduta: null, atrasos: null, usuarios: null,
+    perfisCfg: null, senhas: null, eventosTipos: null, stPerfis: null, ervasHist: null, img: null, confirm: null });
+}
+
+// Root vendo o app como uma pessoa do cadastro, com os dados reais dela (só leitura; o servidor recusa gravações).
+// '' volta para a visão genérica (o app como root, simulando só o que a visão mostra).
+export async function verComoPessoa(chave) {
+  if (!ehRootReal()) return;
+  const visao = estado.visaoRoot;
+  limparListasDaPessoa();
+  if (chave) {
+    estado.meRoot ||= estado.me;
+    estado.verComo = chave;
+    definirVerComo(chave);
+  } else {
+    estado.verComo = '';
+    definirVerComo('');
+    if (estado.meRoot) estado.me = estado.meRoot;
+    estado.meRoot = null;
+  }
+  try {
+    await carregarTudo();
+  } catch (e) {
+    toast(e.message);
+    if (chave) { await verComoPessoa(''); return; }
+  }
+  if (!chave && visao !== 'root') await mudarVisaoRoot(visao);
+}
+
+// Quem pode ser escolhido em cada visão: CPJ (corrente, menos a curimba), Curimba e Alunos — sempre lido como root.
+async function prepararListaVerComo() {
+  const pessoas = (estado.pessoas || []).filter((p) => !p.saida).map((p) => ({ chave: 'p:' + p.id, nome: p.nome, funcao: p.funcao }));
+  let alunos = [];
+  try { alunos = (await api('GET', '/pessoas?lista=alunos')).alunos.map((a) => ({ chave: 'a:' + a.id, nome: a.nome })); } catch { /* sem a lista */ }
+  const ordem = (l) => l.sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+  estado.vcLista = { pessoas: ordem(pessoas), alunos: ordem(alunos) };
+}
+
 // Root pode alternar a apresentação; o backend continua reconhecendo o usuário como root.
 export async function mudarVisaoRoot(visao) {
-  if (estado.me?.papel !== 'root') return;
+  if (!ehRootReal()) return;
   if (!['root', 'cpj', 'alunos', 'curimba'].includes(visao)) return;
+  // Saindo de "ver como": volta a ser o root antes de trocar a visão.
+  if (estado.verComo) {
+    estado.visaoRoot = visao;
+    await verComoPessoa('');   // já refaz a visão escolhida
+    return;
+  }
+  if (visao !== 'root') await prepararListaVerComo();
   if (visao === 'cpj') {
     let abas = PERFIS_PADRAO.find((p) => p.chave === 'corrente').abas;
     try { abas = (await api('GET', '/usuarios?lista=perfis')).find((p) => p.chave === 'corrente')?.abas || abas; } catch { /* usa o padrão */ }
@@ -965,7 +1018,7 @@ export function salvarPerfilAgora() {
   clearTimeout(timerPerfil);
   const enviar = perfilPendente;
   perfilPendente = null;
-  if (emDemo()) { api('POST', '/auth/perfil', { perfil: enviar }).catch(() => {}); return; }
+  if (emDemo() || estado.verComo) { api('POST', '/auth/perfil', { perfil: enviar }).catch(() => {}); return; }
   try {
     fetch('/api/auth/perfil', { method: 'POST', keepalive: true,
       headers: { Authorization: 'Bearer ' + token(), 'Content-Type': 'application/json' }, body: JSON.stringify({ perfil: enviar }) });

@@ -1935,6 +1935,31 @@ test('amaci: presença do aluno no dia e no terreiro; o root marca presença ou 
   await api('POST', '/api/pessoas', ADMIN, { acao: 'amaci', op: 'publicar', publicada: false });
 });
 
+test('ver como: o root vê o app como uma pessoa ou um aluno, só leitura; os outros não', async () => {
+  const comVerComo = async (token, alvo, metodo = 'GET', rota = '/api/auth/me', corpo) => {
+    const r = await fetch(base + rota, { method: metodo, body: corpo ? JSON.stringify(corpo) : undefined,
+      headers: { Authorization: 'Bearer ' + token, 'X-Ver-Como': alvo, ...(corpo ? { 'Content-Type': 'application/json' } : {}) } });
+    return { status: r.status, json: await r.json().catch(() => null) };
+  };
+  const ana = (await api('GET', '/api/pessoas', ADMIN)).json.find((p) => p.nome === 'Ana');
+  const t09 = (await api('GET', '/api/pessoas?lista=alunos', ADMIN)).json.turmas.find((t) => t.nome === 'Turma 09').id;
+  await api('POST', '/api/pessoas', ADMIN, { acao: 'alunos', nome: 'Aluno Visto', turmaId: t09 });
+  const aluno = (await api('GET', '/api/pessoas?lista=alunos', ADMIN)).json.alunos.find((a) => a.nome === 'Aluno Visto');
+  const comoAna = (await comVerComo(ADMIN, 'p:' + ana.id)).json;
+  assert.equal(comoAna.nome, 'Ana');
+  assert.equal(comoAna.papel, 'corrente');
+  assert.ok(!comoAna.permissoes.includes('usuarios:gerenciar'), 'com as permissões da pessoa');
+  const comoAluno = (await comVerComo(ADMIN, 'a:' + aluno.id)).json;
+  assert.equal(comoAluno.nome, 'Aluno Visto');
+  assert.equal(comoAluno.grupo, 'alunos');
+  // Só leitura: qualquer gravação é recusada.
+  assert.equal((await comVerComo(ADMIN, 'p:' + ana.id, 'POST', '/api/giras', { acao: 'oracao', texto: 'teste' })).status, 403);
+  assert.equal((await comVerComo(ADMIN, 'x:123')).status, 400);
+  assert.equal((await comVerComo(ADMIN, 'p:00000000-0000-4000-8000-000000000000')).status, 404);
+  // Quem não é root: o cabeçalho é ignorado.
+  assert.notEqual((await comVerComo(USER, 'p:' + ana.id)).json.nome, 'Ana');
+});
+
 test('gestão de conduta e risco: interruptor do root; só o root lê; quem abriu edita até ser lido e vê só a resposta publicada', async () => {
   const ana = await entrarComSenha('Ana');
   const lista = async (t) => (await api('GET', '/api/giras?lista=conduta', t)).json.relatos;

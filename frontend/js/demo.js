@@ -4,7 +4,7 @@
 // as outras gravações respondem com o aviso de demonstração.
 
 import { sortear, remanejar, encerrar, reabrir, giraVazia, retratoDaGira } from '/shared/regras.js';
-import { PERMISSOES_ROOT, PERFIS_PADRAO } from '/shared/permissoes.js';
+import { PERMISSOES_ROOT, PERFIS_PADRAO, PERMISSOES_GRUPO, permissoesDe } from '/shared/permissoes.js';
 import { TIPOS_EVENTO } from '/shared/eventos.js';
 import { calcularPedidos } from '/shared/ervas.js';
 import { normalizarPerfil, contagemPerfis, pessoasPorOrixaCabeca } from '/shared/perfil.js';
@@ -203,10 +203,16 @@ function marcarAmaci(eventoId, alunoId, status) {
 function amaci() {
   const hoje = dia(0);
   const evs = db.eventos.filter((e) => e.tipo === 'amaci').sort((a, b) => a.data.localeCompare(b.data)).map((e) => ({ ...e, turmas: [id(501)] }));
-  const amacis = evs.map((e) => ({ id: e.id, data: e.data, nome: e.nome, status: presAmaci[e.id]?.[ALUNO_DEMO] || null }));
+  const alunoVc = vcAtual.startsWith('a:') ? db.alunos.find((a) => a.id === vcAtual.slice(2)) : null;
+  if (vcAtual && !alunoVc) return copia(AMACI_DEMO);   // vendo como alguém da corrente: sem presença
+  const quem = alunoVc ? alunoVc.id : ALUNO_DEMO;
+  const daTurma = !alunoVc || alunoVc.turmaId === id(501);
+  const amacis = daTurma ? evs.map((e) => ({ id: e.id, data: e.data, nome: e.nome, status: presAmaci[e.id]?.[quem] || null })) : [];
   const feitos = amacis.filter((a) => a.data <= hoje);
+  const turmaNome = alunoVc ? db.turmas.find((t) => t.id === alunoVc.turmaId)?.nome || '' : 'Turma 1';
+  if (alunoVc) return { ...copia(AMACI_DEMO), turmaNome, presenca: { hoje, amacis, pct: feitos.length ? Math.round((feitos.filter((a) => a.status === 'p').length / feitos.length) * 100) : null } };
   return {
-    ...copia(AMACI_DEMO), turmaNome: 'Turma 1',
+    ...copia(AMACI_DEMO), turmaNome,
     presenca: { hoje, amacis, pct: feitos.length ? Math.round((feitos.filter((a) => a.status === 'p').length / feitos.length) * 100) : null },
     presencaAdmin: {
       hoje, amacis: evs.filter((e) => e.data <= hoje).reverse().map(({ id: i, data, nome, turmas }) => ({ id: i, data, nome, turmas })),
@@ -264,27 +270,44 @@ function salvarGira(g) {
 }
 const girasOrdenadas = () => copia([...db.giras].sort((a, b) => b.data.localeCompare(a.data)));
 
-const me = () => ({
-  id: 'u-demo', nome: 'Teste CPJ', email: DEMO_EMAIL, papel: 'root', papelNome: 'Admin root', pessoaId: EU_ID,
-  permissoes: PERMISSOES_ROOT, corrente: false, videosPublicada: true, ervasPublicada: true, guiasPublicada: true,
-  amaciPublicada: true, transparenciaPublicada: true, oferendasPublica: true, iemanjaAba: true, iemanjaPublica: true,
-});
+// Root vendo como uma pessoa do cadastro (X-Ver-Como): 'p:<pessoa>' ou 'a:<aluno>'; '' = o próprio root.
+let vcAtual = '';
+const ABAS_CORRENTE = PERFIS_PADRAO.find((x) => x.chave === 'corrente').abas;
+const PUBLICADAS = { videosPublicada: true, ervasPublicada: true, guiasPublicada: true, amaciPublicada: true, transparenciaPublicada: true, oferendasPublica: true };
+function me() {
+  if (vcAtual.startsWith('p:')) {
+    const p = db.pessoas.find((x) => x.id === vcAtual.slice(2));
+    return { id: null, nome: p?.nome || '', email: '', papel: 'corrente', papelNome: 'Corrente', pessoaId: p?.id || null, permissoes: permissoesDe('corrente', ABAS_CORRENTE),
+      corrente: true, temSenha: true, ...PUBLICADAS, iemanjaAba: true, iemanjaPublica: true };
+  }
+  if (vcAtual.startsWith('a:')) {
+    const a = db.alunos.find((x) => x.id === vcAtual.slice(2));
+    return { id: null, nome: a?.nome || '', email: '', papel: 'alunos', papelNome: 'Aluno', grupo: 'alunos', pessoaId: null, permissoes: PERMISSOES_GRUPO.alunos,
+      temSenha: true, ...PUBLICADAS, iemanjaAba: false, iemanjaPublica: false };
+  }
+  return { id: 'u-demo', nome: 'Teste CPJ', email: DEMO_EMAIL, papel: 'root', papelNome: 'Admin root', pessoaId: EU_ID,
+    permissoes: PERMISSOES_ROOT, corrente: false, ...PUBLICADAS, iemanjaAba: true, iemanjaPublica: true };
+}
+const pessoaVc = () => (vcAtual.startsWith('p:') ? vcAtual.slice(2) : vcAtual ? null : EU_ID);
 
 const oracoes = () => db.oracoes.map(({ autor, reacoes, ...o }) => ({
   ...o, deAluno: false, meu: autor === 'u:demo', apagar: true, reacoes: reacoes.length, reagi: reacoes.includes('u:demo'),
 }));
 
-const inicio = () => ({
-  me: me(), versao: 'demo', config: CONFIG, pessoas: copia(db.pessoas), giras: girasOrdenadas(),
-  eventos: copia(db.eventos), minhaCurimba: null, oracoes: oracoes(), entidadesApelidos: [],
-});
+function inicio() {
+  if (vcAtual.startsWith('a:')) {
+    return { me: me(), config: CONFIG, eventos: copia(db.eventos.filter((e) => ['gira', 'evento', 'amaci'].includes(e.tipo))), oracoes: [], minhaCurimba: null };
+  }
+  return { me: me(), versao: 'demo', config: CONFIG, pessoas: copia(db.pessoas), giras: girasOrdenadas(),
+    eventos: copia(db.eventos), minhaCurimba: null, oracoes: oracoes(), entidadesApelidos: [] };
+}
 
 const todosPerfis = () => db.pessoas.filter((p) => !p.saida).map((p) => ({ pessoaId: p.id, nome: p.nome, funcao: p.funcao, perfil: db.perfis[p.id] || normalizarPerfil({}) }));
 function perfil() {
   const todos = todosPerfis();
   return {
-    eu: todos.find((x) => x.pessoaId === EU_ID) || null,
-    todos,
+    eu: todos.find((x) => x.pessoaId === pessoaVc()) || null,
+    ...(vcAtual ? {} : { todos }),
     contatos: todos.map((x) => ({ pessoaId: x.pessoaId, nome: x.nome, contatoNome: x.perfil.info.contatoNome || '', contatoTelefone: x.perfil.info.contatoTelefone || '' })),
     guias: todos.filter((x) => x.perfil.guias.chefe.linha || x.perfil.guias.frente.linha)
       .map((x) => ({ pessoaId: x.pessoaId, nome: x.nome, chefe: x.perfil.guias.chefe.linha, frente: x.perfil.guias.frente.linha })),
@@ -311,7 +334,7 @@ function doar(b) {
   if (q) i.doacoes.push({ chave: 'p:' + EU_ID, nome: 'Teste CPJ', quantidade: q });
   return oferendas();
 }
-const oferendas = () => ({ oferendas: copia(db.oferendas), eu: { chave: 'p:' + EU_ID, nome: 'Teste CPJ' }, abas: copia(ABAS_OFERENDA), publica: true });
+const oferendas = () => ({ oferendas: copia(db.oferendas), eu: { chave: 'p:' + (pessoaVc() || EU_ID), nome: me().nome }, abas: copia(ABAS_OFERENDA), publica: true });
 
 
 function lerGet(caminho, q) {
@@ -453,7 +476,9 @@ function escrever(metodo, caminho, b) {
 }
 
 // Mesmo contrato de api(): devolve o JSON ou lança erro com { status, message }.
-export async function demoApi(metodo, rota, corpo) {
+export async function demoApi(metodo, rota, corpo, verComo = '') {
+  vcAtual = verComo || '';
+  if (vcAtual && metodo !== 'GET') throw new ErroDemo(403, 'Vendo como outra pessoa: só para olhar. Volte para a visão Root para alterar.');
   const u = new URL(rota, 'http://demo');
   try {
     return metodo === 'GET' ? lerGet(u.pathname, u.searchParams) : escrever(metodo, u.pathname, corpo);

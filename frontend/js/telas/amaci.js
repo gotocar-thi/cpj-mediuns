@@ -23,6 +23,7 @@ const ui = {
   confirmando: false,   // pegando a localização / enviando
   presAdm: false,       // bloco Presença nos amacis do root aberto
   presTurma: '',        // turma escolhida no bloco do root ('' = a primeira)
+  presEv: null,         // amaci aberto no bloco do root (um por vez; todos começam minimizados)
   presQ: null,          // quadradinho aberto no bloco do root: 'eventoId:p' (presentes) ou 'eventoId:a' (ausentes)
 };
 export function limpar() {
@@ -34,6 +35,7 @@ export function limpar() {
   ui.escolha = {};
   ui.presAdm = false;
   ui.presTurma = '';
+  ui.presEv = null;
   ui.presQ = null;
 }
 
@@ -112,7 +114,7 @@ function areaPresenca(A) {
     <li><span aria-hidden="true">📅</span><span>${esc(dLong(hojeData))}</span></li></ul>`;
   let acao;
   if (!doDia) {
-    acao = `<p class="muted am-pres-nota">${prox ? `Sem amaci hoje. Próximo amaci: <b>${dDM(prox.data)}</b> · ${esc(prox.nome)}.` : 'Sem amaci hoje (aba Eventos, tipo Amaci).'}</p>`;
+    acao = `<p class="muted am-pres-nota">${prox ? `Sem amaci hoje. Próximo amaci: <b>${dDM(prox.data)}</b> · ${esc(prox.nome)}.` : 'Sem amaci hoje.'}</p>`;
   } else if (aluno && doDia.status === 'p') {
     acao = `<div class="am-pres-dia"><span class="am-pres-n"><b>${esc(doDia.nome)}</b><small class="muted">Hoje</small></span>${selo('p')}</div>`;
   } else {
@@ -171,10 +173,16 @@ function cardPresencaAdmin(A) {
     const lista = !aberto ? '' : `<div class="am-pres-t">${aberto.map((a) => `<label class="am-pres-a"><span>${esc(a.nome)}</span>
       <select data-act="ampresmarcar" data-ev="${ev.id}" data-aluno="${a.id}" aria-label="Presença de ${esc(a.nome)} em ${esc(ev.nome)}">
         <option value=""${!m[a.id] ? ' selected' : ''}>Ausente</option><option value="p"${m[a.id] === 'p' ? ' selected' : ''}>Presente</option><option value="f"${m[a.id] === 'f' ? ' selected' : ''}>Falta</option></select></label>`).join('')}</div>`;
-    return `<div class="am-padm-ev"><div class="am-padm-ev-h"><b>${esc(ev.nome)}</b><span class="muted">${ev.data === P.hoje ? 'Hoje' : dDM(ev.data)}</span></div>
-      <div class="pf-of-totais am-padm-q">${quad('p', 'Presentes', 'am-q-p')}${quad('a', 'Ausentes', 'am-q-a')}</div>${lista}</div>`;
+    // Minimizado: uma linha com o nome, a data e presentes/total; aberto, os quadradinhos e a lista.
+    const ab = ui.presEv === ev.id;
+    const linha = `<button class="am-turma-h" data-act="ampresev" data-id="${ev.id}" aria-expanded="${ab}">
+      <span class="am-padm-ev-n">${esc(ev.nome)}</span>
+      <span class="am-turma-x"><small>${ev.data === P.hoje ? 'Hoje' : dDM(ev.data)}</small><span class="am-padm-cont" aria-label="${grupos.p.length} de ${alunos.length} presentes"><b>${grupos.p.length}</b>/${alunos.length}</span><span class="seta" aria-hidden="true">${ab ? '▴' : '▾'}</span></span></button>`;
+    if (!ab) return `<div class="am-turma">${linha}</div>`;
+    return `<div class="am-turma">${linha}<div class="am-padm-ev">
+      <div class="pf-of-totais am-padm-q">${quad('p', 'Presentes', 'am-q-p')}${quad('a', 'Ausentes', 'am-q-a')}</div>${lista}</div></div>`;
   }).join('');
-  return `<div class="card adm am-adm">${cab}${corpo}</div>`;
+  return `<div class="card adm am-adm">${cab}<p class="muted am-pres-nota">${esc(turma.nome)} · ${plural(alunos.length, 'aluno', 'alunos')} · ${plural(amacis.length, 'amaci', 'amacis')}</p><div class="am-padm-lista">${corpo}</div></div>`;
 }
 
 // Bloco de conteúdo: ícone na frente do título e o texto da apostila. Sem conteúdo, o bloco não aparece.
@@ -263,6 +271,7 @@ export const cliques = {
   ampres() { ui.pres = !ui.pres; avisar(); },
   ampresadm() { ui.presAdm = !ui.presAdm; avisar(); },
   ampresq(el) { ui.presQ = ui.presQ === el.dataset.q ? null : el.dataset.q; avisar(); },
+  ampresev(el) { ui.presEv = ui.presEv === el.dataset.id ? null : el.dataset.id; ui.presQ = null; avisar(); },
   async amconfirmar(el) {
     const id = el.dataset.id;
     if ((ui.escolha[id] || 'a') !== 'p') { toast('Escolha Presente para confirmar.'); return; }
@@ -307,7 +316,7 @@ export const cliques = {
 export const mudancas = {
   amescolher(t) { ui.sel = t.value; ui.editando = null; avisar(); },
   amescolha(t) { ui.escolha[t.dataset.id] = t.value; },
-  ampresturma(t) { ui.presTurma = t.value; ui.presQ = null; avisar(); },
+  ampresturma(t) { ui.presTurma = t.value; ui.presEv = null; ui.presQ = null; avisar(); },
   async ampresmarcar(t) {
     if (await acaoAmaci('presenca', { eventoId: t.dataset.ev, alunoId: t.dataset.aluno, status: t.value })) toast('Presença salva.');
   },

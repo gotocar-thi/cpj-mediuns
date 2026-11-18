@@ -12,18 +12,22 @@ export class ErroApi extends Error {
 let aoExpirar = () => {};
 export function quandoSessaoExpirar(fn) { aoExpirar = fn; }
 
+// Root vendo o app como outra pessoa ('p:<pessoa>' ou 'a:<aluno>'): vai em todo pedido; o servidor responde como ela, só leitura.
+let verComo = '';
+export function definirVerComo(v) { verComo = v || ''; }
+
 export async function api(metodo, rota, corpo) {
   const t = token();
   if (!t) { aoExpirar(); throw new ErroApi(401, 'Faça login.'); }
   if (emDemo()) {
     const { demoApi } = await import('./demo.js');
-    try { return await demoApi(metodo, rota, corpo); } catch (e) { throw new ErroApi(e.status || 400, e.message); }
+    try { return await demoApi(metodo, rota, corpo, verComo); } catch (e) { throw new ErroApi(e.status || 400, e.message); }
   }
   let r;
   try {
     r = await fetch('/api' + rota, {
       method: metodo,
-      headers: { Authorization: 'Bearer ' + t, ...(corpo ? { 'Content-Type': 'application/json' } : {}) },
+      headers: { Authorization: 'Bearer ' + t, ...(verComo ? { 'X-Ver-Como': verComo } : {}), ...(corpo ? { 'Content-Type': 'application/json' } : {}) },
       body: corpo ? JSON.stringify(corpo) : undefined,
     });
   } catch {

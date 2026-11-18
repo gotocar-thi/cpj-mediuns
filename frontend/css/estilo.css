@@ -1932,8 +1932,13 @@ section.panel.gi-tela{gap:12px}
 .am-padm-h .grp-h{flex:1 1 auto;min-width:0}
 .am-padm-h h2{white-space:nowrap}
 .am-padm-t{width:auto;max-width:45%;flex:none}
-.am-padm-ev{display:grid;gap:8px;padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--bg)}
-.am-padm-ev-h{display:flex;justify-content:space-between;gap:8px;align-items:baseline}
+.am-padm-lista{display:flex;flex-direction:column;gap:4px;max-height:340px;overflow-y:auto;overscroll-behavior:contain;padding-right:2px}
+.am-padm-lista > .am-turma{flex:none}
+.am-padm-lista .am-turma-h{min-height:40px;padding:6px 10px}
+.am-padm-ev{display:grid;gap:8px;padding:2px 10px 10px}
+.am-padm-ev-n{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600;font-size:.92rem}
+.am-padm-cont{font-size:.9rem;color:var(--muted)}
+.am-padm-cont b{color:var(--ok)}
 .pf-of-totais.am-padm-q{grid-template-columns:repeat(2,minmax(0,1fr))}
 .am-q-p{--fn:var(--ok)}
 .am-q-a{--fn:var(--gold)}

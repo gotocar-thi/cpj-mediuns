@@ -1,8 +1,8 @@
 // Ponto de entrada do frontend: login, abas, renderização e eventos.
 
 import { estadoDoApp, logado, entrar, cadastrar, criarSenhaContato, verificarCpf, entrarCpf, criarSenhaCpf, instalar, sair, trocarSenha, criarSenhaCorrente } from './auth.js';
-import { quandoSessaoExpirar } from './api.js';
-import { estado, prefs, salvarPrefs, pode, visaoAtiva, aoMudar, avisar, carregarTudo, atualizarDoServidor, atualizarOferendasAoAbrir, atualizarAoAbrir, atualizarUsuariosAoAbrir, salvarPerfilAgora, mudarVisaoRoot, veErvas, veOferendas, veGuias, veAmaci, veTransparencia, temPendencia } from './estado.js';
+import { quandoSessaoExpirar, definirVerComo } from './api.js';
+import { estado, prefs, salvarPrefs, pode, visaoAtiva, aoMudar, avisar, carregarTudo, atualizarDoServidor, atualizarOferendasAoAbrir, atualizarAoAbrir, atualizarUsuariosAoAbrir, salvarPerfilAgora, mudarVisaoRoot, verComoPessoa, ehRootReal, veErvas, veOferendas, veGuias, veAmaci, veTransparencia, temPendencia } from './estado.js';
 import { esc, toast, hoje, mascaraTel, guardarRascunhos, devolverRascunhos } from './util.js';
 import { iniciarAtualizacao } from './atualizacao.js';
 import { PIN_NOVO, PIN_NOVO_MSG } from '/shared/permissoes.js';
@@ -86,9 +86,17 @@ function renderConta() {
   if (!estado.me) { conta.innerHTML = ''; rodape.innerHTML = ''; rodape.hidden = true; saudNome.textContent = ''; saudExtra.innerHTML = ''; return; }
   saudNome.textContent = estado.me.nome;
   // Acesso da corrente sem senha: pode criar uma (depois disso o botão some).
-  saudExtra.innerHTML = (estado.me.corrente || estado.me.grupo === 'alunos') && !estado.me.temSenha ? '<button class="btn small" data-conta="criarsenha">🔒 Criar senha</button>' : '';
-  // Root escolhe entre a visão administrativa e as visões dos acessos de grupo.
-  const root = estado.me.papel === 'root';
+  saudExtra.innerHTML = estado.verComo ? '<span class="badge new">👁️ Vendo como · só leitura</span>'
+    : (estado.me.corrente || estado.me.grupo === 'alunos') && !estado.me.temSenha ? '<button class="btn small" data-conta="criarsenha">🔒 Criar senha</button>' : '';
+  // Root escolhe entre a visão administrativa e as visões dos acessos de grupo e, nelas, uma pessoa do cadastro.
+  const root = ehRootReal();
+  const L = estado.vcLista;
+  const opcoesPessoa = estado.visaoRoot === 'alunos' ? L.alunos
+    : estado.visaoRoot === 'curimba' ? L.pessoas.filter((p) => p.funcao === 'curimba')
+    : L.pessoas.filter((p) => p.funcao !== 'curimba');
+  const seletorPessoa = root && estado.visaoRoot !== 'root' ? `<label class="visao-root"><span>Ver como</span><select data-conta="ver-como" aria-label="Ver o app como uma pessoa do cadastro">
+      <option value="">— qualquer —</option>${opcoesPessoa.map((p) => `<option value="${esc(p.chave)}" ${p.chave === estado.verComo ? 'selected' : ''}>${esc(p.nome)}</option>`).join('')}
+    </select></label>` : '';
   conta.innerHTML = `${pode('giras:editar') ? `<span class="sync" id="sync">${estado.salvando ? 'Salvando…' : ''}</span>` : ''}
     <span class="conta-bts"><button class="btn small" data-conta="sair">Sair</button>
     ${root ? `<label class="visao-root"><span>Visão</span><select data-conta="visao-root" aria-label="Escolher visualização">
@@ -96,7 +104,7 @@ function renderConta() {
       <option value="cpj" ${estado.visaoRoot === 'cpj' ? 'selected' : ''}>CPJ</option>
       <option value="alunos" ${estado.visaoRoot === 'alunos' ? 'selected' : ''}>Alunos</option>
       <option value="curimba" ${estado.visaoRoot === 'curimba' ? 'selected' : ''}>Curimba</option>
-    </select></label>` : ''}</span>`;
+    </select></label>` : ''}${seletorPessoa}</span>`;
   rodape.hidden = false;
   rodape.innerHTML = `<span class="quem">${esc(estado.me.nome)}</span><span class="papel ${esc(estado.me.papel)}">${esc(estado.me.papelNome || estado.me.papel)}</span>
     ${estado.me.corrente || estado.me.grupo ? '' : '<button class="btn small" data-conta="senha">Trocar senha</button>'}`;
@@ -209,6 +217,8 @@ async function iniciar() {
 }
 
 quandoSessaoExpirar(() => {
+  definirVerComo('');
+  Object.assign(estado, { verComo: '', meRoot: null });
   estado.me = null;
   estado.pronto = false;
   estado.usuarios = null;
@@ -270,6 +280,8 @@ async function cliqueConta(e) {
   if (!b) return;
   if (b.dataset.conta === 'sair') {
     sair();
+    definirVerComo('');
+    Object.assign(estado, { verComo: '', meRoot: null, vcLista: { pessoas: [], alunos: [] } });
     Object.assign(estado, { me: null, pessoas: [], giras: {}, oferendas: null, infoPessoa: null, pfUi: { abertos: {}, infoBuscaVisivel: false, infoBusca: '' }, recadoTxt: null, tituloTxt: null, usuarios: null, ervas: null, guias: null, amaci: null, asaas: null, transparencia: null, iemanja: null, ervasPara: null, ervasCompra: null, perfil: null, alunos: null, curimba: null, minhaCurimba: null, curUi: null, videos: null, vidUi: null, fotos: null, fotUi: null, fotosPessoa: {}, visaoRoot: 'root', perfisCfg: null, senhas: null, pronto: false, img: null });
     erroLogin = '';
     render();
@@ -302,6 +314,8 @@ async function cliqueConta(e) {
 }
 conta.addEventListener('click', cliqueConta);
 conta.addEventListener('change', async (e) => {
+  const pessoa = e.target.closest('[data-conta="ver-como"]');
+  if (pessoa) { await verComoPessoa(pessoa.value); window.scrollTo(0, 0); return; }
   const seletor = e.target.closest('[data-conta="visao-root"]');
   if (!seletor) return;
   await mudarVisaoRoot(seletor.value);
