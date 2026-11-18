@@ -9,7 +9,7 @@
 // Estrutura: veja db/ESTRUTURA-ESQUEMA.md para o mapa de versões, domínios e
 // quais migrações foram testadas no Postgres.
 
-export const VERSAO = 140;  // v140: Transparência — a curimba com turma da limpeza conta na corrente; abertura mais leve
+export const VERSAO = 141;  // v141: sub-aba Pagamentos (histórico do ASAAS de quem está logado)
 
 import { PERFIS_PADRAO } from '../shared/permissoes.js';
 
@@ -6086,5 +6086,38 @@ export const MIGRACOES = [
                               'doacoes', jsonb_build_object('total', a.dados -> 'doacoes' -> 'total'),
                               'aporte', case when a.dados ? 'aporte' then jsonb_build_object('total', a.dados -> 'aporte' -> 'total') end) end)
                   order by a.mes) from transparencia_asaas a), '[]'::jsonb))
+   $$`,
+  // ================================================== v141: sub-aba Pagamentos (aba Compras)
+  // O histórico de cobranças do ASAAS de cada pessoa (pela chave dela: p:<pessoa> ou a:<aluno>), guardado para a próxima
+  // abertura; e o interruptor "Visível para todos" do root.
+  `create table if not exists asaas_historico (
+     chave          text primary key,
+     dados          jsonb not null default '[]'::jsonb,
+     atualizado_em  timestamptz not null default now()
+   )`,
+  `create or replace function asaas_historico_ler(p jsonb)
+   returns jsonb language sql stable as $$
+     select jsonb_build_object('dados', dados, 'atualizadoEm', to_char(atualizado_em at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'))
+       from asaas_historico where chave = p ->> 'chave'
+   $$`,
+  `create or replace function asaas_historico_salvar(p jsonb)
+   returns jsonb language plpgsql as $$
+   begin
+     insert into asaas_historico (chave, dados, atualizado_em) values (p ->> 'chave', coalesce(p -> 'dados', '[]'::jsonb), now())
+     on conflict (chave) do update set dados = excluded.dados, atualizado_em = now();
+     return asaas_historico_ler(jsonb_build_object('chave', p ->> 'chave'));
+   end;
+   $$`,
+  `create or replace function pagamentos_publicada(p jsonb default '{}'::jsonb)
+   returns jsonb language sql stable as $$
+     select to_jsonb(coalesce((select valor = 'true' from sistema where chave = 'pagamentos_publicada'), false))
+   $$`,
+  `create or replace function pagamentos_publicar(p jsonb)
+   returns jsonb language plpgsql as $$
+   begin
+     insert into sistema (chave, valor) values ('pagamentos_publicada', case when (p ->> 'publicada')::boolean then 'true' else 'false' end)
+     on conflict (chave) do update set valor = excluded.valor;
+     return pagamentos_publicada();
+   end;
    $$`,
 ];

@@ -24,6 +24,7 @@ export const estado = {
   amaci: null,         // aba Amaci (GET /api/pessoas?lista=amaci)
   transparencia: null, // aba Transparência (GET /api/giras?lista=transparencia)
   asaas: null,         // aba ASAAS: root e quem tem a aba no perfil (GET /api/oferendas?lista=asaas)
+  pagamentos: null,    // sub-aba Pagamentos (Compras): histórico do ASAAS de quem está logado (GET /api/oferendas?lista=pagamentos)
   ervasPara: null,     // admin montando o pedido de outra pessoa: { chave?, nome, itens: { ervaId: qtd } }    // 'fornecedor' | 'cobranca' (exportação aberta na aba Ervas)
   pronto: false,
   confirm: null,       // item aguardando "Confirmar"
@@ -161,7 +162,7 @@ export async function carregarTudo() {
 
 // Listas das abas que dependem de quem está logado: trocar de pessoa busca de novo.
 function limparListasDaPessoa() {
-  Object.assign(estado, { oferendas: null, iemanja: null, ervas: null, guias: null, amaci: null, asaas: null, transparencia: null, perfil: null,
+  Object.assign(estado, { oferendas: null, iemanja: null, ervas: null, guias: null, amaci: null, asaas: null, pagamentos: null, transparencia: null, perfil: null,
     anamnese: null, fotosPessoa: {}, curimba: null, minhaCurimba: null, videos: null, fotos: null, conduta: null, atrasos: null, usuarios: null,
     perfisCfg: null, senhas: null, eventosTipos: null, stPerfis: null, ervasHist: null, img: null, confirm: null });
 }
@@ -872,6 +873,21 @@ export async function acaoAmaci(op, dados = {}) {
 
 // ---------- Painel da Transparência ----------
 // Quem edita sempre vê; quem tem Ver no perfil também; a corrente (não alunos nem curimba), quando está visível.
+// Sub-aba Pagamentos (Compras): o root sempre; os outros (corrente e alunos), quando o root liga Visível para todos.
+export const vePagamentos = () => !estado.me?.aguardando && (pode('usuarios:gerenciar') || !!estado.me?.pagamentosPublicada);
+export async function carregarPagamentos(atualizar = false) {
+  try { estado.pagamentos = await api('GET', '/oferendas?lista=pagamentos' + (atualizar ? '&atualizar=1' : '')); }
+  catch (e) { estado.pagamentos = estado.pagamentos && !estado.pagamentos.erroTela ? { ...estado.pagamentos, erro: e.message } : { erroTela: e.message }; }
+  avisar();
+}
+export async function publicarPagamentos(publicada) {
+  try {
+    estado.pagamentos = await api('POST', '/oferendas', { acao: 'pagamentos', op: 'publicar', publicada });
+    estado.me = { ...estado.me, pagamentosPublicada: !!estado.pagamentos.publicada };
+    avisar();
+    return true;
+  } catch (e) { toast(e.message); avisar(); return false; }
+}
 export const veTransparencia = () => !estado.me?.grupo && (pode('transparencia:ver') || pode('transparencia:editar') || !!estado.me?.transparenciaPublicada);
 export async function carregarTransparencia(mes = '', atualizar = false) {
   const q = new URLSearchParams({ lista: 'transparencia', ...(mes ? { mes } : {}), ...(atualizar ? { atualizar: '1' } : {}) });

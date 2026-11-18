@@ -192,6 +192,13 @@ Estado atual das regras da casa e do app. Código: `shared/regras.js` (e demais 
 - **Por grupo** (admin root e Admin financeiro, com o bloco aberto): um **quadradinho** por grupo que tem pendência — **Corrente**, cada **turma de alunos**, **Aluno sem turma** e **Sem ligação** (o CPF do ASAAS não bate com ninguém) —, com quantas pendências. Tocar abre embaixo o grupo (quantas e o total) com os **nomes**, cada um minimizado com quantas pendências e o total; tocar no nome abre as cobranças (descrição, vencimento, valor, Pagar e lembrete no WhatsApp). Tocar de novo no quadradinho fecha. Os blocos Por nome e Por descrição continuam com todas.
 - O app consulta o ASAAS **no máximo a cada 10 minutos** e guarda a última leitura. **↻ Atualizar** aparece para todos (quem acabou de pagar vê a cobrança sumir): o do root e do Admin financeiro lê sempre; o da pessoa só lê de novo se a última leitura tiver mais de 1 minuto, para toques repetidos não virarem chamadas ao ASAAS. Se o ASAAS não responder, mostra a última leitura com aviso. Pagar no ASAAS tira a cobrança da lista na leitura seguinte. Os dados de cada cliente do ASAAS (nome, telefone e o hash do CPF — o CPF aberto não é guardado) ficam guardados por 7 dias, então cada leitura só busca as cobranças e os clientes novos; o **Atualizar** do root e do Admin financeiro renova todos. A cobrança é ligada à pessoa pelo hash do CPF do Perfil, sem decifrar os CPFs.
 
+## Pagamentos (sub-aba de Compras)
+
+- Sub-aba **Pagamentos**, entre Compras e ASAAS: o **histórico de cobranças do ASAAS** de quem está logado, achado pelo **CPF do Perfil** (pessoa da corrente ou aluno), nas duas contas ligadas (A, das Compras, e B, das mensalidades e doações). Sem CPF no Perfil, pede para cadastrar.
+- Agrupado pelo **mês de vencimento**, do mais recente (que começa aberto); cada mês dobrável, com quantas cobranças e o total. Cada cobrança mostra descrição, vencimento, pagamento, valor e situação e um **campo de texto** com tudo o que o ASAAS devolve dela (em português nos campos conhecidos).
+- A leitura fica guardada e é refeita **1 vez por dia, a partir das 9h**; **↻ Atualizar** lê de novo (o da pessoa, no máximo a cada 10 minutos; o do root, sempre).
+- **Visível para todos** (interruptor do root, no topo): desligado, só o root vê a sub-aba; ligado, todos (corrente e alunos) veem os **próprios** pagamentos. Ninguém vê os de outra pessoa (o root, pelo Ver como).
+
 ## Painel da Transparência (aba própria)
 
 - Mostra os gastos e as entradas da casa **mês a mês**: um combo (com ‹ ›) escolhe o mês, do mês de início até o atual, e todas as informações trocam junto.

@@ -1986,6 +1986,30 @@ test('aluno com o acesso bloqueado: não entra e a sessão aberta cai; desbloque
   await api('POST', '/api/pessoas', ADMIN, { acao: 'excluirAluno', id });
 });
 
+test('sub-aba Pagamentos: só o root até ligar Visível para todos; sem ASAAS ou sem CPF, avisa', async () => {
+  const ler = (tok) => api('GET', '/api/oferendas?lista=pagamentos', tok);
+  const pub = (tok, publicada) => api('POST', '/api/oferendas', tok, { acao: 'pagamentos', op: 'publicar', publicada });
+  const env = { A: process.env.ASAAS_API_KEY, B: process.env.ASAAS2_API_KEY };
+  delete process.env.ASAAS_API_KEY;
+  delete process.env.ASAAS2_API_KEY;
+  try {
+    assert.equal((await ler(USER)).status, 403, 'desligada: só o root');
+    const r = (await ler(ADMIN)).json;
+    assert.equal(r.root, true);
+    assert.equal(r.publicada, false);
+    assert.equal(r.configurado, false, 'sem conta do ASAAS ligada');
+    assert.equal((await pub(USER, true)).status, 403);
+    assert.equal((await pub(ADMIN, 'sim')).status, 400);
+    assert.equal((await pub(ADMIN, true)).json.publicada, true);
+    assert.equal((await api('GET', '/api/auth/me', USER)).json.pagamentosPublicada, true);
+    assert.equal((await ler(USER)).status, 200, 'ligada: todos veem os próprios');
+    await pub(ADMIN, false);
+  } finally {
+    if (env.A) process.env.ASAAS_API_KEY = env.A;
+    if (env.B) process.env.ASAAS2_API_KEY = env.B;
+  }
+});
+
 test('gestão de conduta e risco: interruptor do root; só o root lê; quem abriu edita até ser lido e vê só a resposta publicada', async () => {
   const ana = await entrarComSenha('Ana');
   const lista = async (t) => (await api('GET', '/api/giras?lista=conduta', t)).json.relatos;

@@ -222,6 +222,25 @@ function amaci() {
   };
 }
 
+// Sub-aba Pagamentos: cobranças inventadas no formato do ASAAS (as duas contas), de quem está logado.
+let pagPublicada = false;
+function pagamentosDemo() {
+  const mes = (n, dia) => { const x = new Date(); x.setDate(1); x.setMonth(x.getMonth() - n); return iso(x).slice(0, 8) + String(dia).padStart(2, '0'); };
+  const cob = (n, conta, value, due, status, description, billingType, paid) => ({
+    conta, object: 'payment', id: 'pay_demo' + n, dateCreated: mes(0, 1) < due ? due : due, customer: 'cus_demo' + conta, value, netValue: Math.round(value * 0.97 * 100) / 100,
+    description, billingType, status, dueDate: due, originalDueDate: due, paymentDate: paid || null, clientPaymentDate: paid || null,
+    invoiceUrl: 'https://www.asaas.com/i/demo' + n, invoiceNumber: String(1000 + n), externalReference: null, deleted: false, anticipated: false,
+    discount: { value: 0, dueDateLimitDays: 0 }, fine: { value: 2 }, interest: { value: 1 },
+  });
+  return { publicada: pagPublicada, root: !vcAtual, configurado: true, temCpf: true, atualizadoEm: new Date().toISOString(), pagamentos: [
+    cob(1, 'B', 110, mes(0, 10), 'PENDING', 'Mensalidade CPJ', 'PIX'),
+    cob(2, 'A', 45, mes(0, 5), 'RECEIVED', 'CPJ · Compras · pedido nº 3', 'PIX', mes(0, 5)),
+    cob(3, 'B', 110, mes(1, 10), 'RECEIVED', 'Mensalidade CPJ', 'PIX', mes(1, 9)),
+    cob(4, 'B', 50, mes(1, 22), 'RECEIVED', 'Cobrança gerada automaticamente a partir de Pix recebido.', 'PIX', mes(1, 22)),
+    cob(5, 'B', 110, mes(2, 10), 'OVERDUE', 'Mensalidade CPJ', 'BOLETO'),
+  ] };
+}
+
 // Painel da Transparência: valores inventados, na visão da corrente (sem editar, sem nomes).
 function transparencia(mesPedido) {
   const meses = [0, 1, 2].map((n) => { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - n); return iso(d).slice(0, 7); });
@@ -280,15 +299,15 @@ function me() {
   if (vcAtual.startsWith('p:')) {
     const p = db.pessoas.find((x) => x.id === vcAtual.slice(2));
     return { id: null, nome: p?.nome || '', email: '', papel: 'corrente', papelNome: 'Corrente', pessoaId: p?.id || null, permissoes: permissoesDe('corrente', ABAS_CORRENTE),
-      corrente: true, temSenha: true, ...PUBLICADAS, iemanjaAba: true, iemanjaPublica: true };
+      corrente: true, temSenha: true, ...PUBLICADAS, pagamentosPublicada: pagPublicada, iemanjaAba: true, iemanjaPublica: true };
   }
   if (vcAtual.startsWith('a:')) {
     const a = db.alunos.find((x) => x.id === vcAtual.slice(2));
     return { id: null, nome: a?.nome || '', email: '', papel: 'alunos', papelNome: 'Aluno', grupo: 'alunos', pessoaId: null, permissoes: PERMISSOES_GRUPO.alunos,
-      temSenha: true, ...PUBLICADAS, iemanjaAba: false, iemanjaPublica: false };
+      temSenha: true, ...PUBLICADAS, pagamentosPublicada: pagPublicada, iemanjaAba: false, iemanjaPublica: false };
   }
   return { id: 'u-demo', nome: 'Teste CPJ', email: DEMO_EMAIL, papel: 'root', papelNome: 'Admin root', pessoaId: EU_ID,
-    permissoes: PERMISSOES_ROOT, corrente: false, ...PUBLICADAS, iemanjaAba: true, iemanjaPublica: true };
+    permissoes: PERMISSOES_ROOT, corrente: false, ...PUBLICADAS, pagamentosPublicada: pagPublicada, iemanjaAba: true, iemanjaPublica: true };
 }
 const pessoaVc = () => (vcAtual.startsWith('p:') ? vcAtual.slice(2) : vcAtual ? null : EU_ID);
 
@@ -408,6 +427,7 @@ function lerGet(caminho, q) {
     if (lista === 'guias') return compras.lerGuias({ atualizar: !!q.get('conferir') });
     if (lista === 'asaas') return compras.asaas();
     if (lista === 'iemanja') return respostaIemanja();
+    if (lista === 'pagamentos') return pagamentosDemo();
   }
   throw new ErroDemo(404, 'Demonstração: sem dados para esta tela.');
 }
@@ -489,6 +509,7 @@ function escrever(metodo, caminho, b) {
   if (caminho === '/oferendas' && b?.acao === 'guias') return compras.acaoGuias(b);
   if (caminho === '/oferendas' && b?.acao === 'asaas') return compras.acaoAsaas(b);
   if (caminho === '/oferendas' && b?.acao === 'iemanja') return acaoIemanja(b);
+  if (caminho === '/oferendas' && b?.acao === 'pagamentos') { pagPublicada = !!b.publicada; return pagamentosDemo(); }
   // Bloquear / liberar o acesso do aluno (Editar aluno): só esse campo funciona na demonstração.
   if (caminho === '/pessoas' && b?.acao === 'aluno' && 'bloqueado' in b && Object.keys(b).length === 3) {
     const a = db.alunos.find((x) => x.id === b.id);

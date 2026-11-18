@@ -1537,6 +1537,14 @@ button.eu-av{cursor:zoom-in}
 .at-q-sem{--fn:var(--orange)}
 .at-q-lig{--fn:var(--off)}
 .at-grupo{display:grid;gap:8px;padding:10px;border:1px solid var(--line);border-radius:10px}
+.pg-tela{gap:14px}
+.pg-mes{gap:10px}
+.pg-mes h3{margin:0;font-size:1.05rem}
+.pg-item{display:grid;gap:6px;padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--bg)}
+.pg-item-h{display:flex;justify-content:space-between;gap:8px;align-items:flex-start}
+.pg-item-n{display:grid;gap:2px;min-width:0;overflow-wrap:anywhere}
+.pg-item-v{display:grid;justify-items:end;gap:4px;flex:none}
+.pg-txt{width:100%;box-sizing:border-box;font:.8rem/1.45 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;resize:vertical;min-height:0;white-space:pre-wrap;overflow-wrap:anywhere;overflow:auto}
 .at-rodape{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:8px;font-size:.82rem}
 .at-erro{margin:0;font-size:.82rem;color:var(--warn)}
 .at-meu{border-color:var(--off)}
