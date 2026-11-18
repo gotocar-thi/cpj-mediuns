@@ -52,6 +52,8 @@ function paraTela(estado, eu) {
 
 // Junto com a tela, o Pix da pessoa (se o root ligou na aba ASAAS).
 const comPix = async (tela, eu) => ({ ...tela, ...(await pixDaPessoa(eu)) });
+// Estado da aba: quem não administra recebe do banco só os próprios pedidos e linhas (o histórico de todos fica de fora).
+const estadoPara = (eu) => db.rpc('guias_estado', ehAdmin(eu) ? {} : { chave: chavePessoa(eu) });
 
 // Abertura da aba: tudo numa ida só ao banco (guias_tela). Só volta ao banco (e ao ASAAS) se houver um link que
 // ficou sem resposta do ASAAS numa tentativa anterior, para conferir (sem travar a tela se falhar).
@@ -59,12 +61,13 @@ export async function respostaGuias(eu) {
   if (!pode(eu, 'guias:pedir') && !ehAdmin(eu)) throw new HttpError(403, 'Seu perfil não tem a aba Compras.');
   exigirSenha(eu);
   const chave = chavePessoa(eu);
-  let t = await db.rpc('guias_tela', { chave });
+  const p = { chave, admin: ehAdmin(eu) };
+  let t = await db.rpc('guias_tela', p);
   if (!ehAdmin(eu) && !t.publicada) throw new HttpError(403, 'A aba Compras não está disponível no momento.');
   if (configurado() && t.ativo && t.paradas) {
     try {
       await conferirReservas(chave);
-      t = await db.rpc('guias_tela', { chave });
+      t = await db.rpc('guias_tela', p);
     } catch (e) { console.error('[asaas] conferir ao abrir', e?.message || e); }
   }
   return { ...paraTela(t.estado, eu), ...pixDe(t.ativo, t.minhas) };
@@ -118,7 +121,7 @@ export async function acaoGuias(eu, b) {
     // Item de doação: o valor que a pessoa digitou (com centavos); nos outros itens o banco usa o preço do item.
     if (b.valor !== undefined && b.valor !== null && b.valor !== '') p.valor = valor(b.valor);
     if (!daCorrente(eu)) {
-      const item = (await db.rpc('guias_estado')).grupos.flatMap((g) => g.itens).find((i) => i.id === p.itemId);
+      const item = (await estadoPara(eu)).grupos.flatMap((g) => g.itens).find((i) => i.id === p.itemId);
       if (item?.cpj) throw new HttpError(400, 'Este item não está disponível.');
     }
     const pix = await pixAntesDePedir(eu, b.cpf);
@@ -129,7 +132,7 @@ export async function acaoGuias(eu, b) {
     if (pix) {
       try {
         await gerarPix(eu, { pedido: estado.pedidoFeito, cpf: b.cpf });
-        estado = await db.rpc('guias_estado');
+        estado = await estadoPara(eu);
       } catch (e) {
         if (!(e instanceof HttpError)) console.error('[asaas] pedir', e);
         aviso = 'Pedido feito, mas o link de pagamento não foi gerado' + (e instanceof HttpError ? ': ' + e.message.replace(/[.!]?$/, '.') : '.') + ' Toque em Gerar link de pagamento.';
@@ -139,7 +142,7 @@ export async function acaoGuias(eu, b) {
   }
   if (b.op === 'pix') {
     await gerarPix(eu, b);
-    return comPix(paraTela(await db.rpc('guias_estado'), eu), eu);
+    return comPix(paraTela(await estadoPara(eu), eu), eu);
   }
   if (!ehAdmin(eu)) throw new HttpError(403, 'Só quem administra a aba Compras pode fazer isso.');
   let estado;

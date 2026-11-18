@@ -2091,6 +2091,7 @@ test('pedidos de guias: aba escondida até publicar; grupos, itens, pedir baixa 
   const comFoto = G.grupos.find((x) => x.id === g.id).itens.find((i) => i.id === it.id);
   assert.equal(comFoto.foto, undefined, 'a foto não vai na resposta');
   assert.match(comFoto.fotoV, /^[0-9a-f]{10}$/);
+  assert.equal(comFoto.fotoV, sql(`select substr(md5(foto), 1, 10) from guias_itens where id = '${it.id}'`), 'a versão guardada é a mesma de antes (os links não mudam)');
   const img = await fetch(`${base}/api/oferendas?lista=guiaFoto&id=${it.id}&v=${comFoto.fotoV}`);
   assert.equal(img.status, 200);
   assert.equal(img.headers.get('content-type'), 'image/jpeg');
@@ -2120,6 +2121,10 @@ test('pedidos de guias: aba escondida até publicar; grupos, itens, pedir baixa 
 
   G = (await ler(ADMIN)).json;
   const linha = G.pedidos[0].linhas[0];
+  // Quem não administra recebe do banco só as próprias linhas (e os pedidos em que tem linha); o admin, tudo.
+  assert.equal(sql(`select jsonb_array_length(guias_estado('{"chave":"ninguem"}') -> 'pedidos')`), '0', 'sem linhas, sem pedidos');
+  assert.equal(sql(`select jsonb_array_length(guias_estado(jsonb_build_object('chave', '${linha.chave}')) -> 'pedidos' -> 0 -> 'linhas')`), '1');
+  assert.equal(sql(`select jsonb_array_length(guias_estado() -> 'pedidos')`), String(G.pedidos.length));
   G = (await gu(ADMIN, { op: 'ok', id: linha.id, ok: true })).json;
   assert.equal(G.pedidos[0].linhas[0].ok, true);
   assert.equal((await gu(ADMIN, { op: 'novo' })).status, 400, 'sem grupo');

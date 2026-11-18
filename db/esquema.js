@@ -9,7 +9,7 @@
 // Estrutura: veja db/ESTRUTURA-ESQUEMA.md para o mapa de versões, domínios e
 // quais migrações foram testadas no Postgres.
 
-export const VERSAO = 143;  // v143: doação nas Compras com o valor que a pessoa digita
+export const VERSAO = 144;  // v144: aba Compras mais leve (versão da foto guardada, só as linhas da pessoa)
 
 import { PERFIS_PADRAO } from '../shared/permissoes.js';
 
@@ -6188,5 +6188,45 @@ export const MIGRACOES = [
      end if;
      return guias_estado() || jsonb_build_object('pedidoFeito', v_pedido);
    end;
+   $$`,
+  // ================================================== v144: aba Compras mais leve
+  // A versão da foto (fotoV) era um md5 da foto inteira, calculado a cada abertura e a cada ação: o banco lia todas as
+  // fotos. Agora é uma coluna gerada, calculada só quando a foto muda (o mesmo valor de antes: os links não mudam).
+  `alter table guias_itens add column if not exists foto_v text generated always as (substr(md5(foto), 1, 10)) stored`,
+  `create index if not exists guias_linhas_chave on guias_linhas (chave)`,
+  // p = { chave? } — com a chave (quem não administra), só os pedidos e as linhas da pessoa; sem ela, tudo (admin).
+  `create or replace function guias_estado(p jsonb default '{}'::jsonb)
+   returns jsonb language sql stable as $$
+     select jsonb_build_object(
+       'publicada', guias_publicada(),
+       'grupos', (select coalesce(jsonb_agg(jsonb_build_object('id', g.id, 'descricao', g.descricao, 'visivel', g.visivel,
+           'aberto', guia_pedido_do_grupo(g.id),
+           'itens', (select coalesce(jsonb_agg(jsonb_build_object('id', i.id, 'descricao', i.descricao,
+                       'fotoV', i.foto_v, 'quantidade', i.quantidade,
+                       'valor', i.valor, 'visivel', i.visivel, 'cpj', i.cpj, 'doacao', i.doacao) order by i.criado_em), '[]'::jsonb)
+                     from guias_itens i where i.grupo_id = g.id)) order by g.criado_em), '[]'::jsonb)
+                  from guias_grupos g),
+       'pedidos', (select coalesce(jsonb_agg(jsonb_build_object('numero', pe.numero, 'criadoEm', pe.criado_em, 'encerradoEm', pe.encerrado_em,
+           'grupos', (select coalesce(jsonb_agg(jsonb_build_object('grupoId', pg.grupo_id, 'criadoEm', pg.criado_em, 'encerradoEm', pg.encerrado_em)), '[]'::jsonb)
+                      from guias_pedido_grupos pg where pg.pedido = pe.numero),
+           'linhas', (select coalesce(jsonb_agg(jsonb_build_object('id', l.id, 'itemId', l.item_id, 'grupoId', l.grupo_id, 'descricao', l.descricao, 'valor', l.valor,
+                       'quantidade', l.quantidade, 'chave', l.chave, 'nome', l.nome, 'ok', l.ok, 'criadoEm', l.criado_em,
+                       'pago', l.pago_em is not null,
+                       'pix', case when l.pago_em is not null then null when c.status = 'criando' then 'pendente' else c.status end) order by lower(l.nome), l.criado_em), '[]'::jsonb)
+                      from guias_linhas l left join asaas_cobrancas c on c.id = l.cobranca_id
+                     where l.pedido = pe.numero and (not (p ? 'chave') or l.chave = p ->> 'chave'))) order by pe.numero desc), '[]'::jsonb)
+                   from guias_pedidos pe
+                  where not (p ? 'chave') or exists (select 1 from guias_linhas l2 where l2.pedido = pe.numero and l2.chave = p ->> 'chave')))
+   $$`,
+  // p = { chave, admin? } — a abertura da aba; quem não administra recebe só as próprias linhas.
+  `create or replace function guias_tela(p jsonb)
+   returns jsonb language sql stable as $$
+     select jsonb_build_object(
+       'publicada', e -> 'publicada',
+       'ativo', asaas_ativo(),
+       'paradas', exists (select 1 from asaas_cobrancas where chave = p ->> 'chave' and status = 'criando' and criado_em < now() - interval '20 seconds'),
+       'estado', e,
+       'minhas', asaas_minhas(p))
+     from (select guias_estado(case when (p ->> 'admin')::boolean then '{}'::jsonb else jsonb_build_object('chave', p ->> 'chave') end) as e) x
    $$`,
 ];
