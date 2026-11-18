@@ -1527,12 +1527,19 @@ button.eu-av{cursor:zoom-in}
 .at-grupo{display:grid;gap:8px;padding:10px;border:1px solid var(--line);border-radius:10px}
 /* Sub-aba Pedidos (Compras): uma linha por pedido, agrupadas pelo andamento. */
 .card.adm.adm-compras::before{content:"ADMIN COMPRAS"}
+.pf-of-totais.pd-quads{grid-template-columns:repeat(3,minmax(0,1fr))}
+.pd-quads .pf-of-total{cursor:default}
+.pf-of-total.pd-q-pend{--fn:var(--warn)}
+.pf-of-total.pd-q-conf{--fn:var(--accent)}
+.pf-of-total.pd-q-falta{--fn:var(--off)}
 .pd-grupo{display:grid;gap:8px;padding-top:10px;border-top:1px solid var(--line)}
 .pd-grupo h3{margin:0;font-size:1.02rem}
 .pd-mod{display:grid;gap:8px;min-width:0;padding:8px;border:1px solid var(--line);border-radius:12px;background:var(--surface)}
 .pd-mod-h{display:flex;align-items:center;gap:10px;min-width:0}
 .gi-foto.pd-foto{flex:none;width:52px;height:52px;font-size:1.3rem}
-.pd-mod-t{display:grid;gap:2px;min-width:0}
+.pd-mod-t{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 8px;align-items:center;flex:1;min-width:0;padding:4px 0;border:0;background:none;color:inherit;font:inherit;text-align:left;cursor:pointer}
+.pd-mod-t b,.pd-mod-t small{grid-column:1}
+.pd-mod-t .seta{grid-column:2;grid-row:1 / span 2;color:var(--muted)}
 .pd-mod-t b{font-size:.94rem;overflow-wrap:anywhere}
 .pd-mod-t small{font-size:.8rem}
 .pd-lista{list-style:none;margin:0;padding:0;display:grid;gap:6px}

@@ -1,7 +1,9 @@
 // Sub-aba "Pedidos" (aba Compras): só quem administra a aba Compras (o root e o Admin; o servidor confere).
 // Bloco "Pedidos em andamento": uma linha por pedido (cada linha das Compras, sem as doações e sem o grupo Axé) com quem
 // pediu, pagamento (Pago / Pendente) e andamento. Agrupadas pelo andamento e, dentro dele, pelo modelo (o item): a foto
-// pequena e o nome do modelo aparecem uma vez, com as pessoas embaixo; tocar na foto abre em tela cheia.
+// pequena e o nome do modelo aparecem uma vez, com as pessoas embaixo; tocar na foto abre em tela cheia e tocar no nome
+// minimiza (ou abre) as pessoas daquele modelo.
+// No topo, os quadradinhos com o total de pedidos Pendentes, Em confecção e com Falta matéria-prima.
 // O andamento muda no combo da própria linha.
 // Quem tem cobrança vencida no ASAAS (última leitura do CPJ - Pgto atrasado) ganha o selo vermelho "pendências R$ X".
 
@@ -18,12 +20,15 @@ const ANDAMENTOS = [
   ['concluido', 'Concluído'],
   ['entregue', 'Entregue'],
 ];
+// Quadradinhos do topo: [andamento, classe da cor].
+const QUADROS = [['pendente', 'pd-q-pend'], ['em_confeccao', 'pd-q-conf'], ['falta_materia', 'pd-q-falta']];
 const fotoUrl = (l) => `/api/oferendas?lista=guiaFoto&id=${encodeURIComponent(l.itemId)}&v=${encodeURIComponent(l.fotoV)}`;
 // Modelo da linha: o item (o que foi excluído do cadastro fica pela descrição gravada na linha).
 const modeloDe = (l) => l.itemId || 'd:' + l.descricao;
-// fechados: grupos minimizados (Entregue começa assim); salvando: id da linha indo ao servidor; zoom: modelo com a foto aberta.
-const ui = { fechados: new Set(['entregue']), salvando: null, zoom: null };
-export function limpar() { ui.fechados = new Set(['entregue']); ui.salvando = null; ui.zoom = null; }
+// fechados: grupos minimizados (Entregue começa assim); modFechados: modelos minimizados ('andamento|modelo');
+// salvando: id da linha indo ao servidor; zoom: modelo com a foto aberta.
+const ui = { fechados: new Set(['entregue']), modFechados: new Set(), salvando: null, zoom: null };
+export function limpar() { ui.fechados = new Set(['entregue']); ui.modFechados = new Set(); ui.salvando = null; ui.zoom = null; }
 
 function foto(l) {
   if (!l.fotoV || !l.itemId) return '<div class="gi-foto pd-foto"><span aria-hidden="true">📿</span></div>';
@@ -64,9 +69,13 @@ function porModelo(L, pend) {
     .map((ls) => {
       ls.sort((a, b) => b.pedido - a.pedido || a.nome.localeCompare(b.nome, 'pt-BR'));
       const n = qtd(ls);
-      return `<div class="pd-mod"><div class="pd-mod-h">${foto(ls[0])}<div class="pd-mod-t"><b>${esc(ls[0].descricao)}</b>
-        <small class="muted">${n} ${n === 1 ? 'unidade' : 'unidades'} · ${ls.length} ${ls.length === 1 ? 'pedido' : 'pedidos'}</small></div></div>
-        <ul class="pd-lista">${ls.map((l) => linha(l, pend)).join('')}</ul></div>`;
+      const chave = ls[0].andamento + '|' + modeloDe(ls[0]);
+      const aberto = !ui.modFechados.has(chave);
+      return `<div class="pd-mod${aberto ? '' : ' fechado'}"><div class="pd-mod-h">${foto(ls[0])}
+        <button type="button" class="pd-mod-t" data-act="pdmodelo" data-k="${esc(chave)}" aria-expanded="${aberto}"><b>${esc(ls[0].descricao)}</b>
+        <small class="muted">${n} ${n === 1 ? 'unidade' : 'unidades'} · ${ls.length} ${ls.length === 1 ? 'pedido' : 'pedidos'}</small>
+        <span class="seta" aria-hidden="true">${aberto ? '▾' : '▸'}</span></button></div>
+        ${aberto ? `<ul class="pd-lista">${ls.map((l) => linha(l, pend)).join('')}</ul>` : ''}</div>`;
     }).join('');
 }
 
@@ -79,6 +88,11 @@ export function render() {
   const abertos = lista.filter((l) => l.andamento !== 'entregue').length;
   let h = `<section class="panel pd-tela"><div class="card adm adm-compras"><div class="grp-h"><h2>📦 Pedidos em andamento</h2><span class="count">${abertos}</span></div>`;
   if (!lista.length) return h + '<p class="muted" style="margin:0">Nenhum pedido ainda.</p></div></section>';
+  h += `<div class="pf-of-totais pd-quads">${QUADROS.map(([k, cls]) => {
+    const n = lista.filter((l) => l.andamento === k).length;
+    const rot = ANDAMENTOS.find(([x]) => x === k)[1];
+    return `<div class="pf-of-total ${cls}" aria-label="${n} ${n === 1 ? 'pedido' : 'pedidos'}: ${rot}"><b>${n}</b><span>${rot}</span></div>`;
+  }).join('')}</div>`;
   h += ANDAMENTOS.map(([k, rot]) => {
     const L = lista.filter((l) => l.andamento === k);
     if (!L.length) return '';
@@ -92,6 +106,7 @@ export function render() {
 
 export const cliques = {
   pddobrar(el) { const k = el.dataset.k; if (ui.fechados.has(k)) ui.fechados.delete(k); else ui.fechados.add(k); avisar(); },
+  pdmodelo(el) { const k = el.dataset.k; if (ui.modFechados.has(k)) ui.modFechados.delete(k); else ui.modFechados.add(k); avisar(); },
   pdzoom(el) { ui.zoom = el.dataset.m; avisar(); },
   pdzoomfechar() { ui.zoom = null; avisar(); },
   pdrecarregar() { estado.pedidos = null; avisar(); },
