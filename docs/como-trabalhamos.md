@@ -86,7 +86,7 @@ As ~30 migrações não testadas (v56-v85, veja `db/ESTRUTURA-ESQUEMA.md`) agora
 
 ### Backend
 
-- **Nunca criar arquivo novo em `api/`** (exceto `_lib/`): estamos no limite de 12 funções do Hobby. Funcionalidade nova entra como `acao` / `?lista=` num arquivo existente.
+- **Não criar arquivo novo em `api/`** (exceto `_lib/`) sem combinar: o Hobby tem no máximo 12 funções e as vagas que sobram ficam guardadas. Funcionalidade nova entra como `acao` / `?lista=` num arquivo existente.
 - Permissão sempre no backend: `exigir(req, 'perm')` / `pode(quem, 'perm')`.
 - **Zero dependências npm.** Não adicionar pacotes.
 

@@ -32,6 +32,26 @@ async function listarRotas(dir = path.join(RAIZ, 'api'), prefixo = '') {
   return rotas.sort((a, b) => a.dinamica - b.dinamica);
 }
 
+// Rewrites do vercel.json (ex.: rota antiga que virou ação de outra função), no formato :nome e :nome(a|b).
+async function lerRewrites() {
+  const { rewrites = [] } = JSON.parse(await readFile(path.join(RAIZ, 'vercel.json'), 'utf8'));
+  return rewrites.map(({ source, destination }) => ({
+    re: new RegExp('^' + source.replace(/:(\w+)(\([^)]*\))?/g, (_, n, alt) => `(?<${n}>${alt ? alt.slice(1, -1) : '[^/]+'})`) + '$'),
+    destination,
+  }));
+}
+
+function reescrever(url, rewrites) {
+  for (const { re, destination } of rewrites) {
+    const m = url.pathname.match(re);
+    if (!m) continue;
+    const nova = new URL(destination.replace(/:(\w+)/g, (_, n) => m.groups[n]), url);
+    url.searchParams.forEach((v, k) => { if (!nova.searchParams.has(k)) nova.searchParams.set(k, v); });
+    return nova;
+  }
+  return url;
+}
+
 function lerCorpo(req) {
   return new Promise((ok, erro) => {
     let s = '';
@@ -62,9 +82,10 @@ async function servirArquivo(res, arquivo) {
 
 export async function criarServidor() {
   const rotas = await listarRotas();
+  const rewrites = await lerRewrites();
   return http.createServer(async (req, res) => {
     adaptarRes(res);
-    const url = new URL(req.url, 'http://local');
+    const url = reescrever(new URL(req.url, 'http://local'), rewrites);
     try {
       if (url.pathname.startsWith('/api/')) {
         const rota = rotas.find((r) => r.re.test(url.pathname));

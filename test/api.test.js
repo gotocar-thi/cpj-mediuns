@@ -244,16 +244,16 @@ test('admin cadastra a corrente; usuário só lê', async () => {
 
 test('sorteio, rodízio e permissões da gira', async () => {
   const d1 = '2026-10-24', d2 = '2026-10-31';
-  assert.equal((await api('POST', `/api/giras/${d1}/sortear`, USER)).status, 403);
+  assert.equal((await api('POST', `/api/giras/${d1}`, USER, { acao: 'sortear' })).status, 403);
   assert.equal((await api('PUT', `/api/giras/${d1}`, USER, { entidade: 'X' })).status, 403);
 
-  const s1 = await api('POST', `/api/giras/${d1}/sortear`, ADMIN);
+  const s1 = await api('POST', `/api/giras/${d1}`, ADMIN, { acao: 'sortear' });
   assert.equal(s1.status, 200, JSON.stringify(s1.json));
   assert.equal(s1.json.gira.pares.length, 5);       // 4 médiuns + 1 extra recebem cambone
   assert.equal(s1.json.gira.passes.length, 2);      // 2 passes nos 2 experientes
   assert.match(s1.json.mensagem, /5 de 5 duplas novas/);
 
-  const s2 = await api('POST', `/api/giras/${d2}/sortear`, ADMIN);
+  const s2 = await api('POST', `/api/giras/${d2}`, ADMIN, { acao: 'sortear' });
   const anteriores = new Set(s1.json.gira.pares.map((p) => p.m + '|' + p.c));
   const repetidas = s2.json.gira.pares.filter((p) => anteriores.has(p.m + '|' + p.c)).length;
   assert.ok(repetidas <= 1, 'o rodízio deve evitar repetir a gira anterior (repetidas: ' + repetidas + ')');
@@ -274,7 +274,7 @@ test('remanejar falta mantém as outras duplas', async () => {
   const alvo = g.pares[0];
   const presenca = { ...g.presenca, [alvo.m]: 'f' };
   await api('PUT', `/api/giras/${d}`, ADMIN, { presenca });
-  const r = await api('POST', `/api/giras/${d}/remanejar`, ADMIN);
+  const r = await api('POST', `/api/giras/${d}`, ADMIN, { acao: 'remanejar' });
   assert.equal(r.status, 200);
   const novas = r.json.gira.pares;
   assert.ok(!novas.some((p) => p.m === alvo.m), 'quem faltou não pode ter cambone');
@@ -319,8 +319,8 @@ test('encerrar gira: quem não cambonou vai para o Suporte; encerrada não muda 
   for (const n of ['Elisa', 'Helena', 'Ana', 'Bruno', 'Igor']) assert.equal(pr[id(n)], 'p', n + ' continua presente');
   assert.match(r.json.mensagem, /Suporte/);
   assert.equal((await api('PUT', `/api/giras/${d}`, ADMIN, { entidade: 'X' })).status, 409);
-  assert.equal((await api('POST', `/api/giras/${d}/sortear`, ADMIN)).status, 409);
-  assert.equal((await api('POST', `/api/giras/${d}/remanejar`, ADMIN)).status, 409);
+  assert.equal((await api('POST', `/api/giras/${d}`, ADMIN, { acao: 'sortear' })).status, 409);
+  assert.equal((await api('POST', `/api/giras/${d}`, ADMIN, { acao: 'remanejar' })).status, 409);
   // Ao reabrir, quem foi para o Suporte ao encerrar volta a Presente.
   const re = await api('POST', `/api/giras/${d}`, ADMIN, { acao: 'reabrir' });
   assert.equal(re.json.gira.encerrada, false);
@@ -390,9 +390,9 @@ test('licença: fora do sorteio entre início e fim; só admin cadastra', async 
   const lista = (await api('POST', '/api/pessoas', ADMIN, { acao: 'licenca', pessoaId: bruno.id, inicio: '2027-02-01', fim: '2027-02-28', motivo: '  Férias  ' })).json;
   const lic = lista.find((p) => p.id === bruno.id).licencas;
   assert.deepEqual(lic.map((l) => [l.inicio, l.fim, l.motivo]), [['2027-02-01', '2027-02-28', 'Férias']]);
-  const dentro = (await api('POST', '/api/giras/2027-02-13/sortear', ADMIN)).json.gira;
+  const dentro = (await api('POST', '/api/giras/2027-02-13', ADMIN, { acao: 'sortear' })).json.gira;
   assert.ok(!dentro.pares.some((p) => p.m === bruno.id || p.c === bruno.id), 'de licença não entra no sorteio');
-  const fora = (await api('POST', '/api/giras/2027-03-06/sortear', ADMIN)).json.gira;
+  const fora = (await api('POST', '/api/giras/2027-03-06', ADMIN, { acao: 'sortear' })).json.gira;
   assert.ok(fora.pares.some((p) => p.m === bruno.id), 'depois da licença volta ao sorteio');
   const ed = (await api('POST', '/api/pessoas', ADMIN, { acao: 'editarLicenca', id: lic[0].id, inicio: '2027-02-01', fim: '2027-03-10' })).json;
   assert.equal(ed.find((p) => p.id === bruno.id).licencas[0].fim, '2027-03-10');
@@ -433,7 +433,7 @@ test('perfil admin oferendas: administra as oferendas e as ervas (sub-aba), e ma
   assert.equal((await api('POST', '/api/ervas', USER, { acao: 'config', frete: '0' })).status, 403);
   // Fora disso, é como usuário: não edita a escala nem os usuários.
   for (const t of [of]) {
-    assert.equal((await api('POST', '/api/giras/2027-01-02/sortear', t)).status, 403);
+    assert.equal((await api('POST', '/api/giras/2027-01-02', t, { acao: 'sortear' })).status, 403);
     assert.equal((await api('GET', '/api/usuarios', t)).status, 403);
     assert.equal((await api('GET', '/api/giras', t)).status, 200);
   }
@@ -528,14 +528,14 @@ test('admin só entra como admin com o e-mail dele; a sessão da corrente dele c
   assert.equal((await api('POST', '/api/usuarios', ADMIN, { pessoaId: pe.id, email: 'adm2@corrente.org', senha: 'senha-forte-9', papel: 'admin' })).status, 200);
   const tc = await tokenCorrente('Admin Pessoa');
   assert.equal((await api('GET', '/api/auth/me', tc)).json.papel, 'corrente');
-  assert.equal((await api('POST', '/api/giras/2027-05-01/sortear', tc)).status, 403);
+  assert.equal((await api('POST', '/api/giras/2027-05-01', tc, { acao: 'sortear' })).status, 403);
   assert.equal((await api('GET', '/api/usuarios', tc)).status, 403);
   assert.equal((await api('POST', '/api/ervas', tc, { acao: 'config', frete: '1' })).status, 403);
   assert.equal((await api('POST', '/api/oferendas', tc, { acao: 'salvar', responsavelId: RESP(), titulo: 'X', data: '2027-05-01' })).status, 403);
   // Com o e-mail e a senha dele, é admin.
   const pelaConta = (await api('POST', '/api/auth/entrar', null, { email: 'adm2@corrente.org', senha: 'senha-forte-9' })).json;
   assert.equal(pelaConta.usuario.papel, 'admin');
-  assert.equal((await api('POST', '/api/giras/2027-05-01/sortear', pelaConta.token)).status, 200, 'admin sorteia');
+  assert.equal((await api('POST', '/api/giras/2027-05-01', pelaConta.token, { acao: 'sortear' })).status, 200, 'admin sorteia');
   await api('DELETE', '/api/giras/2027-05-01', ADMIN);
   // A aba Usuários é só do admin root.
   assert.equal((await api('GET', '/api/usuarios', pelaConta.token)).status, 403);
@@ -1122,7 +1122,7 @@ test('reiniciar gira em aberto: volta tudo ao início, só a data fica', async (
   const d = '2029-06-06';
   const ps = (await api('GET', '/api/pessoas', ADMIN)).json;
   await api('PUT', `/api/giras/${d}`, ADMIN, { entidade: 'Caboclo', orixa: 'Oxóssi', limpeza: 2, presenca: { [ps[0].id]: 'a' } });
-  await api('POST', `/api/giras/${d}/sortear`, ADMIN);
+  await api('POST', `/api/giras/${d}`, ADMIN, { acao: 'sortear' });
   assert.equal((await api('POST', `/api/giras/${d}`, USER, { acao: 'reiniciar' })).status, 403);
   const r = (await api('POST', `/api/giras/${d}`, ADMIN, { acao: 'reiniciar' })).json;
   assert.equal(r.gira.entidade, '');
@@ -1140,7 +1140,7 @@ test('reiniciar gira em aberto: volta tudo ao início, só a data fica', async (
 test('cancelar o sorteio: apaga as duplas (também as fixadas); com a escala publicada, recusa', async () => {
   const d = '2029-06-13';
   await api('PUT', `/api/giras/${d}`, ADMIN, { entidade: 'Caboclo', orixa: 'Oxóssi' });
-  const s1 = (await api('POST', `/api/giras/${d}/sortear`, ADMIN)).json.gira;
+  const s1 = (await api('POST', `/api/giras/${d}`, ADMIN, { acao: 'sortear' })).json.gira;
   assert.ok(s1.pares.length > 0, 'sorteou');
   await api('POST', `/api/giras/${d}`, ADMIN, { acao: 'publicar' });
   assert.equal((await api('POST', `/api/giras/${d}`, USER, { acao: 'cancelarSorteio' })).status, 403);
@@ -1165,7 +1165,7 @@ test('mudar a data da gira: leva presença, duplas e o resto para a data nova', 
   const d = '2029-07-04', nova = '2029-07-11', ocupada = '2029-07-18';
   const ps = (await api('GET', '/api/pessoas', ADMIN)).json;
   await api('PUT', `/api/giras/${d}`, ADMIN, { entidade: 'Caboclo', orixa: 'Oxóssi', limpeza: 3, presenca: { [ps[0].id]: 'a' } });
-  const sorteada = (await api('POST', `/api/giras/${d}/sortear`, ADMIN)).json.gira;
+  const sorteada = (await api('POST', `/api/giras/${d}`, ADMIN, { acao: 'sortear' })).json.gira;
   await api('PUT', `/api/giras/${ocupada}`, ADMIN, { entidade: 'Baiano' });
   assert.equal((await api('POST', `/api/giras/${d}`, USER, { acao: 'mudarData', para: nova })).status, 403);
   assert.equal((await api('POST', `/api/giras/${d}`, ADMIN, { acao: 'mudarData', para: '2029-02-30' })).status, 400);
@@ -1572,7 +1572,7 @@ test('perfil: afinidade com as entidades por função (extra, passe, cambone)', 
 test('escala: o sorteio só aparece para todos depois de publicado', async () => {
   const d = '2099-02-04';
   await api('PUT', '/api/giras/' + d, ADMIN, { entidade: 'Caboclo' });
-  const s = await api('POST', `/api/giras/${d}/sortear`, ADMIN);
+  const s = await api('POST', `/api/giras/${d}`, ADMIN, { acao: 'sortear' });
   assert.equal(s.status, 200, JSON.stringify(s.json));
   const adm = (await api('GET', '/api/giras/' + d, ADMIN)).json;
   assert.equal(adm.publicada, false);
@@ -1622,8 +1622,8 @@ test('evento na gira: remove limpeza e escala, e bloqueia operações de escala'
   assert.deepEqual((await api('GET', `/api/giras/${d}`, USER)).json.pares, []);
   assert.deepEqual((await api('GET', `/api/giras/${d}`, USER)).json.passes, []);
 
-  assert.equal((await api('POST', `/api/giras/${d}/sortear`, ADMIN)).status, 409);
-  assert.equal((await api('POST', `/api/giras/${d}/remanejar`, ADMIN)).status, 409);
+  assert.equal((await api('POST', `/api/giras/${d}`, ADMIN, { acao: 'sortear' })).status, 409);
+  assert.equal((await api('POST', `/api/giras/${d}`, ADMIN, { acao: 'remanejar' })).status, 409);
   assert.equal((await api('POST', `/api/giras/${d}`, ADMIN, { acao: 'publicar' })).status, 409);
   assert.equal((await api('POST', `/api/giras/${d}`, ADMIN, { acao: 'cancelarSorteio' })).status, 409);
   assert.equal((await api('PUT', `/api/giras/${d}`, ADMIN, { pares })).status, 409);
@@ -1794,13 +1794,13 @@ test('recado do admin: até 5 linhas, só quem edita a gira e todos leem', async
 test('trava da escala: só quem edita liga; com ela não dá para remanejar; cancelar o sorteio tira a trava', async () => {
   const d = '2031-03-05';
   await api('PUT', '/api/giras/' + d, ADMIN, { entidade: 'Caboclo' });
-  const s = await api('POST', `/api/giras/${d}/sortear`, ADMIN);
+  const s = await api('POST', `/api/giras/${d}`, ADMIN, { acao: 'sortear' });
   assert.equal(s.status, 200, JSON.stringify(s.json));
   assert.equal((await api('POST', '/api/giras/' + d, USER, { acao: 'travar', travada: true })).status, 403);
   assert.equal((await api('POST', '/api/giras/' + d, ADMIN, { acao: 'travar', travada: 'sim' })).status, 400);
   const r = (await api('POST', '/api/giras/' + d, ADMIN, { acao: 'travar', travada: true })).json;
   assert.equal(r.gira.travada, true);
-  assert.equal((await api('POST', `/api/giras/${d}/remanejar`, ADMIN)).status, 409);
+  assert.equal((await api('POST', `/api/giras/${d}`, ADMIN, { acao: 'remanejar' })).status, 409);
   assert.equal((await api('POST', '/api/giras/' + d, ADMIN, { acao: 'cancelarSorteio' })).json.gira.travada, false);
   await api('DELETE', '/api/giras/' + d, ADMIN);
 });
@@ -3008,4 +3008,16 @@ test('diário: cuidados do dia e Galeria de fotos (uma por pessoa, curtidas, exc
   const nova = (await op(ana, { op: 'fotoEnviar', foto: jpeg })).json.galeria[0];
   assert.equal((await op(ADMIN, { op: 'fotoExcluir', id: nova.id })).status, 200, 'o root apaga qualquer uma');
   await pub(false);
+});
+
+test('rota antiga /sortear e /remanejar (app da versão anterior) chega na ação pelo rewrite do vercel.json', async () => {
+  const d = '2027-09-04';
+  await api('PUT', `/api/giras/${d}`, ADMIN, { entidade: 'caboclos' });
+  assert.equal((await api('POST', `/api/giras/${d}/sortear`, USER)).status, 403);
+  const s = await api('POST', `/api/giras/${d}/sortear`, ADMIN);
+  assert.equal(s.status, 200);
+  assert.ok(s.json.mensagem);
+  assert.equal((await api('POST', `/api/giras/${d}/remanejar`, ADMIN)).status, 200);
+  assert.equal((await api('POST', `/api/giras/${d}/outra`, ADMIN)).status, 404);
+  await api('DELETE', `/api/giras/${d}`, ADMIN);
 });

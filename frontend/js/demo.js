@@ -514,9 +514,10 @@ function acaoGira(data, b) {
 }
 
 function escrever(metodo, caminho, b) {
-  const mGira = caminho.match(/^\/giras\/(\d{4}-\d{2}-\d{2})(?:\/(sortear|remanejar))?$/);
+  const mGira = caminho.match(/^\/giras\/(\d{4}-\d{2}-\d{2})$/);
   if (mGira) {
-    const [, data, sub] = mGira;
+    const [, data] = mGira;
+    const sub = metodo === 'POST' && ['sortear', 'remanejar'].includes(b?.acao) ? b.acao : null;
     if (metodo === 'DELETE') { db.giras = db.giras.filter((g) => g.data !== data); return { ok: true }; }
     if (metodo === 'PUT') return copia(salvarGira({ ...(giraDe(data) || giraVazia(data)), ...b, data }));
     if (sub) {

@@ -325,12 +325,12 @@ async function descarregar(data) {
   await fila[data];
 }
 
-async function acaoDaGira(rota, mensagem = null) {
+async function acaoDaGira(acao, mensagem = null) {
   const data = prefs.data;
   await descarregar(data);
   estado.salvando++;
   try {
-    const r = await api('POST', `/giras/${data}/${rota}`);
+    const r = await api('POST', '/giras/' + data, { acao });
     estado.giras[data] = r.gira;
     toast(mensagem || r.mensagem);
   } catch (e) {

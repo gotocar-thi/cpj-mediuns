@@ -5,6 +5,9 @@
 // POST   /api/giras/:data   { acao: 'publicar', publicada?: false } → a escala fica visível para todos (ou volta a ficar só para os admins)
 //                            { acao: 'encerrar', atendimentos: { preferencial, normal, passe } | participantes } | { acao: 'reabrir' } | { acao: 'reiniciar' }  → { gira, mensagem }
 //                            reiniciar: gira em aberto volta ao início (tudo pendente, sem gira, orixá, turma nem duplas); só a data fica
+//                            { acao: 'sortear' }  sorteio completo (mantém as duplas fixadas) → { gira, mensagem }
+//                            { acao: 'remanejar' }  ajusta só quem foi afetado por faltas → { gira, mensagem }
+//                              (o app anterior chama /api/giras/:data/sortear e /remanejar sem corpo: o vercel.json reescreve para ?acao=)
 //                            { acao: 'ausencia' }  acesso da corrente: a própria pessoa passa de Pendente para Ausente (até a véspera)
 //                            { acao: 'minhaEntidade', linha }  gira com mais de uma linha: a própria pessoa escolhe a entidade que vai atender ('' = tira a escolha)
 //                            { acao: 'cancelarSorteio' }  apaga todas as duplas (também as fixadas) e tira a trava: volta ao botão Sortear (escala publicada: recusa)
@@ -20,7 +23,7 @@ import { pode } from '../../../shared/permissoes.js';
 import { ocultarSorteio } from '../../_lib/escala.js';
 import { configCasa } from '../../../shared/config.js';
 import { db } from '../../_lib/db.js';
-import { giraVazia, STATUS_KEYS, TURMAS_LIMPEZA, ORIXAS, encerrar, reabrir, pendentesDaGira, proximaTurma, podeDeclararAusencia, podeEscolherEntidade, linhasParaEscolher } from '../../../shared/regras.js';
+import { giraVazia, STATUS_KEYS, TURMAS_LIMPEZA, ORIXAS, encerrar, reabrir, sortear, remanejar, pendentesDaGira, proximaTurma, podeDeclararAusencia, podeEscolherEntidade, linhasParaEscolher } from '../../../shared/regras.js';
 
 function validarDuplas(lista, nome) {
   if (!Array.isArray(lista) || lista.length > 500) throw new HttpError(400, `Lista de ${nome} inválida.`);
@@ -133,6 +136,21 @@ async function escolherEntidade(req, linha) {
   return { gira, mensagem: escolha ? 'Entidade registrada.' : 'Escolha retirada.' };
 }
 
+// Sortear e Remanejar faltas: as regras usam a lista inteira de giras (histórico das duplas).
+async function sortearOuRemanejar(req, acao) {
+  const perfil = await exigir(req, 'giras:sortear');
+  const data = validarData(req.query.data);
+  const [pessoas, giras] = await Promise.all([db.rpc('pessoas_listar'), db.rpc('giras_listar')]);
+  const g = giras.find((x) => x.data === data) || giraVazia(data);
+  if (g.encerrada) throw new HttpError(409, MSG_ENCERRADA);
+  if (g.evento) throw new HttpError(409, `Evento não tem escala para ${acao}.`);
+  if (acao === 'remanejar' && g.travada) throw new HttpError(409, 'A escala está travada. Desligue a Trava na Presença para remanejar.');
+  const { patch, mensagem } = (acao === 'sortear' ? sortear : remanejar)(pessoas, giras, g);
+  const gira = patch && Object.keys(patch).length ? await db.rpc('gira_salvar', { data, usuario: perfil.id, ...patch }) : g;
+  return { gira, mensagem };
+}
+const SORTEIO = ['sortear', 'remanejar'];
+
 export default rota({
   GET: async (req) => {
     const eu = await exigir(req, 'giras:ler');
@@ -198,7 +216,10 @@ export default rota({
     return ocultarSorteio(perfil, gira);
   },
   POST: async (req) => {
+    // App anterior: /api/giras/:data/sortear ou /remanejar, sem corpo (reescrito pelo vercel.json).
+    if (SORTEIO.includes(req.query.acao)) return sortearOuRemanejar(req, req.query.acao);
     const b = corpo(req);
+    if (SORTEIO.includes(b.acao)) return sortearOuRemanejar(req, b.acao);
     if (b.acao === 'ausencia') return declararAusencia(req);
     if (b.acao === 'minhaEntidade') return escolherEntidade(req, b.linha);
     // Admin root (Histórico → estatísticas): corrige a presença de uma pessoa, mesmo em gira encerrada.

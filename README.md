@@ -129,13 +129,13 @@ Todas exigem `Authorization: ......` exceto `GET /api/auth/estado`, `POST /api/a
 | `GET /api/giras` · `GET /api/giras/:data` | `giras:ler` | — |
 | `PUT /api/giras/:data` | `giras:editar` | `acao=escala`, `acao=evento`, `acao=recado`, `acao=foto*`, `acao=video*` |
 | `DELETE /api/giras/:data` | `giras:excluir` | — |
-| `POST /api/giras/:data/sortear` · `/remanejar` | `giras:sortear` | `acao=sortear`, `acao=remanejar`, `acao=refazer`, `acao=cancelarSorteio` |
+| `POST /api/giras/:data` | `giras:sortear` | `acao=sortear`, `acao=remanejar`, `acao=refazer`, `acao=cancelarSorteio` |
 | `GET /api/usuarios` · `POST /api/usuarios` · `PATCH /api/usuarios/:id` · `DELETE /api/usuarios/:id` | `usuarios:gerenciar` | — |
 | `POST /api/importar` | `dados:importar` | — |
 | `GET /api/ervas` · `PUT /api/ervas` · `POST /api/ervas` | `ervas:escolher` · `ervas:gerenciar` | — |
 | `GET /api/oferendas` · `POST /api/oferendas` | `oferendas:doar` · `oferendas:gerenciar` | `acao=doar`, `acao=editar`, `acao=remover`, `acao=cancelar` |
 
-**Nota**: Plano Hobby (12 funções). Uma rota nova reutiliza um arquivo existente com `acao` ou `?lista=`.
+**Nota**: Plano Hobby (máximo de 12 funções). As rotas antigas `/api/giras/:data/sortear` e `/remanejar` viraram ação da rota da gira e continuam respondendo pelo rewrite do `vercel.json`. Uma rota nova reutiliza um arquivo existente com `acao` ou `?lista=`.
 
 ## Segurança
 

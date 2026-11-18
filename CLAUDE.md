@@ -11,13 +11,13 @@ Leia o doc certo antes de mexer na área:
 | Doc | Quando ler |
 |---|---|
 | [docs/como-trabalhamos.md](docs/como-trabalhamos.md) | Git, deploy, fluxo de entrega, testes, convenções de código e de migração |
-| [docs/arquitetura.md](docs/arquitetura.md) | Stack, as 12 funções de `api/`, estrutura de pastas, fluxo de dados, modelo de dados |
+| [docs/arquitetura.md](docs/arquitetura.md) | Stack, as funções de `api/`, estrutura de pastas, fluxo de dados, modelo de dados |
 | [docs/regras.md](docs/regras.md) | Regras de negócio: pessoas, presença, sorteio, escala, Gira, Perfil; jornada e diagramas de estado |
 | [docs/visao.md](docs/visao.md) | Para quem é, intenção, roadmap/pendências e histórico de versões |
 
 ## Regras que não se quebram
 
-- **Vercel Hobby: 12 funções e já estamos em 12.** Nunca criar arquivo novo em `api/` (exceto `_lib/`); funcionalidade nova vira `acao` / `?lista=` num arquivo existente.
+- **Vercel Hobby: máximo de 12 funções** (hoje há 2 vagas, guardadas para quando não houver outro jeito). Não criar arquivo novo em `api/` (exceto `_lib/`) sem combinar; funcionalidade nova vira `acao` / `?lista=` num arquivo existente.
 - **Zero dependências npm.** Sem framework, sem bundler.
 - **Migrações idempotentes** em `db/esquema.js`: toda a lista roda de novo a cada `VERSAO`; coisa nova vai no fim.
 - **Dados de produção só mudam por migração no código.** Nunca acessar o banco de produção, nunca imprimir segredos nem decifrar variáveis da Vercel.
