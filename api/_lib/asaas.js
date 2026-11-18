@@ -17,6 +17,7 @@ import { iguaisSeguro } from './senhas.js';
 import { pode } from '../../shared/permissoes.js';
 import { chavePessoa } from '../../shared/ervas.js';
 import { cpfValido } from '../../shared/perfil.js';
+import { hashCpf } from './cpf.js';
 
 const SANDBOX = 'https://api-sandbox.asaas.com/v3';
 // prefixo = 'ASAAS' (conta A, Compras) ou 'ASAAS2' (conta B, pagamentos em atraso: api/_lib/atrasos.js).
@@ -47,6 +48,46 @@ export async function chamarAsaas(prefixo, metodo, caminho, dados, ms = 8000) {
   return json;
 }
 const asaas = (...a) => chamarAsaas('ASAAS', ...a);
+
+// Leitura do ASAAS 1 vez por dia, a partir das 9h de Brasília (usada pela Transparência). A leitura guardada vale enquanto
+// for posterior ao último "9h" (antes das 9h, o de ontem). O root e o Admin financeiro podem consultar de novo na hora.
+// O Pgto atrasado lê a cada 10 minutos e as Compras recebem o Pix na hora pelo webhook.
+export const HORA_LEITURA = 9;
+export function corteDiario(agora = new Date()) {
+  const hoje = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(agora);
+  const corte = new Date(`${hoje}T${String(HORA_LEITURA).padStart(2, '0')}:00:00-03:00`);
+  return agora >= corte ? corte : new Date(corte.getTime() - 24 * 60 * 60 * 1000);
+}
+export const leituraDoDia = (atualizadoEm) => !!atualizadoEm && Date.parse(atualizadoEm) >= corteDiario().getTime();
+
+// Clientes de uma conta ('A' = ASAAS, 'B' = ASAAS2): nome, telefone, hash do CPF (o CPF aberto não é guardado) e referência.
+// Os guardados há menos de 7 dias (asaas_clientes_info) não são buscados de novo, a não ser com renovar.
+// → Map(id → { id, nome, telefone, cpfHash, referencia }); cliente que o ASAAS não devolveu fica de fora.
+const PREFIXO = { A: 'ASAAS', B: 'ASAAS2' };
+const LOTE_CLIENTES = 10;
+export async function clientesAsaas(conta, ids, renovar = false) {
+  const clientes = new Map();
+  const unicos = [...new Set(ids.filter(Boolean))];
+  if (!unicos.length) return clientes;
+  if (!renovar) (await db.rpc('asaas_clientes_info_ler', { conta, ids: unicos })).forEach((c) => clientes.set(c.id, c));
+  const novos = [];
+  const faltam = unicos.filter((id) => !clientes.has(id));
+  for (let i = 0; i < faltam.length; i += LOTE_CLIENTES) {
+    await Promise.all(faltam.slice(i, i + LOTE_CLIENTES).map(async (id) => {
+      try {
+        const cli = await chamarAsaas(PREFIXO[conta], 'GET', `/customers/${encodeURIComponent(id)}`);
+        const cpf = String(cli?.cpfCnpj || '').replace(/\D/g, '');
+        let cpfHash = '';
+        if (cpf.length === 11) { try { cpfHash = hashCpf(cpf); } catch { /* sem CPF_CHAVE: não liga por CPF */ } }
+        const info = { id, nome: String(cli?.name || ''), telefone: String(cli?.mobilePhone || cli?.phone || '').replace(/\D/g, ''), cpfHash, referencia: String(cli?.externalReference || '') };
+        clientes.set(id, info);
+        novos.push(info);
+      } catch { /* fica sem nome/CPF */ }
+    }));
+  }
+  if (novos.length) await db.rpc('asaas_clientes_info_salvar', { conta, itens: novos });
+  return clientes;
+}
 
 // ---------- pessoa: gerar o Pix ----------
 export const pixLigado = async () => configurado() && !!(await db.rpc('asaas_ativo'));

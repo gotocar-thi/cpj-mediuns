@@ -8,9 +8,9 @@
 //                    em aberto = pendentes ou vencidas;
 //     doações das giras = cobranças com a descrição das doações (a que o ASAAS põe no Pix recebido), pagas no mês.
 //   A leitura do ASAAS fica guardada por mês (transparencia_asaas) e é refeita sozinha no máximo 1 vez por dia, ou no
-//   "Puxar dados do ASAAS" do root. O saldo soma, desde o mês de início, créditos + aporte − débitos de cada mês.
+//   "Puxar dados do ASAAS" (root e Admin financeiro). O saldo soma, desde o mês de início, créditos + aporte − débitos de cada mês.
 //
-//   GET  /api/giras?lista=transparencia&mes=AAAA-MM[&atualizar=1 (root)]
+//   GET  /api/giras?lista=transparencia&mes=AAAA-MM[&atualizar=1 (root e Admin financeiro)]
 //   POST /api/giras { acao: 'transparencia', op: 'mes', mes, debitos: [{ nome, valor }], creditos: [{ nome, valor }], aporte,
 //                     config?: { inicio, saldoInicial, valorMensalidade, descricaoDoacao, campos: { debitos, creditos } }, renomes? }
 //                   · { op: 'publicar', publicada } · { op: 'config', valorMensalidade?, descricaoDoacao?, pagadoresAporte?, ... }
@@ -20,17 +20,15 @@
 
 import { HttpError } from './http.js';
 import { db } from './db.js';
-import { chamarAsaas } from './asaas.js';
-import { decifrar } from './cpf.js';
+import { chamarAsaas, clientesAsaas, leituraDoDia } from './asaas.js';
+import { pessoasPorHashCpf } from './cpf.js';
 import { pode } from '../../shared/permissoes.js';
 
 const CONTA = 'ASAAS2';
 const PAGO = ['RECEIVED', 'CONFIRMED', 'RECEIVED_IN_CASH'];
 const ABERTO = ['PENDING', 'OVERDUE'];
 const MAX_PAGINAS = 20;
-const LOTE_CLIENTES = 10;
 const MAX_MESES_POR_PEDIDO = 3;   // meses lidos num pedido só (o limite de tempo da Vercel é 15 s)
-const VALIDADE_MS = 24 * 60 * 60 * 1000;
 // Formato da leitura guardada: mudou o que se guarda (ex.: a ligação por CPF, a lista de doações), sobe o número e a
 // leitura antiga é refeita na próxima abertura, sem esperar o dia.
 const FORMATO = 3;
@@ -83,18 +81,10 @@ async function cobrancas(filtros) {
   return lista;
 }
 
-// CPF do Perfil → pessoa (só quem está ativo). Sem a CPF_CHAVE, ninguém é ligado.
-async function cpfsDaCorrente() {
-  const m = new Map();
-  for (const l of (await db.rpc('cpf_todos')) || []) {
-    try { m.set(decifrar(l.cifrado, l.pessoaId), l.pessoaId); } catch { /* sem chave ou linha ruim: não liga */ }
-  }
-  return m;
-}
-
 // Lê um mês no ASAAS: mensalidades (pelo vencimento) e doações (pela data do pagamento), com o nome de cada cliente.
-// Doação de um dos pagadores do aporte (config) vai para o aporte da Mãe Vê.
-async function lerMes(mes, cfg) {
+// Doação de um dos pagadores do aporte (config) vai para o aporte da Mãe Vê. Os clientes vêm dos guardados (7 dias) e a
+// pessoa da corrente, pelo hash do CPF do Perfil (porHash), sem decifrar; renovar = Puxar (busca todos de novo).
+async function lerMes(mes, cfg, porHash, renovar) {
   const ini = mes + '-01', fim = ultimoDia(mes);
   const [porVencimento, porPagamento] = await Promise.all([
     cobrancas({ 'dueDate[ge]': ini, 'dueDate[le]': fim }),
@@ -105,20 +95,9 @@ async function lerMes(mes, cfg) {
   const alvo = centavos(cfg.valorMensalidade);
   const mens = porVencimento.filter((c) => !ehDoacao(c) && centavos(c.value) === alvo && (PAGO.includes(c.status) || ABERTO.includes(c.status)));
   const recebidas = porPagamento.filter((c) => ehDoacao(c) && PAGO.includes(c.status));
-  const ids = [...new Set([...mens, ...recebidas].map((c) => c.customer).filter(Boolean))];
-  const nomes = new Map();
-  const cpfs = new Map();
-  for (let i = 0; i < ids.length; i += LOTE_CLIENTES) {
-    await Promise.all(ids.slice(i, i + LOTE_CLIENTES).map(async (id) => {
-      try {
-        const cli = await chamarAsaas(CONTA, 'GET', `/customers/${encodeURIComponent(id)}`);
-        nomes.set(id, String(cli?.name || ''));
-        cpfs.set(id, String(cli?.cpfCnpj || '').replace(/\D/g, ''));
-      } catch { /* fica sem nome */ }
-    }));
-  }
-  // Pessoa da corrente de cada mensalidade, pelo CPF do Perfil (decifrado só aqui, em memória; nunca vai para a tela).
-  const porCpf = await cpfsDaCorrente();
+  const clientes = await clientesAsaas('B', [...mens, ...recebidas].map((c) => c.customer), renovar);
+  const nomes = new Map([...clientes].map(([id, c]) => [id, c.nome]));
+  const pessoaDe = (c) => { const h = clientes.get(c.customer)?.cpfHash; return (h && porHash.get(h)) || null; };
   const pagas = mens.filter((c) => PAGO.includes(c.status));
   const doAporte = new Set(cfg.pagadoresAporte.map(normalizar));
   const ehAporte = (c) => doAporte.has(normalizar(nomes.get(c.customer)));
@@ -140,7 +119,7 @@ async function lerMes(mes, cfg) {
       pagas: pagas.length,
       abertas: mens.length - pagas.length,
       totalPago: reais(pagas.reduce((s, c) => s + centavos(c.value), 0)),
-      lista: mens.map((c) => ({ nome: nomes.get(c.customer) || 'Sem nome no ASAAS', pessoaId: porCpf.get(cpfs.get(c.customer)) || null, valor: Number(c.value) || 0,
+      lista: mens.map((c) => ({ nome: nomes.get(c.customer) || 'Sem nome no ASAAS', pessoaId: pessoaDe(c), valor: Number(c.value) || 0,
         pago: PAGO.includes(c.status), vencida: c.status === 'OVERDUE', vencimento: c.dueDate || null, pagoEm: c.paymentDate || null }))
         .sort((a, b) => Number(a.pago) - Number(b.pago) || a.nome.localeCompare(b.nome, 'pt-BR')),
     },
@@ -149,9 +128,10 @@ async function lerMes(mes, cfg) {
   };
 }
 
-// A leitura guardada vale 1 dia, só no formato atual e para o mesmo valor de mensalidade, descrição de doação e pagadores do aporte.
+// A leitura guardada vale até as 9h do dia seguinte (1 leitura por dia; corteDiario em asaas.js), só no formato atual e para
+// o mesmo valor de mensalidade, descrição de doação e pagadores do aporte. O Puxar (root e Admin financeiro) lê na hora.
 const listaIgual = (a, b) => (a || []).map(normalizar).sort().join('|') === (b || []).map(normalizar).sort().join('|');
-const fresca = (linha, cfg) => linha && linha.dados?.formato === FORMATO && Date.now() - new Date(linha.atualizadoEm).getTime() < VALIDADE_MS
+const fresca = (linha, cfg) => linha && linha.dados?.formato === FORMATO && leituraDoDia(linha.atualizadoEm)
   && centavos(linha.dados?.valorMensalidade) === centavos(cfg.valorMensalidade)
   && normalizar(linha.dados?.descricaoDoacao ?? PADRAO.descricaoDoacao) === normalizar(cfg.descricaoDoacao)
   && listaIgual(linha.dados?.pagadoresAporte, cfg.pagadoresAporte);
@@ -195,16 +175,19 @@ export async function transparencia(eu, query) {
   for (let m = atual; m >= inicio && disponiveis.length < 240; m = somarMes(m, -1)) disponiveis.push(m);
   const mes = MES.test(String(query.mes || '')) && disponiveis.includes(query.mes) ? query.mes : atual;
 
-  // ASAAS: o mês escolhido (no Puxar do root, ou se a leitura passou de 1 dia) e, para o saldo, os meses desde o início
+  // ASAAS: o mês escolhido (no Puxar, ou se a leitura é de antes das 9h de hoje) e, para o saldo, os meses desde o início
   // que nunca foram lidos (alguns por pedido).
   const lidos = new Map(E.asaas.map((x) => [x.mes, x]));
   let erro = '';
   if (ligada()) {
     const precisa = disponiveis.filter((m) => m < mes && !lidos.has(m)).slice(0, MAX_MESES_POR_PEDIDO - 1);
-    if ((query.atualizar === '1' && root) || !fresca(lidos.get(mes), cfg)) precisa.unshift(mes);
+    // Puxar (ler na hora): o root e o Admin financeiro (quem vê a aba ASAAS).
+    const puxar = query.atualizar === '1' && pode(eu, 'asaas:ver');
+    if (puxar || !fresca(lidos.get(mes), cfg)) precisa.unshift(mes);
+    const porHash = precisa.length ? await pessoasPorHashCpf() : null;
     for (const m of precisa) {
       try {
-        const dados = await lerMes(m, cfg);
+        const dados = await lerMes(m, cfg, porHash, puxar && m === mes);
         await db.rpc('transparencia_asaas_salvar', { mes: m, dados });
         lidos.set(m, { mes: m, dados, atualizadoEm: new Date().toISOString() });
       } catch (e) {

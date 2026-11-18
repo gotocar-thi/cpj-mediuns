@@ -89,6 +89,12 @@ export async function cadastroPorCpf(cpf) {
   return db.rpc('cadastro_por_cpf', { hash: hashCpf(cpf) });
 }
 
+// Hash do CPF → pessoa ativa da corrente (atrasos e Transparência ligam as cobranças do ASAAS sem decifrar os CPFs).
+export async function pessoasPorHashCpf() {
+  try { await preencherHashes(); } catch { /* sem CPF_CHAVE: só os hashes que já estão gravados */ }
+  return new Map(((await db.rpc('cpf_hashes')) || []).map((l) => [l.hash, l.pessoaId]));
+}
+
 // Hash dos CPFs da corrente gravados sem ele (de antes da v130 e do UP CPJ). Também usado pela leitura dos atrasos.
 export async function preencherHashes() {
   const semHash = await db.rpc('cpf_sem_hash');

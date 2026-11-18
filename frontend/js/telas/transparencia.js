@@ -50,7 +50,7 @@ function cardBusca(T) {
         <small class="muted">A doação de um destes (nome do cliente no ASAAS) soma no aporte, não nas doações.</small></div>
       <button type="button" class="btn small primary" data-act="trbuscasalvar">Salvar busca</button>
     </form>
-    ${A.configurado ? `<div class="tr-lido"><span class="muted">${A.atualizadoEm ? esc(nomeMes(T.mes)) + ' lido em ' + quando(A.atualizadoEm) : 'Mês ainda não lido'} · sozinho, 1 vez por dia</span>
+    ${A.configurado ? `<div class="tr-lido"><span class="muted">${A.atualizadoEm ? esc(nomeMes(T.mes)) + ' lido em ' + quando(A.atualizadoEm) : 'Mês ainda não lido'} · sozinho, 1 vez por dia, às 9h</span>
       <button type="button" class="btn small" data-act="tratualizar">⬇️ Puxar dados do ASAAS</button></div>`
       : '<p class="muted" style="margin:0">A conta B do ASAAS não está ligada no servidor.</p>'}
   </div>`;
@@ -173,7 +173,9 @@ function cardCreditos(T) {
   const extras = T.creditosExtras.length || estrutura(T)
     ? grupo('Outros créditos', 'Lançados à mão', linhas(T, 'creditos', T.creditosExtras, 'tr-pos'), T.creditosExtras.length && !ui.ed ? totalItem('Total', T.creditosExtras.reduce((x, c) => x + c.valor, 0)) : '')
     : '';
-  const lido = T.asaas.configurado ? `<p class="muted" style="margin:0;font-size:.8rem">${T.asaas.atualizadoEm ? 'Lido do ASAAS em ' + quando(T.asaas.atualizadoEm) : 'Ainda sem leitura do ASAAS'}.</p>` : '';
+  // Admin financeiro (vê os nomes, sem o bloco Busca do root): o Puxar fica aqui.
+  const puxar = T.verNomes && !T.root ? ' <button type="button" class="btn small" data-act="tratualizar">⬇️ Puxar dados do ASAAS</button>' : '';
+  const lido = T.asaas.configurado ? `<p class="muted tr-lido-c" style="margin:0;font-size:.8rem">${T.asaas.atualizadoEm ? 'Lido do ASAAS em ' + quando(T.asaas.atualizadoEm) : 'Ainda sem leitura do ASAAS'} · 1 vez por dia, às 9h.${puxar}</p>` : '';
   return `<div class="card tr-bloco tr-cred"><div class="tr-h"><h3>📈 Créditos</h3></div>
     ${gruposAsaas(T)}${extras}
     <div class="tr-tot tr-tot-g"><span>Total de créditos</span><b class="tr-pos">${R(T.creditos)}</b></div>${lido}</div>`;
