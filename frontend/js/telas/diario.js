@@ -5,7 +5,7 @@
 // dia escolhido. No fim, a Galeria de fotos da corrente (carrossel, curtidas, uma foto por pessoa) e o bloco do root. O dia muda conforme a agenda (ou o interruptor "Dia de gira"): na gira, Chegada, Saída, Linha, Banho e
 // Conselho do guia; no dia comum, Manhã, Noite, Reflexão e o Orientador, que sugere um banho quando o estado é pesado.
 // Cada check-in tem a escala de rostos (1 a 5), as emoções em dois grupos (leve e densa; até 3) e a energia (barra de
-// 1 a 5, do vermelho ao verde). O conselho do guia pode vir de uma foto do papel (leitura do texto no aparelho).
+// 1 a 5, do vermelho ao verde).
 // Toques salvam na hora; os textos salvam ao sair do campo. O root liga "Visível para todos"; desligado, só ele vê.
 
 import { estado, avisar, carregarDiario, salvarDiaDiario, publicarDiario, acaoGaleriaDiario } from '../estado.js';
@@ -18,8 +18,8 @@ import {
 import { BANHO_ORIXA } from '/shared/banhos.js';
 
 // dia: data aberta; mes: mês do calendário; rasc: textos ainda não salvos por data; ouvindo: campo com o microfone ligado;
-// ocr: texto do andamento da leitura da foto do papel; gal: foto escolhida para a galeria (base64), descrição e envio.
-const ui = { dia: hoje(), mes: hoje().slice(0, 7), rasc: {}, ouvindo: null, ocr: null, gal: { foto: null, desc: '', enviando: false } };
+// gal: foto escolhida para a galeria (base64), descrição e envio.
+const ui = { dia: hoje(), mes: hoje().slice(0, 7), rasc: {}, ouvindo: null, gal: { foto: null, desc: '', enviando: false } };
 let reconhecimento = null;
 export function limpar() { ui.dia = hoje(); ui.mes = ui.dia.slice(0, 7); }
 
@@ -76,11 +76,11 @@ function energia(campo, valor) {
     <div class="di-en-leg muted"><span>baixa</span><span>alta</span></div></div>`;
 }
 // fixo: o campo mostra até 4 linhas e rola o resto (o conselho do guia pode ter umas 20 linhas).
-function campoTexto(campo, rotulo, valor, max, voz, extra = '', fixo = false) {
+function campoTexto(campo, rotulo, valor, max, voz, fixo = false) {
   const v = ui.rasc[ui.dia]?.[campo] ?? valor ?? '';
   const mic = voz && SR ? `<button type="button" class="btn small di-mic${ui.ouvindo === campo ? ' ouvindo' : ''}" data-act="divoz" data-campo="${campo}">${ui.ouvindo === campo ? '⏹ Parar' : '🎤 Falar'}</button>` : '';
   const linhas = fixo ? 4 : Math.min(8, Math.max(3, v.split('\n').length + 1));
-  return `<label class="field di-txt${fixo ? ' di-txt-fixo' : ''}"><span class="di-txt-h">${rotulo}<span class="di-txt-bt">${extra}${mic}</span></span>
+  return `<label class="field di-txt${fixo ? ' di-txt-fixo' : ''}"><span class="di-txt-h">${rotulo}${mic}</span>
     <textarea id="di-${campo}" rows="${linhas}" maxlength="${max}" data-diario="${campo}" data-act="ditexto">${esc(v)}</textarea></label>`;
 }
 const corEnergia = (n) => `var(--di-en-${n})`;
@@ -266,8 +266,7 @@ function dia() {
   if (gira) {
     h += `<div class="card"><h3>🙏 Orientações do guia</h3>
       <label class="field">Linha / falange<select data-act="dilinha"><option value="">—</option>${LINHAS_DIARIO.map(([k, t]) => `<option value="${k}" ${k === linha ? 'selected' : ''}>${t}</option>`).join('')}</select></label>
-      ${campoTexto('conselho', 'Conselho do guia', d.conselho, MAX_CONSELHO, true,
-        ui.ocr ? `<span class="muted di-ocr">${esc(ui.ocr)}</span>` : `<label class="btn small">📷 Foto do papel<input type="file" accept="image/*" data-act="diocr" hidden></label>`, true)}</div>`;
+      ${campoTexto('conselho', 'Conselho do guia', d.conselho, MAX_CONSELHO, true, true)}</div>`;
   }
   return h + banho(d, gira);
 }
@@ -313,19 +312,6 @@ function mudarHabitos(muda) {
   return salvar((d) => { d.habitos = { ...(d.habitos || {}) }; muda(d.habitos); });
 }
 
-// ---------- foto do papel: leitura do texto (Tesseract.js, baixado só quando alguém usa) ----------
-const TESSERACT = 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js';
-let tesseract = null;
-function carregarTesseract() {
-  return tesseract ||= new Promise((ok, erro) => {
-    if (window.Tesseract) { ok(window.Tesseract); return; }
-    const sc = document.createElement('script');
-    sc.src = TESSERACT;
-    sc.onload = () => ok(window.Tesseract);
-    sc.onerror = () => { tesseract = null; sc.remove(); erro(new Error('sem leitor')); };
-    document.head.appendChild(sc);
-  });
-}
 async function abrirImagem(arquivo) {
   try { return await createImageBitmap(arquivo, { imageOrientation: 'from-image' }); } catch { /* tenta pelo <img> */ }
   const url = URL.createObjectURL(arquivo);
@@ -339,37 +325,6 @@ function canvasDe(img, lado) {
   c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
   return c;
 }
-async function lerPapel(arquivo) {
-  if (ui.ocr) return;
-  const data = ui.dia;
-  ui.ocr = 'Preparando a leitura…';
-  avisar();
-  let worker = null;
-  try {
-    const T = await carregarTesseract();
-    let ultimo = -1;
-    worker = await T.createWorker('por', 1, { logger: (m) => {
-      if (m.status !== 'recognizing text') return;
-      const p = Math.floor(m.progress * 10) * 10;
-      if (p !== ultimo) { ultimo = p; ui.ocr = `Lendo o papel… ${p}%`; avisar(); }
-    } });
-    const { data: { text } } = await worker.recognize(canvasDe(await abrirImagem(arquivo), 2000));
-    const lido = String(text || '').replace(/[ \t]+/g, ' ').replace(/ *\n */g, '\n').replace(/\n{3,}/g, '\n\n').trim();
-    if (!lido) toast('Não deu para ler o texto. Tente com mais luz e o papel bem reto.');
-    else {
-      const atual = ui.rasc[data]?.conselho ?? dadosDe(data).conselho ?? '';
-      (ui.rasc[data] ||= {}).conselho = ((atual ? atual.replace(/\s+$/, '') + '\n' : '') + lido).slice(0, MAX_CONSELHO);
-      toast('Texto lido: confira e corrija o que precisar.');
-    }
-  } catch { toast('Não foi possível ler a foto agora. Confira a internet e tente de novo.'); }
-  finally {
-    worker?.terminate().catch(() => {});
-    ui.ocr = null;
-    avisar();
-    if (ui.dia === data) salvarTexto('conselho');
-  }
-}
-
 // ---------- galeria: a foto é reduzida no aparelho (maior lado 1280 px, JPEG até ~600 KB) ----------
 async function escolherFotoGaleria(arquivo) {
   try {
@@ -530,7 +485,6 @@ export const mudancas = {
     if (!e) return;
     mudarHabitos((h) => { h.ervas = [...new Set([...(h.ervas || []), e])].slice(0, MAX_ERVAS_BANHO); });
   },
-  diocr(t) { const f = t.files?.[0]; t.value = ''; if (f) lerPapel(f); },
   digalfoto(t) { const f = t.files?.[0]; t.value = ''; if (f) escolherFotoGaleria(f); },
   ditexto(t) { if (ui.ouvindo !== t.dataset.diario) salvarTexto(t.dataset.diario); },
 };

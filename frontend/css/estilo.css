@@ -2265,9 +2265,7 @@ div.pf-of-total{cursor:default}
 .di-slide .di-en-leg{margin-top:-4px}
 .di-sens{display:grid;gap:4px}
 .di-sens>.muted{font-size:.8rem}
-.di-txt-bt{display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:flex-end}
 .di-txt-fixo textarea{overflow-y:auto;resize:none}
-.di-ocr{font-size:.82rem}
 .di-gal{min-width:0}
 .di-gal-sub{margin:0;font-size:.85rem}
 .di-gal-l{display:flex;gap:10px;overflow-x:auto;scroll-snap-type:x mandatory;overscroll-behavior-x:contain;padding-bottom:6px;margin:0 -4px;padding-inline:4px}
