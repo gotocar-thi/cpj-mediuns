@@ -1,6 +1,11 @@
 // Login pelo backend do app. O token da sessão fica no localStorage deste navegador.
 
 const CHAVE = 'sortmediuns:token';
+// Modo demonstração (frontend/js/demo.js): este login entra sem o backend, com dados inventados.
+export const DEMO_EMAIL = 'teste@cpj.com';
+const DEMO_SENHA = '12345678';
+const DEMO_TOKEN = 'demo:' + DEMO_EMAIL;
+export const AVISO_DEMO = 'Modo demonstração: esta ação não é salva.';
 let tok = null;
 try { tok = localStorage.getItem(CHAVE); } catch { tok = null; }
 
@@ -13,6 +18,7 @@ function guardar(t) {
 }
 
 async function chamar(metodo, acao, corpo, comToken = false) {
+  if (comToken && emDemo()) throw new Error(AVISO_DEMO);
   let r;
   try {
     r = await fetch('/api/auth/' + acao, {
@@ -34,11 +40,17 @@ async function chamar(metodo, acao, corpo, comToken = false) {
 
 export const logado = () => !!tok;
 export const token = () => tok;
+export const emDemo = () => tok === DEMO_TOKEN;
 
 export const estadoDoApp = () => chamar('GET', 'estado');
 
 // Sem senha: devolve { criarSenha, confirmar } e não entra.
 export async function entrar(email, senha) {
+  if (String(email).trim().toLowerCase() === DEMO_EMAIL) {
+    if (senha !== DEMO_SENHA) throw new Error('E-mail ou senha incorretos.');
+    guardar(DEMO_TOKEN);
+    return {};
+  }
   const r = await chamar('POST', 'entrar', { email, senha });
   if (r.criarSenha) return { criarSenha: true, confirmar: r.confirmar };
   guardar(r.token);

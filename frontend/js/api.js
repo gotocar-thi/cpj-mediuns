@@ -1,6 +1,6 @@
 // Cliente do backend (/api). Envia o token da sessão e trata expiração.
 
-import { token, sair } from './auth.js';
+import { token, sair, emDemo } from './auth.js';
 
 export class ErroApi extends Error {
   constructor(status, message) {
@@ -15,6 +15,10 @@ export function quandoSessaoExpirar(fn) { aoExpirar = fn; }
 export async function api(metodo, rota, corpo) {
   const t = token();
   if (!t) { aoExpirar(); throw new ErroApi(401, 'Faça login.'); }
+  if (emDemo()) {
+    const { demoApi } = await import('./demo.js');
+    try { return await demoApi(metodo, rota, corpo); } catch (e) { throw new ErroApi(e.status || 400, e.message); }
+  }
   let r;
   try {
     r = await fetch('/api' + rota, {

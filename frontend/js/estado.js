@@ -2,7 +2,7 @@
 // As telas leem "estado" e chamam as funções daqui; nada fala com a API direto.
 
 import { api } from './api.js';
-import { token } from './auth.js';
+import { token, emDemo } from './auth.js';
 import { giraVazia, ordenarPessoas, pessoasDe, expandirRetrato } from '/shared/regras.js';
 import { permissoesDe, PERFIS_PADRAO, PERMISSOES_GRUPO } from '/shared/permissoes.js';
 import { definirConfig } from '/shared/config.js';
@@ -952,6 +952,7 @@ export function salvarPerfilAgora() {
   clearTimeout(timerPerfil);
   const enviar = perfilPendente;
   perfilPendente = null;
+  if (emDemo()) { api('POST', '/auth/perfil', { perfil: enviar }).catch(() => {}); return; }
   try {
     fetch('/api/auth/perfil', { method: 'POST', keepalive: true,
       headers: { Authorization: 'Bearer ' + token(), 'Content-Type': 'application/json' }, body: JSON.stringify({ perfil: enviar }) });
