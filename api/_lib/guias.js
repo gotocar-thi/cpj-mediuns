@@ -5,6 +5,11 @@
 //   admin:  publicar { publicada } · grupo { id?, descricao?, visivel? } · excluirGrupo { id }
 //           item { id?, grupoId, descricao?, foto? (base64 JPEG | null tira), quantidade?, valor?, visivel?, cpj?, doacao? (cobrado na conta B) } · excluirItem { id }
 //           cancelar { id } (a quantidade volta para o item) · ok { id, ok } · encerrar { grupoId } · novo { grupoId } (próximo número)
+//           andamento { id, andamento } → o mesmo de GET ?lista=pedidos
+// Sub-aba Pedidos (só quem administra a aba Compras): GET /api/oferendas?lista=pedidos
+//   → { pedidos: [{ id, pedido, descricao, quantidade, valor, chave, nome, pago, andamento }], pendencias: { chave: total }, pendenciasEm }
+//   Uma entrada por linha (as doações ficam de fora). pendencias: o total vencido no ASAAS de cada pessoa, da última leitura
+//   do bloco CPJ - Pgto atrasado (não chama o ASAAS aqui).
 // Cada grupo tem o seu pedido (grupos[].aberto = número do pedido aberto ou null). pedidos[].grupos diz quais grupos
 // o pedido atende e quando cada um encerrou; as linhas trazem o grupoId.
 // Quem não administra vê só os grupos e itens visíveis e as próprias linhas (meus), nunca os pedidos dos outros.
@@ -87,6 +92,28 @@ export async function fotoGuia(req, res) {
   res.end(buf);
 }
 
+export const ANDAMENTOS = ['pendente', 'em_confeccao', 'falta_materia', 'concluido', 'entregue'];
+
+// Total vencido de cada pessoa (chave p:/a:), pela última leitura das duas contas do ASAAS.
+async function pendenciasPorChave() {
+  const s = await db.rpc('atrasos_ler');
+  const total = {};
+  for (const i of s.itens || []) {
+    const chave = i.pessoaId ? 'p:' + i.pessoaId : i.alunoId ? 'a:' + i.alunoId : null;
+    if (chave) total[chave] = Math.round(((total[chave] || 0) + Number(i.valor || 0)) * 100) / 100;
+  }
+  return { pendencias: total, pendenciasEm: s.atualizadoEm || null };
+}
+
+async function telaPedidos(pedidos) {
+  return { pedidos: pedidos.map((l) => ({ ...l, valor: Number(l.valor) })), ...(await pendenciasPorChave()) };
+}
+
+export async function respostaPedidos(eu) {
+  if (!ehAdmin(eu)) throw new HttpError(403, 'Só quem administra a aba Compras vê os pedidos.');
+  return telaPedidos(await db.rpc('guias_pedidos_andamento'));
+}
+
 function texto(v, oque, max) {
   const s = String(v ?? '').replace(/\s+/g, ' ').trim();
   if (!s) throw new HttpError(400, `Informe ${oque}.`);
@@ -145,6 +172,10 @@ export async function acaoGuias(eu, b) {
     return comPix(paraTela(await estadoPara(eu), eu), eu);
   }
   if (!ehAdmin(eu)) throw new HttpError(403, 'Só quem administra a aba Compras pode fazer isso.');
+  if (b.op === 'andamento') {
+    if (!ANDAMENTOS.includes(b.andamento)) throw new HttpError(400, 'Andamento inválido.');
+    return telaPedidos(await db.rpc('guia_linha_andamento', { id: validarId(b.id, 'Pedido'), andamento: b.andamento }));
+  }
   let estado;
   switch (b.op) {
     case 'publicar':

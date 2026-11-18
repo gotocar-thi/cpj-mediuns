@@ -11,7 +11,7 @@
 //                status { id, status: 'rascunho' | 'aguardando' | 'publicado' | 'encerrado' }
 // Aba Compras: GET ?lista=guias e POST { acao: 'guias', op, ... } (veja api/_lib/guias.js).
 //              GET ?lista=guiaFoto&id=<item>&v=<versão> — a foto do item (JPEG, sem sessão, com cache longo).
-// Pagamentos (veja api/_lib/pagamentos.js): GET ?lista=pagamentos[&atualizar=1] e POST { acao: 'pagamentos', op: 'publicar', publicada }.
+//              GET ?lista=pedidos — sub-aba Pedidos (só quem administra as Compras); o andamento muda em POST { acao: 'guias', op: 'andamento' }.
 // ASAAS (veja api/_lib/asaas.js): webhook sem sessão, com token, em POST ?webhook=asaas; aba ASAAS (root e quem tem a aba no perfil) em GET ?lista=asaas e POST { acao: 'asaas', op, ... }.
 // Quem não administra as oferendas vê as publicadas (e doa nelas) e as bloqueadas (sem os itens).
 //                doarPor { itemId, pessoaId | chave, quantidade }  — doação de outra pessoa (0 = exclui)
@@ -22,9 +22,8 @@ import { pode } from '../../shared/permissoes.js';
 import { chavePessoa } from '../../shared/ervas.js';
 import { PAGAMENTO_KEYS, ENTREGA_KEYS, grupoOferendaValido, abasOcultas, temAbaPublica, limparDetalhes, detalhesOk, DETALHES_LINHAS, unidadeValida, quantidadeValida, aceitaFracao } from '../../shared/oferendas.js';
 import { respostaIemanja, acaoIemanja } from '../_lib/iemanja.js';
-import { respostaGuias, acaoGuias, fotoGuia } from '../_lib/guias.js';
+import { respostaGuias, acaoGuias, fotoGuia, respostaPedidos } from '../_lib/guias.js';
 import { webhookAsaas, respostaAsaas, acaoAsaas } from '../_lib/asaas.js';
-import { respostaPagamentos, acaoPagamentos } from '../_lib/pagamentos.js';
 
 const STATUS = ['rascunho', 'aguardando', 'publicado', 'encerrado'];
 // abas: as sub-abas, quando já vieram junto (a leitura da aba busca as duas em paralelo).
@@ -78,7 +77,7 @@ export default rota({
     if (req.query.lista === 'guias') return respostaGuias(await exigir(req));
     if (req.query.lista === 'guiaFoto') return fotoGuia(req, res);
     if (req.query.lista === 'asaas') return respostaAsaas(await exigir(req));
-    if (req.query.lista === 'pagamentos') return respostaPagamentos(await exigir(req), req.query.atualizar === '1');
+    if (req.query.lista === 'pedidos') return respostaPedidos(await exigir(req));
     const eu = await exigir(req, 'oferendas:doar');
     // Já inclui os novos cadastrados nas listas por pessoa; as sub-abas vêm ao mesmo tempo (uma ida a menos ao banco).
     const [oferendas, abas] = await Promise.all([db.rpc('oferendas_sincronizar'), db.rpc('oferenda_abas_listar')]);
@@ -91,7 +90,6 @@ export default rota({
     if (b.acao === 'iemanja') return acaoIemanja(await exigir(req), b);
     if (b.acao === 'guias') return acaoGuias(await exigir(req), b);
     if (b.acao === 'asaas') return acaoAsaas(await exigir(req), b);
-    if (b.acao === 'pagamentos') return acaoPagamentos(await exigir(req), b);
     const eu = await exigir(req, 'oferendas:doar');
     if (b.acao === 'doar') {
       if (!pode(eu, 'oferendas:gerenciar')) {

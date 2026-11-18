@@ -9,7 +9,7 @@
 // Estrutura: veja db/ESTRUTURA-ESQUEMA.md para o mapa de versões, domínios e
 // quais migrações foram testadas no Postgres.
 
-export const VERSAO = 145;  // v145: aba Diário (registro pessoal do dia, visível quando o root liga)
+export const VERSAO = 146;  // v146: sub-aba Pedidos (andamento de cada linha das Compras)
 
 import { PERFIS_PADRAO } from '../shared/permissoes.js';
 
@@ -6282,4 +6282,26 @@ export const MIGRACOES = [
   `create trigger diario_aluno_apagado after delete on alunos for each row execute function diario_apagar_trg('a:')`,
   `drop trigger if exists diario_usuario_apagado on usuarios`,
   `create trigger diario_usuario_apagado after delete on usuarios for each row execute function diario_apagar_trg('u:')`,
+  // ================================================== v146: sub-aba Pedidos (Compras)
+  // Cada linha das Compras ganha o andamento (confecção e entrega), que o admin das Compras muda na sub-aba Pedidos.
+  // As doações ficam de fora (não têm o que confeccionar).
+  `alter table guias_linhas add column if not exists andamento text not null default 'pendente'
+     check (andamento in ('pendente', 'em_confeccao', 'falta_materia', 'concluido', 'entregue'))`,
+  `create or replace function guias_pedidos_andamento(p jsonb default '{}'::jsonb)
+   returns jsonb language sql stable as $$
+     select coalesce(jsonb_agg(jsonb_build_object('id', l.id, 'pedido', l.pedido, 'descricao', l.descricao, 'quantidade', l.quantidade,
+              'valor', l.valor::float8, 'chave', l.chave, 'nome', l.nome, 'pago', l.pago_em is not null, 'andamento', l.andamento, 'criadoEm', l.criado_em)
+              order by l.criado_em, lower(l.nome)), '[]'::jsonb)
+       from guias_linhas l left join guias_itens i on i.id = l.item_id
+      where not coalesce(i.doacao, false)
+   $$`,
+  // p = { id, andamento }
+  `create or replace function guia_linha_andamento(p jsonb)
+   returns jsonb language plpgsql as $$
+   begin
+     update guias_linhas set andamento = p ->> 'andamento' where id = (p ->> 'id')::uuid;
+     if not found then raise exception 'Pedido não encontrado.'; end if;
+     return guias_pedidos_andamento();
+   end;
+   $$`,
 ];

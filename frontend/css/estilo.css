@@ -1525,25 +1525,22 @@ button.eu-av{cursor:zoom-in}
 .at-q-sem{--fn:var(--orange)}
 .at-q-lig{--fn:var(--off)}
 .at-grupo{display:grid;gap:8px;padding:10px;border:1px solid var(--line);border-radius:10px}
-.pg-tela{gap:14px}
-.pg-mes{gap:10px}
-.pg-mes h3{margin:0;font-size:1.05rem}
-.pg-lista{display:grid;gap:6px}
-.pg-item{border:1px solid var(--line);border-radius:10px;background:var(--bg);overflow:hidden}
-.pg-l{display:flex;align-items:center;gap:8px;width:100%;min-height:44px;padding:8px 10px;background:none;border:0;color:var(--ink);font:inherit;text-align:left;cursor:pointer}
-.pg-l-d{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:.92rem}
-.pg-l-v{flex:none;font-weight:700;font-size:.92rem}
-.pg-l .badge{flex:none;font-size:.7rem}
-.pg-l .seta{flex:none;color:var(--accent)}
-.pg-dados{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 12px;margin:0;padding:10px 12px 12px;border-top:1px solid var(--line)}
-.pg-d{display:grid;gap:2px;min-width:0}
-.pg-d-full{grid-column:1/-1}
-.pg-d dt{font-size:.72rem;letter-spacing:.04em;text-transform:uppercase;color:var(--muted)}
-.pg-d dd{margin:0;font-weight:600;overflow-wrap:anywhere}
-.pf-of-totais.pg-quads{grid-template-columns:repeat(3,minmax(0,1fr))}
-.pg-quads .pf-of-total b{font-size:1.02rem;white-space:nowrap}
-.pg-d-pagar{grid-column:1/-1}
-.pg-d-pagar .btn{width:100%;text-align:center}
+/* Sub-aba Pedidos (Compras): uma linha por pedido, agrupadas pelo andamento. */
+.card.adm.adm-compras::before{content:"ADMIN COMPRAS"}
+.pd-grupo{display:grid;gap:8px;padding-top:10px;border-top:1px solid var(--line)}
+.pd-grupo h3{margin:0;font-size:1.02rem}
+.pd-lista{list-style:none;margin:0;padding:0;display:grid;gap:6px}
+.pd-l{display:grid;gap:6px;min-width:0;padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:var(--bg)}
+.pd-l1{display:flex;align-items:baseline;gap:8px;min-width:0}
+.pd-d{flex:1 1 auto;min-width:0;overflow-wrap:anywhere;font-size:.92rem;font-weight:600}
+.pd-v{flex:none;font-weight:700;font-size:.9rem;font-variant-numeric:tabular-nums}
+.pd-l2{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;min-width:0;font-size:.88rem}
+.pd-nome{min-width:0;overflow-wrap:anywhere}
+.pd-n{font-size:.8rem}
+.pd-l2 .badge{font-size:.7rem}
+.badge.pd-pend{background:var(--warn-soft);color:var(--warn)}
+.badge.pd-divida{background:var(--falta);color:#fff}
+.pd-and{width:100%;min-height:40px;font:inherit;font-size:.9rem}
 .at-rodape{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:8px;font-size:.82rem}
 .at-erro{margin:0;font-size:.82rem;color:var(--warn)}
 .at-meu{border-color:var(--off)}

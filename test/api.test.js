@@ -1986,30 +1986,6 @@ test('aluno com o acesso bloqueado: não entra e a sessão aberta cai; desbloque
   await api('POST', '/api/pessoas', ADMIN, { acao: 'excluirAluno', id });
 });
 
-test('sub-aba Pagamentos: só o root até ligar Visível para todos; sem ASAAS ou sem CPF, avisa', async () => {
-  const ler = (tok) => api('GET', '/api/oferendas?lista=pagamentos', tok);
-  const pub = (tok, publicada) => api('POST', '/api/oferendas', tok, { acao: 'pagamentos', op: 'publicar', publicada });
-  const env = { A: process.env.ASAAS_API_KEY, B: process.env.ASAAS2_API_KEY };
-  delete process.env.ASAAS_API_KEY;
-  delete process.env.ASAAS2_API_KEY;
-  try {
-    assert.equal((await ler(USER)).status, 403, 'desligada: só o root');
-    const r = (await ler(ADMIN)).json;
-    assert.equal(r.root, true);
-    assert.equal(r.publicada, false);
-    assert.equal(r.configurado, false, 'sem conta do ASAAS ligada');
-    assert.equal((await pub(USER, true)).status, 403);
-    assert.equal((await pub(ADMIN, 'sim')).status, 400);
-    assert.equal((await pub(ADMIN, true)).json.publicada, true);
-    assert.equal((await api('GET', '/api/auth/me', USER)).json.pagamentosPublicada, true);
-    assert.equal((await ler(USER)).status, 200, 'ligada: todos veem os próprios');
-    await pub(ADMIN, false);
-  } finally {
-    if (env.A) process.env.ASAAS_API_KEY = env.A;
-    if (env.B) process.env.ASAAS2_API_KEY = env.B;
-  }
-});
-
 test('gestão de conduta e risco: interruptor do root; só o root lê; quem abriu edita até ser lido e vê só a resposta publicada', async () => {
   const ana = await entrarComSenha('Ana');
   const lista = async (t) => (await api('GET', '/api/giras?lista=conduta', t)).json.relatos;
@@ -2127,6 +2103,16 @@ test('pedidos de guias: aba escondida até publicar; grupos, itens, pedir baixa 
   assert.equal(sql(`select jsonb_array_length(guias_estado() -> 'pedidos')`), String(G.pedidos.length));
   G = (await gu(ADMIN, { op: 'ok', id: linha.id, ok: true })).json;
   assert.equal(G.pedidos[0].linhas[0].ok, true);
+  // Sub-aba Pedidos: só quem administra; uma entrada por linha, com pagamento e andamento (começa pendente).
+  assert.equal((await api('GET', '/api/oferendas?lista=pedidos', USER)).status, 403);
+  assert.equal((await gu(USER, { op: 'andamento', id: linha.id, andamento: 'entregue' })).status, 403);
+  let PD = (await api('GET', '/api/oferendas?lista=pedidos', ADMIN)).json;
+  const pd = PD.pedidos.find((l) => l.id === linha.id);
+  assert.deepEqual([pd.descricao, pd.nome, pd.pago, pd.andamento], [linha.descricao, linha.nome, false, 'pendente']);
+  assert.equal(typeof PD.pendencias, 'object');
+  assert.equal((await gu(ADMIN, { op: 'andamento', id: linha.id, andamento: 'pronto' })).status, 400);
+  PD = (await gu(ADMIN, { op: 'andamento', id: linha.id, andamento: 'em_confeccao' })).json;
+  assert.equal(PD.pedidos.find((l) => l.id === linha.id).andamento, 'em_confeccao');
   assert.equal((await gu(ADMIN, { op: 'novo' })).status, 400, 'sem grupo');
   assert.equal((await gu(ADMIN, { op: 'novo', grupoId: g.id })).status, 400, 'o grupo já tem pedido aberto');
   // Outro grupo tem pedido próprio: encerrar um não mexe no outro.

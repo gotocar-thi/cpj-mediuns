@@ -183,7 +183,7 @@ async function sessaoDe(c, versao) {
 
 // extras: o que decide as abas, quando já veio junto na abertura (inicio_dados); sem ele, busca aqui (/auth/me).
 async function dadosDoMe(u, extras = null) {
-  const [iemanja, abasOferendas, videosPublicada, ervasPublicada, guiasPublicada, amaciPublicada, transparenciaPublicada, pagamentosPublicada, diarioPublicada] = await Promise.all([
+  const [iemanja, abasOferendas, videosPublicada, ervasPublicada, guiasPublicada, amaciPublicada, transparenciaPublicada, diarioPublicada] = await Promise.all([
     // Falha na aba Iemanjá só esconde a aba: não pode impedir o app de abrir.
     abaIemanja(u, extras?.iemanja).catch((e) => {
       console.error('[auth/me] aba Iemanjá', e);
@@ -196,15 +196,13 @@ async function dadosDoMe(u, extras = null) {
     extras ? extras.amaciPublicada : db.rpc('amaci_publicada'),
     // Painel da Transparência: só a corrente (alunos e curimba nunca veem). Na abertura já vem pronto (extras).
     u.grupo ? false : extras && 'transparenciaPublicada' in extras ? extras.transparenciaPublicada : db.rpc('transparencia_publicada').catch(() => false),
-    // Sub-aba Pagamentos (Compras): visível para todos quando o root liga. Na abertura já vem pronto (extras).
-    extras && 'pagamentosPublicada' in extras ? extras.pagamentosPublicada : db.rpc('pagamentos_publicada').catch(() => false),
     // Aba Diário: visível para todos quando o root liga (a curimba, sem pessoa, nunca tem). Na abertura já vem pronto.
     u.grupo && u.grupo !== 'alunos' ? false : extras && 'diarioPublicada' in extras ? extras.diarioPublicada : db.rpc('diario_publicada').catch(() => false),
   ]);
   // Sem nenhuma sub-aba visível, a aba Oferendas some para quem não administra.
   // Aba Vídeos publicada: aparece também para quem não tem a aba no perfil.
   return { ...publico(u), corrente: u.papel === 'corrente', ...(u.papel === 'corrente' || u.grupo === 'alunos' ? { temSenha: !!u.temSenha } : {}),
-    videosPublicada: !!videosPublicada, ervasPublicada: !!ervasPublicada, guiasPublicada: !!guiasPublicada, amaciPublicada: !!amaciPublicada, transparenciaPublicada: !!transparenciaPublicada, pagamentosPublicada: !!pagamentosPublicada, diarioPublicada: !!diarioPublicada, oferendasPublica: temAbaPublica(abasOferendas), ...iemanja };
+    videosPublicada: !!videosPublicada, ervasPublicada: !!ervasPublicada, guiasPublicada: !!guiasPublicada, amaciPublicada: !!amaciPublicada, transparenciaPublicada: !!transparenciaPublicada, diarioPublicada: !!diarioPublicada, oferendasPublica: temAbaPublica(abasOferendas), ...iemanja };
 }
 
 // Lista que não pode impedir o app de abrir: se falhar, a chave não vem e a tela usa o que já tem.
@@ -255,14 +253,13 @@ const acoes = {
       return { me, ...listas };
     }
     // Ao voltar ao app, ?versao= é a que ele já tem: sem mudança, a resposta é só { versao, semMudanca }.
-    // Na abertura, "a Transparência está visível?", "os Pagamentos estão visíveis?" e o mesmo do Diário vão ao banco junto com as listas
+    // Na abertura, "a Transparência está visível?" e o mesmo do Diário vão ao banco junto com as listas
     // (sem uma ida a mais em fila depois delas).
     const transparencia = atualizar ? null : db.rpc('transparencia_publicada').catch(() => false);
-    const pagamentos = atualizar ? null : db.rpc('pagamentos_publicada').catch(() => false);
     const diarioPub = atualizar ? null : db.rpc('diario_publicada').catch(() => false);
     const { listas, extras } = await listasIniciais(u, { versao: atualizar ? String(req.query.versao || '') : '', me: !atualizar });
     if (atualizar) return listas;
-    return { me: await dadosDoMe(u, extras && { ...extras, transparenciaPublicada: await transparencia, pagamentosPublicada: await pagamentos, diarioPublicada: await diarioPub }), ...listas };
+    return { me: await dadosDoMe(u, extras && { ...extras, transparenciaPublicada: await transparencia, diarioPublicada: await diarioPub }), ...listas };
   },
 
   // Perfil da própria pessoa (todo mundo que está no cadastro da corrente).

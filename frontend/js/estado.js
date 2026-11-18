@@ -24,7 +24,7 @@ export const estado = {
   amaci: null,         // aba Amaci (GET /api/pessoas?lista=amaci)
   transparencia: null, // aba Transparência (GET /api/giras?lista=transparencia)
   asaas: null,         // aba ASAAS: root e quem tem a aba no perfil (GET /api/oferendas?lista=asaas)
-  pagamentos: null,    // sub-aba Pagamentos (Compras): histórico do ASAAS de quem está logado (GET /api/oferendas?lista=pagamentos)
+  pedidos: null,       // sub-aba Pedidos (Compras, só quem administra): { pedidos, pendencias } (GET /api/oferendas?lista=pedidos)
   diario: null,        // aba Diário: { publicada, root, dias: [{ data, dados }] } de quem está logado (GET /api/pessoas?lista=diario)
   ervasPara: null,     // admin montando o pedido de outra pessoa: { chave?, nome, itens: { ervaId: qtd } }    // 'fornecedor' | 'cobranca' (exportação aberta na aba Ervas)
   pronto: false,
@@ -163,7 +163,7 @@ export async function carregarTudo() {
 
 // Listas das abas que dependem de quem está logado: trocar de pessoa busca de novo.
 function limparListasDaPessoa() {
-  Object.assign(estado, { oferendas: null, iemanja: null, ervas: null, guias: null, amaci: null, asaas: null, pagamentos: null, transparencia: null, perfil: null,
+  Object.assign(estado, { oferendas: null, iemanja: null, ervas: null, guias: null, amaci: null, asaas: null, pedidos: null, transparencia: null, perfil: null,
     anamnese: null, fotosPessoa: {}, curimba: null, minhaCurimba: null, videos: null, fotos: null, conduta: null, atrasos: null, usuarios: null,
     perfisCfg: null, senhas: null, eventosTipos: null, stPerfis: null, ervasHist: null, img: null, confirm: null });
 }
@@ -825,6 +825,20 @@ export async function carregarGuias(conferir = false) {
   try { estado.guias = await api('GET', '/oferendas?lista=guias' + (conferir ? '&conferir=1' : '')); } catch (e) { toast(e.message); estado.guias = estado.guias || { grupos: [], pedidos: [], meus: [], aberto: null }; }
   avisar();
 }
+// Sub-aba Pedidos (Compras): só quem administra a aba Compras (o root e o Admin; o servidor confere).
+export const vePedidos = () => pode('guias:gerenciar');
+export async function carregarPedidos() {
+  try { estado.pedidos = await api('GET', '/oferendas?lista=pedidos'); }
+  catch (e) { estado.pedidos = { erroTela: e.message }; }
+  avisar();
+}
+export async function mudarAndamento(id, andamento) {
+  try {
+    estado.pedidos = await api('POST', '/oferendas', { acao: 'guias', op: 'andamento', id, andamento });
+    avisar();
+    return true;
+  } catch (e) { toast(e.message); avisar(); return false; }
+}
 export async function acaoGuias(op, dados = {}) {
   try {
     estado.guias = await api('POST', '/oferendas', { acao: 'guias', op, ...dados });
@@ -874,21 +888,6 @@ export async function acaoAmaci(op, dados = {}) {
 
 // ---------- Painel da Transparência ----------
 // Quem edita sempre vê; quem tem Ver no perfil também; a corrente (não alunos nem curimba), quando está visível.
-// Sub-aba Pagamentos (Compras): o root sempre; os outros (corrente e alunos), quando o root liga Visível para todos.
-export const vePagamentos = () => !estado.me?.aguardando && (pode('usuarios:gerenciar') || !!estado.me?.pagamentosPublicada);
-export async function carregarPagamentos(atualizar = false) {
-  try { estado.pagamentos = await api('GET', '/oferendas?lista=pagamentos' + (atualizar ? '&atualizar=1' : '')); }
-  catch (e) { estado.pagamentos = estado.pagamentos && !estado.pagamentos.erroTela ? { ...estado.pagamentos, erro: e.message } : { erroTela: e.message }; }
-  avisar();
-}
-export async function publicarPagamentos(publicada) {
-  try {
-    estado.pagamentos = await api('POST', '/oferendas', { acao: 'pagamentos', op: 'publicar', publicada });
-    estado.me = { ...estado.me, pagamentosPublicada: !!estado.pagamentos.publicada };
-    avisar();
-    return true;
-  } catch (e) { toast(e.message); avisar(); return false; }
-}
 // ---------- aba Diário ----------
 // O root sempre; os outros (corrente e alunos), quando o root liga Visível para todos. É pessoal: não abre no Ver como
 // nem no acesso da curimba (sem pessoa).

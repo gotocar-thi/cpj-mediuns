@@ -35,24 +35,24 @@ export function criarCompras({ euChave, euNome, pessoas, ErroDemo }) {
     const g = grupos.find((x) => x.id === grupoId);
     const i = g.itens.find((x) => x.id === itemId);
     return { id: id(n), itemId, grupoId, descricao: `${g.descricao} · ${i.descricao}`, valor: i.valor, quantidade, chave: quem, nome,
-      ok: false, criadoEm: horas(-30), pago: false, pix: null, ...extra };
+      ok: false, criadoEm: horas(-30), pago: false, pix: null, andamento: 'pendente', ...extra };
   };
   const pedidos = [
     { numero: 3, criadoEm: horas(-72), encerradoEm: null,
       grupos: [{ grupoId: G1, criadoEm: horas(-72), encerradoEm: null }, { grupoId: G2, criadoEm: horas(-72), encerradoEm: null }],
       linhas: [
-        linha(2401, 3, G1, id(2101), chave(5), nomeDe(5), 1, { pago: true, ok: true }),
-        linha(2402, 3, G2, id(2201), chave(5), nomeDe(5), 2, { pago: true, ok: true }),
+        linha(2401, 3, G1, id(2101), chave(5), nomeDe(5), 1, { pago: true, ok: true, andamento: 'em_confeccao' }),
+        linha(2402, 3, G2, id(2201), chave(5), nomeDe(5), 2, { pago: true, ok: true, andamento: 'concluido' }),
         linha(2403, 3, G1, id(2102), chave(6), nomeDe(6), 1, { pix: 'pendente' }),
-        linha(2404, 3, G2, id(2202), chave(3), nomeDe(3), 1, { pix: 'vencida' }),
+        linha(2404, 3, G2, id(2202), chave(3), nomeDe(3), 1, { pix: 'vencida', andamento: 'falta_materia' }),
         linha(2405, 3, G1, id(2101), chave(7), nomeDe(7), 1),
         linha(2406, 3, G2, id(2201), euChave, euNome, 1, { pix: 'pendente' }),
       ] },
     { numero: 2, criadoEm: horas(-24 * 40), encerradoEm: horas(-24 * 30),
       grupos: [{ grupoId: G3, criadoEm: horas(-24 * 40), encerradoEm: horas(-24 * 30) }],
       linhas: [
-        linha(2501, 2, G3, id(2301), chave(1), nomeDe(1), 2, { pago: true, ok: true }),
-        linha(2502, 2, G3, id(2301), euChave, euNome, 1, { pago: true, ok: true }),
+        linha(2501, 2, G3, id(2301), chave(1), nomeDe(1), 2, { pago: true, ok: true, andamento: 'entregue' }),
+        linha(2502, 2, G3, id(2301), euChave, euNome, 1, { pago: true, ok: true, andamento: 'entregue' }),
       ] },
   ];
 
@@ -156,7 +156,7 @@ export function criarCompras({ euChave, euNome, pessoas, ErroDemo }) {
         if (!i.doacao) i.quantidade -= q;
         const p = pedidos.find((x) => x.numero === g.aberto);
         const l = { id: novoId(), itemId: i.id, grupoId: g.id, descricao: `${g.descricao} · ${i.descricao}`, valor: i.doacao ? doa : i.valor, quantidade: i.doacao ? 1 : q,
-          chave: euChave, nome: euNome, ok: false, criadoEm: new Date().toISOString(), pago: false, pix: null };
+          chave: euChave, nome: euNome, ok: false, criadoEm: new Date().toISOString(), pago: false, pix: null, andamento: 'pendente' };
         p.linhas.push(l);
         if (ativo) gerarCobranca([l]);
         break;
@@ -279,5 +279,23 @@ export function criarCompras({ euChave, euNome, pessoas, ErroDemo }) {
     return asaas();
   }
 
-  return { lerGuias, acaoGuias, asaas, acaoAsaas };
+  // Sub-aba Pedidos: uma linha por pedido (sem as doações), com o andamento; pendencias vem do bloco de atrasos da demo.
+  function pedidosAndamento(pendencias) {
+    sincronizar();
+    const doacao = new Set(grupos.flatMap((g) => g.itens.filter((i) => i.doacao).map((i) => i.id)));
+    return {
+      pedidos: todasLinhas().filter((l) => !doacao.has(l.itemId))
+        .map(({ id: lid, pedido, descricao, quantidade, valor, chave: ch, nome, pago, andamento }) => ({ id: lid, pedido, descricao, quantidade, valor, chave: ch, nome, pago, andamento })),
+      pendencias, pendenciasEm: new Date().toISOString(),
+    };
+  }
+  function andamento(b, pendencias) {
+    const { l } = acharLinha(b.id);
+    if (!l) throw new ErroDemo(404, 'Pedido não encontrado.');
+    if (!['pendente', 'em_confeccao', 'falta_materia', 'concluido', 'entregue'].includes(b.andamento)) throw new ErroDemo(400, 'Andamento inválido.');
+    l.andamento = b.andamento;
+    return pedidosAndamento(pendencias);
+  }
+
+  return { lerGuias, acaoGuias, asaas, acaoAsaas, pedidos: pedidosAndamento, andamento };
 }
