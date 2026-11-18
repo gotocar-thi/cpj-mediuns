@@ -607,6 +607,13 @@ export async function salvarEventoTipo(dados, acao = 'eventoTipo') {
     return true;
   } catch (e) { toast(e.message); avisar(); return false; }
 }
+// Amaci que já passou, cadastrado pelo root na aba Amaci: devolve { ok } ou { erro } para a tela mostrar no formulário.
+export async function cadastrarAmaciPassado(dados) {
+  try {
+    estado.eventos = await api('POST', '/giras', { acao: 'evento', ...dados, retroativo: true });
+    return { ok: true };
+  } catch (e) { return { erro: e.message }; }
+}
 export async function acaoEventos(acao, dados = {}) {
   try {
     estado.eventos = await api('POST', '/giras', { acao, ...dados });

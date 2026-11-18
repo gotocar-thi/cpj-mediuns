@@ -5,7 +5,7 @@
 // está logado, a turma, hoje e o amaci do dia (pelos eventos do tipo Amaci), com a presença: o aluno confirma no dia,
 // no terreiro (localização do celular). O admin root marca presença ou falta por turma no bloco Presença nos amacis.
 
-import { estado, pode, visaoAtiva, carregarAmaci, acaoAmaci, confirmarPresencaAmaci, carregarEventosTipos, acaoEventos, avisar } from '../estado.js';
+import { estado, pode, visaoAtiva, carregarAmaci, acaoAmaci, confirmarPresencaAmaci, carregarEventosTipos, cadastrarAmaciPassado, avisar } from '../estado.js';
 import { esc, toast, hoje, dLong, dDM } from '../util.js';
 import { emDemo } from '../auth.js';
 import { ORIXAS, ordenarOrixas, ultimoLiberado, ORIENTACAO_LINHAS, ORIENTACAO_LETRAS, ORIENTACAO_VISIVEIS, TERREIRO, RAIO_TERREIRO_M, noTerreiro, distanciaM } from '/shared/amaci.js';
@@ -26,6 +26,10 @@ const ui = {
   presEv: null,         // amaci aberto no bloco do root (um por vez; todos começam minimizados)
   presQ: null,          // quadradinho aberto no bloco do root: 'eventoId:p' (presentes) ou 'eventoId:a' (ausentes)
   novo: false,          // formulário "Cadastrar amaci que já passou" aberto (bloco do root)
+  novoRasc: null,       // o que foi digitado no formulário (volta depois de um erro): { data, nome, tipo }
+  novoMsg: null,        // resultado do cadastro, no próprio bloco: { ok: true, texto } ou { ok: false, texto }
+  novoSalvando: false,  // cadastrando
+  abrirNovo: null,      // amaci recém-cadastrado a abrir na lista quando ela voltar: { data, nome }
   adm: false,           // bloco ⚙️ Admin (Configuração + Presenças) aberto (começa minimizado)
   geo: null,            // teste de localização do root: { pegando } ou { ok, dist, prec } ou { erro }
 };
@@ -41,6 +45,9 @@ export function limpar() {
   ui.presEv = null;
   ui.presQ = null;
   ui.novo = false;
+  ui.novoRasc = null;
+  ui.novoMsg = null;
+  ui.abrirNovo = null;
   ui.adm = false;
   ui.geo = null;
 }
@@ -217,6 +224,11 @@ function cardPresencaAdmin(A) {
   if (!ui.presAdm) return `<div class="am-adm-sec">${cab}</div>`;
   if (!turma) return `<div class="am-adm-sec">${cab}<p class="muted" style="margin:0">Cadastre um tipo de evento com Amaci no nome (ex.: T09 - Amaci), marque a turma nele (Admin root → Eventos) e os alunos aparecem aqui.</p></div>`;
   const amacis = P.amacis.filter((ev) => !ev.turmas || ev.turmas.includes(turma.id));
+  if (ui.abrirNovo) {
+    const n = amacis.find((ev) => ev.data === ui.abrirNovo.data && ev.nome === ui.abrirNovo.nome);
+    if (n) ui.presEv = n.id;
+    ui.abrirNovo = null;
+  }
   const novo = blocoNovoAmaci(turma);
   if (!amacis.length) return `<div class="am-adm-sec">${cab}${novo}<p class="muted" style="margin:0">Nenhum amaci da ${esc(turma.nome)} realizado ainda.</p></div>`;
   const alunos = P.alunos.filter((a) => a.turmaId === turma.id);
@@ -251,21 +263,24 @@ const tiposAmaciDa = (turmaId) => (estado.eventosTipos?.tipos || [])
 // Root: cadastra aqui um amaci que já aconteceu (data digitada, sem calendário), no tipo de amaci da turma escolhida;
 // depois marca a presença na lista.
 function blocoNovoAmaci(turma) {
-  if (!ui.novo) return `<button class="btn small am-novo-bt" data-act="amnovo">＋ Cadastrar amaci que já passou</button>`;
+  const msg = ui.novoMsg ? `<p class="am-novo-msg ${ui.novoMsg.ok ? 'ok' : 'erro'}" role="${ui.novoMsg.ok ? 'status' : 'alert'}">${esc(ui.novoMsg.texto)}</p>` : '';
+  if (!ui.novo) return `${msg}<button class="btn small am-novo-bt" data-act="amnovo">＋ Cadastrar amaci que já passou</button>`;
   if (estado.eventosTipos === null) { carregarEventosTipos(); return '<p class="muted am-pres-nota">Carregando os tipos de evento…</p>'; }
   const tipos = tiposAmaciDa(turma.id);
   if (!tipos.length) {
     return `<div class="am-novo"><p class="muted am-pres-nota">A ${esc(turma.nome)} não está marcada em nenhum tipo de amaci. Crie o tipo (ex.: <b>${esc(turma.nome)} - Amaci</b>) em Admin root → Eventos e marque a turma nele.</p>
       <button class="btn small" data-act="amnovocancel">Fechar</button></div>`;
   }
+  const V = ui.novoRasc || {};
   return `<form id="f-amaci-novo" class="am-novo" autocomplete="off">
     <b>Amaci que já passou · ${esc(turma.nome)}</b>
+    ${msg}
     <div class="am-novo-l">
-      <label class="field">Data<input type="text" name="data" inputmode="numeric" maxlength="10" placeholder="31/10/2026" required></label>
-      ${tipos.length > 1 ? `<label class="field">Tipo<select name="tipo">${tipos.map((t) => `<option value="${esc(t.chave)}">${esc(t.nome)}</option>`).join('')}</select></label>` : `<input type="hidden" name="tipo" value="${esc(tipos[0].chave)}">`}
+      <label class="field">Data<input type="text" name="data" inputmode="numeric" maxlength="10" data-mascara="data" placeholder="31/10/2026" required value="${esc(V.data || '')}"></label>
+      ${tipos.length > 1 ? `<label class="field">Tipo<select name="tipo">${tipos.map((t) => `<option value="${esc(t.chave)}"${t.chave === V.tipo ? ' selected' : ''}>${esc(t.nome)}</option>`).join('')}</select></label>` : `<input type="hidden" name="tipo" value="${esc(tipos[0].chave)}">`}
     </div>
-    <label class="field">Nome<input type="text" name="nome" maxlength="120" placeholder="Ex.: Amaci de Oxalá" required></label>
-    <div class="row" style="justify-content:flex-end;gap:8px"><button type="button" class="btn small" data-act="amnovocancel">Cancelar</button><button class="btn small primary" type="submit">Cadastrar</button></div>
+    <label class="field">Nome<input type="text" name="nome" maxlength="120" placeholder="Ex.: Amaci de Oxalá" required value="${esc(V.nome || '')}"></label>
+    <div class="row" style="justify-content:flex-end;gap:8px"><button type="button" class="btn small" data-act="amnovocancel">Cancelar</button><button class="btn small primary" type="submit"${ui.novoSalvando ? ' disabled' : ''}>${ui.novoSalvando ? 'Cadastrando…' : 'Cadastrar'}</button></div>
   </form>`;
 }
 
@@ -285,18 +300,30 @@ function dataPassada(txt, hojeData) {
 }
 
 export async function enviarNovoAmaci(form) {
+  if (ui.novoSalvando) return;
   const hojeData = estado.amaci?.presencaAdmin?.hoje || hoje();
-  const data = dataPassada(form.elements.data.value, hojeData);
-  const nome = form.elements.nome.value.replace(/\s+/g, ' ').trim();
-  if (!data) { toast('Data inválida. Use o formato 31/10/2026.'); form.elements.data.focus(); return; }
-  if (data > hojeData) { toast('Aqui é só para amaci que já passou. Amaci futuro: Admin root → Eventos.'); form.elements.data.focus(); return; }
-  if (!nome) { toast('Digite o nome do amaci.'); form.elements.nome.focus(); return; }
-  if (await acaoEventos('evento', { data, nome, tipo: form.elements.tipo.value, retroativo: true })) {
-    ui.novo = false;
-    estado.amaci = null;   // busca de novo: o amaci novo entra na lista para marcar a presença
-    toast(`Amaci cadastrado em ${data.slice(8, 10)}/${data.slice(5, 7)}/${data.slice(0, 4)}. Agora é só marcar a presença.`);
-    avisar();
-  }
+  ui.novoRasc = { data: form.elements.data.value, nome: form.elements.nome.value, tipo: form.elements.tipo.value };
+  const data = dataPassada(ui.novoRasc.data, hojeData);
+  const nome = ui.novoRasc.nome.replace(/\s+/g, ' ').trim();
+  const erro = (texto) => { ui.novoMsg = { ok: false, texto }; avisar(); };
+  if (!data) return erro('Não cadastrado: data inválida. Use o formato 31/10/2026.');
+  if (data > hojeData) return erro('Não cadastrado: aqui é só amaci que já passou. Amaci futuro vai em Admin root → Eventos.');
+  if (!nome) return erro('Não cadastrado: digite o nome do amaci.');
+  ui.novoSalvando = true;
+  ui.novoMsg = null;
+  avisar();
+  const r = await cadastrarAmaciPassado({ data, nome, tipo: ui.novoRasc.tipo });
+  ui.novoSalvando = false;
+  if (!r.ok) return erro('Não cadastrado: ' + r.erro);
+  const dBR = `${data.slice(8, 10)}/${data.slice(5, 7)}/${data.slice(0, 4)}`;
+  ui.novo = false;
+  ui.novoRasc = null;
+  ui.novoMsg = { ok: true, texto: `✅ Amaci cadastrado: ${nome} · ${dBR}. Ele já está aberto na lista para marcar a presença.` };
+  ui.abrirNovo = { data, nome };
+  ui.presQ = null;
+  estado.amaci = null;   // busca de novo: o amaci novo entra na lista
+  toast(`Amaci cadastrado em ${dBR}.`);
+  avisar();
 }
 
 // Bloco de conteúdo: ícone na frente do título e o texto da apostila. Sem conteúdo, o bloco não aparece.
@@ -383,7 +410,7 @@ export const cliques = {
   amsel(el) { if (!el.dataset.k) return; ui.sel = el.dataset.k; ui.editando = null; avisar(); },
   ampres() { ui.pres = !ui.pres; avisar(); },
   ampresadm() { ui.presAdm = !ui.presAdm; avisar(); },
-  amnovo() { ui.novo = true; avisar(); },
+  amnovo() { ui.novo = true; ui.novoMsg = null; avisar(); },
   amadm() { ui.adm = !ui.adm; avisar(); },
   async amtestargeo() {
     ui.geo = { pegando: true };
@@ -400,7 +427,7 @@ export const cliques = {
     }
     avisar();
   },
-  amnovocancel() { ui.novo = false; avisar(); },
+  amnovocancel() { ui.novo = false; ui.novoRasc = null; ui.novoMsg = null; avisar(); },
   ampresq(el) { ui.presQ = ui.presQ === el.dataset.q ? null : el.dataset.q; avisar(); },
   ampresev(el) { ui.presEv = ui.presEv === el.dataset.id ? null : el.dataset.id; ui.presQ = null; avisar(); },
   async amconfirmar(el) {
@@ -454,7 +481,7 @@ export const cliques = {
 export const mudancas = {
   amescolher(t) { ui.sel = t.value; ui.editando = null; avisar(); },
   amescolha(t) { ui.escolha[t.dataset.id] = t.value; },
-  ampresturma(t) { ui.presTurma = t.value; ui.presEv = null; ui.presQ = null; avisar(); },
+  ampresturma(t) { ui.presTurma = t.value; ui.presEv = null; ui.presQ = null; ui.novoMsg = null; avisar(); },
   async ampresmarcar(t) {
     if (await acaoAmaci('presenca', { eventoId: t.dataset.ev, alunoId: t.dataset.aluno, status: t.value })) toast('Presença salva.');
   },

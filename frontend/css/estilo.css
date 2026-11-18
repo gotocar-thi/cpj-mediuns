@@ -1941,6 +1941,9 @@ section.panel.gi-tela{gap:12px}
 .am-geo.ok{color:var(--ok)}
 .am-geo.fora{color:var(--orange)}
 .am-novo-bt{justify-self:start}
+.am-novo-msg{margin:0;padding:8px 10px;border-radius:8px;font-size:.88rem;font-weight:600}
+.am-novo-msg.ok{color:var(--ok);background:color-mix(in srgb,var(--ok) 12%,transparent)}
+.am-novo-msg.erro{color:var(--off);background:var(--off-soft)}
 .am-novo{display:grid;gap:8px;padding:10px;border:1px dashed var(--line);border-radius:10px;background:var(--bg)}
 .am-novo-l{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px}
 .am-padm-lista{display:flex;flex-direction:column;gap:4px;max-height:340px;overflow-y:auto;overscroll-behavior:contain;padding-right:2px}
