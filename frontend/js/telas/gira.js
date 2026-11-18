@@ -409,7 +409,7 @@ function renderGira() {
         ? confirmaSorteio('<b>Tem certeza que quer sortear?</b> O app monta as duplas agora.', 'sortear', '🎲 Sortear')
         : `<button class="btn primary btn-grande" data-act="askdel" data-k="sort:${g.data}">🎲 Sortear</button>`}
       ${editar && temDuplas ? (g.publicada
-        ? `<div class="pub-linha"><span class="pub-ok">📢 Escala publicada: todos veem o sorteio.</span><button class="btn small" data-act="despublicar">Ocultar</button></div>`
+        ? `<div class="pub-linha"><span class="pub-ok">📢 Escala publicada</span><button class="btn small" data-act="despublicar">Ocultar</button></div>`
         : `<button class="btn btn-grande pub-bt" data-act="publicar"><span class="pub-tit">📢 Publicar escala</span><span class="pub-sub">Só os admins veem o sorteio até publicar</span></button>`) : ''}
       ${!temDuplas && manual && !passada ? `<div class="row"><button class="btn small" data-act="manual" aria-pressed="true">Concluir ajuste</button></div>` : ''}`;
     if (recolhido) return h + `${botaoDobrar(false)}</div>`;
@@ -496,7 +496,6 @@ function renderGira() {
       <div class="gira-bts">${btEscala}${btEvento}${btData}</div>
       <div class="gira-campos"><div class="row"><label class="field grow">Gira / entidade do dia${seletorEntidade(g.entidade, g.entidadeNome || '', publicada)}</label>
         <label class="ev-toggle"><input type="checkbox" data-act="evento" aria-label="Marcar esta atividade como evento" ${g.evento ? 'checked' : ''} ${publicada ? 'disabled' : ''}><span>Evento</span></label></div>
-      ${publicada ? '<p class="muted" style="margin:0;font-size:.85rem">Escala publicada: a gira, o orixá e o Evento não mudam mais. Para mudar, oculte a escala.</p>' : ''}
       ${avisoEntidade(ps, g, editar, admin)}
       ${temOrixa(g) ? `<label class="field">Orixá${seletorOrixa(g, publicada)}</label>` : ''}</div>
       <div class="atend-sec gira-campos">${g.evento ? campoParticipantes(g) : `<span class="atend-tit">Atendidos nesta gira</span>${camposAtend(g)}`}</div>`);
@@ -609,8 +608,7 @@ function blocoImagemEscala() {
   const falhou = !pronta && estado.imgErro === chaveImg();
   if (!pronta && !falhou) setTimeout(prepararImagem, 0);
   return `<div class="esc-img-sec"><h3 class="sorteio-ok">🚀 Sorteio realizado! ❤️</h3>
-    ${pronta ? `<button class="esc-img-bt" data-act="escimg" aria-label="Ampliar a imagem da escala"><img src="${estado.img.url}" alt="Escala da gira"></button>
-      <p class="muted esc-img-dica">Toque na imagem para ampliar.</p>`
+    ${pronta ? `<button class="esc-img-bt" data-act="escimg" aria-label="Ampliar a imagem da escala"><img src="${estado.img.url}" alt="Escala da gira"></button>`
       : falhou ? '<p class="muted" style="margin:0">Não consegui montar a imagem da escala neste aparelho.</p>'
       : '<div class="loading">Preparando a imagem da escala…</div>'}</div>`;
 }

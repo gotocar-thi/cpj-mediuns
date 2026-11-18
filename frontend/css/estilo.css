@@ -1591,7 +1591,6 @@ button.eu-av{cursor:zoom-in}
 .esc-img-sec h3{margin:0}
 .esc-img-bt{display:block;width:100%;padding:0;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:none;cursor:zoom-in}
 .esc-img-bt img{display:block;width:100%;height:auto}
-.esc-img-dica{margin:0;font-size:.8rem;text-align:center}
 .esc-fundo{background:rgba(0,0,0,.85);align-items:flex-start;justify-content:flex-start;overflow:auto;cursor:zoom-out;padding:12px}
 .esc-grande{margin:0 auto}   /* no tamanho em que a imagem foi desenhada (560 px, W em imagem.js): no celular rola um pouco para os lados */
 .esc-grande img{display:block;width:560px;max-width:none;height:auto;border-radius:8px}
@@ -1617,7 +1616,7 @@ button.eu-av{cursor:zoom-in}
 .gira-bts .wa-ico svg{width:18px;height:18px;flex:none}
 .atend-editar input{width:100%;min-height:0;padding:2px;box-sizing:border-box;text-align:center;font:700 1.35rem var(--f-display);color:var(--fn);background:transparent;border:1px dashed color-mix(in srgb,var(--fn) 45%,var(--line));border-radius:6px;-moz-appearance:textfield;appearance:textfield}
 .atend-editar input::-webkit-outer-spin-button,.atend-editar input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
-.limpeza.recado textarea{font-family:var(--f-body);width:100%;box-sizing:border-box;min-height:0;height:calc(5lh + 20px);resize:none}
+.limpeza.recado textarea{font-family:var(--f-body);width:100%;box-sizing:border-box;min-height:calc(2lh + 20px);max-height:calc(5lh + 20px);height:auto;field-sizing:content;resize:none}
 .limpeza.pedir-ervas{flex-direction:row;align-items:center;gap:8px;width:100%;border:0;border-left:3px solid var(--ok);color:inherit;font:inherit;font-size:.92rem;text-align:left;cursor:pointer}
 .pedir-ervas>b{flex:1 1 auto}
 .pedir-ervas .seta{color:var(--accent);font-size:1.2rem;line-height:1}
@@ -2141,6 +2140,8 @@ div.pf-of-total{cursor:default}
 .tr-cred{border-top:3px solid var(--ok)}
 .tr-deb{border-top:3px solid var(--off)}
 .ano-orixa-h h3{margin:0;font-size:.95rem}
+.ano-h h3{margin:0;font-size:1rem}
+.card.ano-fechado{padding-top:10px;padding-bottom:10px}
 
 /* Aluno aguardando liberação (cadastro novo pelo login) */
 .aguardando{gap:8px;border-left:4px solid var(--ok)}

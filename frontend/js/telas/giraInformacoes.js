@@ -3,7 +3,7 @@
 import { estado, pode, veErvas, girasLista, carregarAusPrevias, carregarErvas, carregarOferendas } from '../estado.js';
 import { esc, dDM } from '../util.js';
 import { abertos } from './giraComum.js';
-import { status, nomeEntidadeGira, TURMAS_LIMPEZA, temLimpeza, limpezaDaGira, licencaEm, giraEspecial, LINHA_LABEL, linhaDaEntidade, usaLinhas, funcaoNaGira, pessoasDaGira, presente, cambonaHoje } from '/shared/regras.js';
+import { status, nomeEntidadeGira, TURMAS_LIMPEZA, temLimpeza, limpezaDaGira, licencaEm, giraEspecial, linhaDaEntidade, usaLinhas, pessoasDaGira, presente, cambonaHoje } from '/shared/regras.js';
 import { banhosDaGira } from '/shared/banhos.js';
 import { situacao, travadaPara, textoEntrega, ROTULO_MEDIUM } from '/shared/oferendas.js';
 
@@ -38,7 +38,7 @@ export function blocoLimpeza(g, editar = false) {
 export function blocoRecado(g, editar = false) {
   if (editar) {
     const r = estado.recadoTxt?.data === g.data ? estado.recadoTxt.texto : g.recado || '';
-    return `<div class="limpeza recado"><b><span aria-hidden="true">📢</span> Recado</b><textarea id="ev-recado" data-act="recadogira" data-d="${esc(g.data)}" rows="5" maxlength="300" aria-label="Recado para a corrente" placeholder="Até 5 linhas. Aparece para todos no evento.">${esc(r)}</textarea></div>`;
+    return `<div class="limpeza recado"><b><span aria-hidden="true">📢</span> Recado</b><textarea id="ev-recado" data-act="recadogira" data-d="${esc(g.data)}" rows="2" maxlength="300" aria-label="Recado para a corrente" placeholder="Até 5 linhas. Aparece para todos no evento.">${esc(r)}</textarea></div>`;
   }
   if (!g.recado) return '';
   return `<div class="limpeza recado"><b><span aria-hidden="true">📢</span> Recado</b><span class="recado-txt">${esc(g.recado)}</span></div>`;
@@ -92,10 +92,7 @@ export function avisoEntidade(ps, g, editar, admin) {
   if (!linhaDaEntidade(g.entidade)) {
     return editar ? `<div class="warnbox">Escolha a entidade do dia: é ela que define quem atua como extra ou passe e quem cambona.</div>` : '';
   }
-  const viram = comLinhas.filter((p) => funcaoNaGira(p, g) === 'cambone');
-  return admin && viram.length
-    ? `<p class="muted" style="margin:0;font-size:.88rem">Nesta gira de ${esc(LINHA_LABEL[linhaDaEntidade(g.entidade)])}, cambonam: ${viram.map((p) => esc(p.nome)).join(', ')}.</p>`
-    : '';
+  return '';
 }
 
 export function contagemPresentes(ps, g, resumo) {

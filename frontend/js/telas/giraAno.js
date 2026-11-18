@@ -1,4 +1,4 @@
-// Aba Gira: bloco do ano no topo, para todos. Total de atendimentos (do ano ou do mês escolhido), a presença de quem está
+// Aba Gira: bloco do ano no topo, para todos, começa recolhido (só o título com o total do período). Total de atendimentos (do ano ou do mês escolhido), a presença de quem está
 // logado (tocar abre gira a gira) e o orixá de cabeça com mais pessoas — os mesmos números do Histórico.
 
 import { presencaDe, naGira, contaNaPresenca, nomeEntidadeGira } from '/shared/regras.js';
@@ -28,8 +28,8 @@ function minhaPresenca(encerradas) {
 
 const MESES = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
 
-// Totais de atendimento do período escolhido (ano inteiro ou um mês; começa no ano corrente). Só giras encerradas.
-function totaisDoPeriodo() {
+// Giras encerradas (sem evento) do período escolhido (ano inteiro ou um mês; começa no ano corrente).
+function periodo() {
   const atual = hoje().slice(0, 4);
   const fechadas = girasLista().filter((g) => g.encerrada && !g.evento);
   const anos = [...new Set([atual, ...fechadas.map((g) => g.data.slice(0, 4))])].sort().reverse();
@@ -38,7 +38,13 @@ function totaisDoPeriodo() {
   const ultimoMes = ano === atual ? Number(hoje().slice(5, 7)) : 12;
   const mes = Number(estado.atMes) >= 1 && Number(estado.atMes) <= ultimoMes ? Number(estado.atMes) : 0;   // 0 = ano todo
   const prefixo = ano + (mes ? '-' + String(mes).padStart(2, '0') : '');
-  const gs = fechadas.filter((g) => g.data.startsWith(prefixo));
+  return { anos, ano, mes, ultimoMes, gs: fechadas.filter((g) => g.data.startsWith(prefixo)) };
+}
+
+const somaAtendidos = (gs) => gs.reduce((s, g) => s + ['preferencial', 'normal', 'passe'].reduce((t, k) => t + (Number(g.atendimentos?.[k]) || 0), 0), 0);
+
+// Totais de atendimento do período escolhido. Só giras encerradas.
+function totaisDoPeriodo({ anos, ano, mes, ultimoMes, gs }) {
   return `<div class="ano-sec"><div class="ano-filtro"><span class="muted">Total de atendimentos</span>
       <select data-act="atmes" aria-label="Mês dos atendimentos"><option value="0">Ano todo</option>${MESES.slice(0, ultimoMes).map((m, i) => `<option value="${i + 1}" ${i + 1 === mes ? 'selected' : ''}>${m}</option>`).join('')}</select>
       <select data-act="atano" aria-label="Ano dos atendimentos">${anos.map((a) => `<option ${a === ano ? 'selected' : ''}>${a}</option>`).join('')}</select></div>
@@ -47,21 +53,28 @@ function totaisDoPeriodo() {
 }
 
 export function cardAno() {
+  const P = periodo();
+  const aberto = !!estado.anoAberto;
+  const rotulo = `${P.mes ? MESES[P.mes - 1] + ' ' : ''}${P.ano}`;
+  const cab = `<button class="grp-h dobra ano-h" data-act="anoabrir" aria-expanded="${aberto}"><h3>📊 Atendimentos · ${esc(rotulo)}</h3>
+    <span class="count">${somaAtendidos(P.gs)} <span class="seta" aria-hidden="true">${aberto ? '▾' : '▸'}</span></span></button>`;
+  if (!aberto) return `<div class="card st ano ano-fechado">${cab}</div>`;
   const ano = hoje().slice(0, 4);
   const encerradas = girasLista().filter((g) => g.encerrada && g.data.startsWith(ano));
   const S = stPerfis();
   // Orixá de cabeça: começa minimizado; tocar no título abre e fecha.
   const orixa = S && !S.erro ? blocoOrixaCabeca(S) : '';
-  const aberto = !!estado.anoOrixaAberto;
-  const secOrixa = !orixa ? '' : `<div class="ano-sec"><button class="grp-h dobra ano-orixa-h" data-act="anoorixa" aria-expanded="${aberto}">
-      <h3>Orixá de cabeça com mais pessoas</h3><span class="count"><span class="seta" aria-hidden="true">${aberto ? '▾' : '▸'}</span></span></button>
-    ${aberto ? orixa.replace(/<h3>[^<]*<\/h3>/, '') : ''}</div>`;
-  return `<div class="card st ano">${totaisDoPeriodo()}
+  const orixaAberto = !!estado.anoOrixaAberto;
+  const secOrixa = !orixa ? '' : `<div class="ano-sec"><button class="grp-h dobra ano-orixa-h" data-act="anoorixa" aria-expanded="${orixaAberto}">
+      <h3>Orixá de cabeça com mais pessoas</h3><span class="count"><span class="seta" aria-hidden="true">${orixaAberto ? '▾' : '▸'}</span></span></button>
+    ${orixaAberto ? orixa.replace(/<h3>[^<]*<\/h3>/, '') : ''}</div>`;
+  return `<div class="card st ano">${cab}${totaisDoPeriodo(P)}
     ${minhaPresenca(encerradas)}
     ${secOrixa}</div>`;
 }
 
 export const cliquesAno = {
+  anoabrir() { estado.anoAberto = !estado.anoAberto; avisar(); },
   anopres() { estado.anoPresAberto = !estado.anoPresAberto; avisar(); },
   anoorixa() { estado.anoOrixaAberto = !estado.anoOrixaAberto; avisar(); },
   stcabeca() { estado.stCabecaMais = !estado.stCabecaMais; avisar(); },
