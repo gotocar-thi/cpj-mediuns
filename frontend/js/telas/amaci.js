@@ -483,7 +483,15 @@ export const mudancas = {
   amescolha(t) { ui.escolha[t.dataset.id] = t.value; },
   ampresturma(t) { ui.presTurma = t.value; ui.presEv = null; ui.presQ = null; ui.novoMsg = null; avisar(); },
   async ampresmarcar(t) {
+    // Na hora: os quadradinhos e o contador mudam antes da resposta; se der erro, busca de novo do servidor.
+    const P = estado.amaci?.presencaAdmin;
+    if (P) {
+      const m = (P.marcas[t.dataset.ev] ||= {});
+      if (t.value) m[t.dataset.aluno] = t.value; else delete m[t.dataset.aluno];
+      avisar();
+    }
     if (await acaoAmaci('presenca', { eventoId: t.dataset.ev, alunoId: t.dataset.aluno, status: t.value })) toast('Presença salva.');
+    else carregarAmaci();
   },
   async ampub(t) {
     if (await acaoAmaci('publicar', { publicada: t.checked })) toast(t.checked ? 'Aba Amaci visível para todos.' : 'Aba Amaci escondida: só quem administra vê.');

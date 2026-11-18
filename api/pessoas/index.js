@@ -18,8 +18,8 @@
 // GET  /api/pessoas?lista=amaci  aba Amaci: os orixás liberados para quem está logado (+ turmas, para quem administra)
 // POST /api/pessoas            { acao: 'amaci', op: 'publicar', publicada } · { op: 'turma', turmaId, orixas: [..] }
 //                              · { op: 'orientacao', orixa, texto }  (só quem administra a aba; veja api/_lib/amaci.js)
-//                              · { op: 'presenca', eventoId, alunoId, status: 'p'|'f'|'' }  (só o admin root)
-//                              { acao: 'amaciPresenca', eventoId, lat, lon }  o aluno confirma a própria presença (no dia, no terreiro)
+//                              · { op: 'presenca', eventoId, alunoId, status: 'p'|'f'|'' }  (só o admin root) → { presencaAdmin }
+//                              { acao: 'amaciPresenca', eventoId, lat?, lon? }  o aluno confirma a própria presença → { presenca }
 import { rota, corpo, HttpError, validarData, validarId, hojeBR } from '../_lib/http.js';
 import { exigir } from '../_lib/sessao.js';
 import { db } from '../_lib/db.js';

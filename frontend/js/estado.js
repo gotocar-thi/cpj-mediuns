@@ -846,7 +846,8 @@ export async function carregarAmaci() {
 // O aluno confirma a própria presença no amaci de hoje, com a localização do celular (a API confere se está no terreiro).
 export async function confirmarPresencaAmaci(eventoId, lat, lon) {
   try {
-    estado.amaci = await api('POST', '/pessoas', { acao: 'amaciPresenca', eventoId, lat, lon });
+    // A resposta é só a presença: junta com o resto da aba, que não mudou.
+    estado.amaci = { ...estado.amaci, ...(await api('POST', '/pessoas', { acao: 'amaciPresenca', eventoId, lat, lon })) };
     avisar();
     return true;
   } catch (e) {
@@ -857,7 +858,8 @@ export async function confirmarPresencaAmaci(eventoId, lat, lon) {
 }
 export async function acaoAmaci(op, dados = {}) {
   try {
-    estado.amaci = await api('POST', '/pessoas', { acao: 'amaci', op, ...dados });
+    const r = await api('POST', '/pessoas', { acao: 'amaci', op, ...dados });
+    estado.amaci = op === 'presenca' ? { ...estado.amaci, ...r } : r;   // presença: a resposta é só ela
     if (op === 'publicar') estado.me = { ...estado.me, amaciPublicada: !!estado.amaci.publicada };
     avisar();
     return true;

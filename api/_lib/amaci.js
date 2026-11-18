@@ -22,6 +22,9 @@ export function liberadosPara(eu, turmas) {
 
 // → { publicada, liberados, turmaNome?, orixas: [{ k, ervas, velas, pontos, fatores, orientacao }], admin?, turmas? }
 export async function amaci(eu, dados) {
+  // A presença vai ao banco junto com o estado da aba (uma ida a menos em fila).
+  const presenca = presencaAmaci(eu);
+  presenca.catch(() => {});   // se a aba for recusada abaixo, o erro da presença não fica solto
   const d = dados || (await db.rpc('amaci_estado'));
   const admin = ehAdmin(eu);
   if (!admin && !d.publicada) throw new HttpError(403, 'A aba Amaci ainda não está liberada.');
@@ -32,7 +35,7 @@ export async function amaci(eu, dados) {
     publicada: !!d.publicada, liberados, ...(turmaNome !== undefined ? { turmaNome } : {}),
     orixas: liberados.map((k) => ({ k, ...AMACI[k], orientacao: orientacoes[k] || '' })),
     ...(admin ? { admin: true, turmas: d.turmas.map((t) => ({ ...t, orixas: ordenarOrixas(t.orixas) })) } : {}),
-    ...(await presencaAmaci(eu)),
+    ...(await presenca),
   };
 }
 
@@ -77,7 +80,7 @@ export async function presencaAluno(eu, b) {
   if (ev.data < hoje && !ev.retroativo) throw new HttpError(409, 'Este amaci já passou: a presença é marcada pela administração.');
   if (ev.data === hoje && !noTerreiro(Number(b.lat), Number(b.lon))) throw new HttpError(403, 'Você precisa estar no Terreiro Pai João para confirmar a presença.');
   await db.rpc('amaci_presenca_marcar', { eventoId, alunoId: eu.alunoId, status: 'p', por: 'aluno' });
-  return amaci(eu);
+  return presencaAmaci(eu);   // só a presença: o resto da aba não mudou
 }
 
 export async function acaoAmaci(eu, b) {
@@ -104,7 +107,7 @@ export async function acaoAmaci(eu, b) {
     const P = await db.rpc('amaci_presencas_dados');
     if (!P.eventos.some((e) => e.id === eventoId)) throw new HttpError(404, 'Amaci não encontrado.');
     await db.rpc('amaci_presenca_marcar', { eventoId, alunoId, status: b.status || null, por: 'root' });
-    return amaci(eu);
+    return presencaAmaci(eu);   // só a presença: o resto da aba não mudou
   }
   throw new HttpError(400, 'Ação inválida.');
 }
