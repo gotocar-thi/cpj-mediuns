@@ -69,9 +69,12 @@ let arrastoAnamnese = null;
 const GRUPOS_ABAS = [
   { topo: 'agenda', subs: [['agenda', 'Gira'], ['hist', 'Histórico']] },
   { topo: 'guias', subs: [['guias', 'Compras'], ['asaas', 'ASAAS']] },
+  // Ervas: entra na barra das sub-abas de Oferendas, logo depois da Iemanjá (a barra é desenhada por oferendas.js).
+  { topo: 'oferendas', subs: [['oferendas', 'Oferendas'], ['ervas', 'Ervas']], barraPropria: true },
 ];
 const grupoDa = (tab) => GRUPOS_ABAS.find((g) => g.subs.some(([k]) => k === tab));
 function barraSubabas(grupo, VE) {
+  if (grupo.barraPropria) return '';
   const subs = grupo.subs.filter(([k]) => VE[k]);
   if (subs.length < 2) return '';
   return `<div class="subabas subabas-topo" role="tablist" aria-label="Sub-abas">${subs.map(([k, t]) => `<button class="subaba" role="tab" data-sub="${k}" aria-selected="${prefs.tab === k}">${t}</button>`).join('')}</div>`;
@@ -312,7 +315,12 @@ main.addEventListener('click', async (e) => {
   if (e.target.dataset.act === 'irdata' || e.target.dataset.act === 'iemdata') { try { e.target.showPicker(); } catch { /* o toque já abre */ } return; }
   // Sub-aba: o mesmo que tocar na aba (cada tela se prepara como sempre).
   const sub = e.target.closest('[data-sub]');
-  if (sub) { if (sub.dataset.sub !== prefs.tab) tabs.querySelector(`[data-tab="${sub.dataset.sub}"]`).click(); return; }
+  if (sub) {
+    // Da tela de Ervas para uma sub-aba de Oferendas: já abre na sub-aba tocada.
+    if (sub.dataset.ofaba) estado.ofUi = { ...estado.ofUi, aba: sub.dataset.ofaba };
+    if (sub.dataset.sub !== prefs.tab) tabs.querySelector(`[data-tab="${sub.dataset.sub}"]`).click();
+    return;
+  }
   if (e.target.closest('[data-conta="voltarlogin"]')) { telaLogin = ''; cadastroDigitado = null; cadastroCpf = null; erroLogin = ''; render(); return; }
   if (e.target.closest('[data-conta="cadastro"]')) { telaLogin = 'cadastro'; cadastroCpf = null; erroLogin = ''; render(); window.scrollTo(0, 0); document.getElementById('c-cpf')?.focus(); return; }
   if (e.target.closest('[data-conta="trocarcpf"]')) { cadastroCpf = null; erroLogin = ''; render(); document.getElementById('c-cpf')?.focus(); return; }

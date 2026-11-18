@@ -84,8 +84,8 @@ export const PERFIS_PADRAO = [
   // Fotos: todos veem e enviam; os perfis de admin também apagam a foto de qualquer pessoa.
   // Amaci: todos veem (quando está visível para todos); administram o root e o Admin.
   { chave: 'usuario', nome: 'Usuário', ordem: 2, abas: abasDe({ gira: tudo(true), pessoas: tudo(true), hist: tudo(true), ervas: tudo(true), oferendas: tudo(true), guias: tudo(true), perfil: tudo(true), amaci: tudo(true), fotos: tudo(true) }) },
-  { chave: 'admin_oferendas', nome: 'Admin oferendas', ordem: 3, abas: abasDe({ gira: tudo(true), alunos: tudo(true, true), hist: tudo(true), ervas: tudo(true), oferendas: tudo(true, true), guias: tudo(true), perfil: tudo(true), amaci: tudo(true), fotos: tudo(true, true) }) },
-  { chave: 'admin_ervas', nome: 'Admin ervas', ordem: 4, abas: abasDe({ gira: tudo(true), pessoas: tudo(true), hist: tudo(true), ervas: tudo(true, true), oferendas: tudo(true), guias: tudo(true), perfil: tudo(true), amaci: tudo(true), fotos: tudo(true, true) }) },
+  // Ervas é uma sub-aba de Oferendas: o Admin oferendas administra as duas (o Admin ervas saiu na v133).
+  { chave: 'admin_oferendas', nome: 'Admin oferendas', ordem: 3, abas: abasDe({ gira: tudo(true), alunos: tudo(true, true), hist: tudo(true), ervas: tudo(true, true), oferendas: tudo(true, true), guias: tudo(true), perfil: tudo(true), amaci: tudo(true), fotos: tudo(true, true) }) },
   { chave: 'admin_curimba', nome: 'Admin curimba', ordem: 5, abas: abasDe({ gira: tudo(true), perfil: tudo(true), curimba: tudo(true, true), videos: tudo(true, true), amaci: tudo(true), fotos: tudo(true, true) }) },
   // Admin do perfil: o que a corrente vê e, na aba Perfil, o perfil de todos e a Anamnese (perguntas e respostas).
   { chave: 'admin_perfil', nome: 'Admin perfil', ordem: 6, abas: abasDe({ gira: tudo(true), ervas: tudo(true), oferendas: tudo(true), guias: tudo(true), perfil: tudo(true, true), amaci: tudo(true), fotos: tudo(true, true) }) },

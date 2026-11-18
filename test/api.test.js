@@ -8,6 +8,7 @@ import { prepararBanco, usarBancoLocal, sql } from './apoio.js';
 import { criarServidor } from '../scripts/servidor.js';
 import { emitirTokenCorrente, emitirTokenGrupo } from '../api/_lib/senhas.js';
 import { normalizarNome } from '../shared/ervas.js';
+import { MIGRACOES } from '../db/esquema.js';
 
 let srv, base;
 let ADMIN, USER;  // tokens de sessão
@@ -419,7 +420,7 @@ test('gira antiga: cadastro direto já encerrado, com atendidos e sem escala', a
   await api('DELETE', `/api/giras/${d}`, ADMIN);
 });
 
-test('perfis admin oferendas e admin ervas: cada um administra só a sua aba', async () => {
+test('perfil admin oferendas: administra as oferendas e as ervas (sub-aba), e mais nada', async () => {
   const novo = async (email, papel) => {
     await api('POST', '/api/pessoas', ADMIN, { nome: 'Pessoa ' + papel, funcao: 'senha' });
     const pe = (await api('GET', '/api/pessoas', ADMIN)).json.find((p) => p.nome === 'Pessoa ' + papel);
@@ -427,13 +428,11 @@ test('perfis admin oferendas e admin ervas: cada um administra só a sua aba', a
     return (await api('POST', '/api/auth/entrar', null, { email, senha: 'senha-forte-9' })).json.token;
   };
   const of = await novo('of@corrente.org', 'admin_oferendas');
-  const ev = await novo('ev@corrente.org', 'admin_ervas');
   assert.equal((await api('POST', '/api/oferendas', of, { acao: 'salvar', responsavelId: RESP(), titulo: 'Teste', data: '2027-01-01' })).status, 200);
-  assert.equal((await api('POST', '/api/oferendas', ev, { acao: 'salvar', responsavelId: RESP(), titulo: 'Teste', data: '2027-01-01' })).status, 403);
-  assert.equal((await api('POST', '/api/ervas', ev, { acao: 'config', frete: '0' })).status, 200);
-  assert.equal((await api('POST', '/api/ervas', of, { acao: 'config', frete: '0' })).status, 403);
-  // Fora disso, são como usuário: não editam a escala nem os usuários.
-  for (const t of [of, ev]) {
+  assert.equal((await api('POST', '/api/ervas', of, { acao: 'config', frete: '0' })).status, 200, 'administra as ervas');
+  assert.equal((await api('POST', '/api/ervas', USER, { acao: 'config', frete: '0' })).status, 403);
+  // Fora disso, é como usuário: não edita a escala nem os usuários.
+  for (const t of [of]) {
     assert.equal((await api('POST', '/api/giras/2027-01-02/sortear', t)).status, 403);
     assert.equal((await api('GET', '/api/usuarios', t)).status, 403);
     assert.equal((await api('GET', '/api/giras', t)).status, 200);
@@ -552,7 +551,7 @@ test('gestão de usuários: só admin root, com travas', async () => {
   const pNovo = (await api('GET', '/api/pessoas', ADMIN)).json.find((p) => p.nome === 'Novo');
   const novo = await api('POST', '/api/usuarios', ADMIN, { email: 'Novo@Corrente.org', pessoaId: pNovo.id, senha: '12345678', papel: 'usuario' });
   assert.equal(novo.status, 200, JSON.stringify(novo.json));
-  assert.equal(novo.json.length, 6, "root, Zé, admin oferendas, admin ervas, admin curimba e o novo");
+  assert.equal(novo.json.length, 5, "root, Zé, admin oferendas, admin curimba e o novo");
   assert.ok(!('sessaoVersao' in novo.json[0]) && !('senhaHash' in novo.json[0]));
   assert.equal((await api('POST', '/api/usuarios', ADMIN, { email: 'novo@corrente.org', pessoaId: pNovo.id, senha: '12345678', papel: 'usuario' })).status, 400);
   assert.equal((await api('POST', '/api/usuarios', ADMIN, { email: 'z@z.org', pessoaId: pNovo.id, senha: '1', papel: 'usuario' })).status, 400);
@@ -1219,7 +1218,8 @@ test('reiniciar: a turma da limpeza volta para a próxima do rodízio', async ()
 
 test('perfis no banco: o root cria um perfil, marca as abas e as permissões valem na hora', async () => {
   const perfis = (await api('GET', '/api/usuarios?lista=perfis', ADMIN)).json;
-  assert.ok(['root', 'admin', 'usuario', 'admin_oferendas', 'admin_ervas', 'admin_curimba', 'admin_perfil', 'corrente'].every((k) => perfis.some((f) => f.chave === k)));
+  assert.ok(['root', 'admin', 'usuario', 'admin_oferendas', 'admin_curimba', 'admin_perfil', 'corrente'].every((k) => perfis.some((f) => f.chave === k)));
+  assert.ok(!perfis.some((f) => f.chave === 'admin_ervas'), 'o Admin ervas saiu (v133)');
   assert.equal((await api('GET', '/api/usuarios?lista=perfis', USER)).status, 403);
   const criado = (await api('POST', '/api/usuarios', ADMIN, { acao: 'perfil', nome: 'Admin giras', abas: { gira: { editar: true } } })).json;
   const ag = criado.find((f) => f.nome === 'Admin giras');
@@ -2660,4 +2660,31 @@ test('Admin root: usuários, perfis e senhas numa chamada só (lista=tudo)', asy
   const [u, f, s] = await Promise.all(['', '?lista=perfis', '?lista=senhas'].map((q) => api('GET', '/api/usuarios' + q, ADMIN).then((r) => r.json)));
   assert.deepEqual(tudo, { usuarios: u, perfis: f, senhas: s });
   assert.ok(!JSON.stringify(tudo.usuarios).includes('sessaoVersao'), 'sem a versão da sessão, como na lista de sempre');
+});
+
+test('v133: quem era do Admin ervas vai para o Admin oferendas e o perfil sai', async () => {
+  // Um banco de antes da v133: o perfil Admin ervas com uma pessoa.
+  const abasOf = sql("select abas::text from perfis where chave = 'admin_oferendas'");
+  sql(`update perfis set abas = abas || '{"ervas": {"ver": true, "editar": false}}'::jsonb where chave = 'admin_oferendas'`);
+  sql(`insert into perfis (chave, nome, abas, ordem) values ('admin_ervas', 'Admin ervas', '{"ervas": {"ver": true, "editar": true}}'::jsonb, 4)`);
+  await api('POST', '/api/pessoas', ADMIN, { nome: 'Pessoa Ervas Antiga', funcao: 'senha' });
+  const pe = (await api('GET', '/api/pessoas', ADMIN)).json.find((p) => p.nome === 'Pessoa Ervas Antiga');
+  assert.equal((await api('POST', '/api/usuarios', ADMIN, { pessoaId: pe.id, email: 'ervas.antiga@corrente.org', senha: 'senha-forte-9', papel: 'admin_ervas' })).status, 200);
+  const antes = (await api('POST', '/api/auth/entrar', null, { email: 'ervas.antiga@corrente.org', senha: 'senha-forte-9' })).json.token;
+
+  // As instruções da v133 (as três últimas da lista), como rodam no deploy; de novo não muda nada.
+  const v133 = MIGRACOES.slice(-3);
+  assert.ok(v133.every((q) => q.includes('admin_ervas')));
+  for (let i = 0; i < 2; i++) for (const q of v133) sql(q);
+
+  assert.equal(sql("select papel from usuarios where email = 'ervas.antiga@corrente.org'"), 'admin_oferendas');
+  assert.equal(sql("select count(*) from perfis where chave = 'admin_ervas'"), '0');
+  assert.equal(sql("select abas -> 'ervas' ->> 'editar' from perfis where chave = 'admin_oferendas'"), 'true');
+  assert.equal((await api('GET', '/api/auth/me', antes)).status, 401, 'a sessão do perfil antigo cai');
+  const depois = (await api('POST', '/api/auth/entrar', null, { email: 'ervas.antiga@corrente.org', senha: 'senha-forte-9' })).json.token;
+  assert.equal((await api('POST', '/api/ervas', depois, { acao: 'config', frete: '0' })).status, 200, 'continua administrando as ervas');
+
+  const u = (await api('GET', '/api/usuarios', ADMIN)).json.find((x) => x.email === 'ervas.antiga@corrente.org');
+  await api('DELETE', '/api/usuarios/' + u.id, ADMIN);
+  sql(`update perfis set abas = '${abasOf.replace(/'/g, "''")}'::jsonb where chave = 'admin_oferendas'`);
 });

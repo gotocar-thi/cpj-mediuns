@@ -243,6 +243,7 @@ Estado atual das regras da casa e do app. Código: `shared/regras.js` (e demais 
 ## Sub-abas de Oferendas
 
 - A aba **Oferendas** tem sub-abas: **Gerais**, **Iemanjá**, **Caboclos** e as que o root criar no **＋** (pede só o nome; lista normal de oferendas). As encerradas na data da unificação foram para Caboclos; as demais, para Gerais. Encerrar uma oferenda depois **não** a muda de sub-aba; o admin move em **Editar**.
+- **Ervas** é uma sub-aba de Oferendas (antes era uma aba no topo): o botão **Ervas** fica na barra das sub-abas, logo depois da **Iemanjá** (sem a Iemanjá na barra, no fim). Por dentro continua a mesma tela e a mesma permissão (em Perfis e acessos, a linha Ervas vale para a sub-aba); na tela de Ervas, a mesma barra aparece no topo e tocar numa sub-aba de oferendas volta às Oferendas já nela. Quem vê as Ervas e não as Oferendas toca em **Oferendas** e cai direto nas Ervas. O perfil **Admin ervas** saiu (v133): quem era dele passou para o **Admin oferendas**, que administra oferendas e ervas (as sessões abertas caem e a pessoa entra de novo).
 - Só o **root** cria, renomeia, exclui e liga **Visível para todos** nas sub-abas. Só exclui se estiver vazia e sobrar outra de lista; Iemanjá é fixa e segue o Visível para todos do evento.
 - **Visível para todos**: desligado, só quem administra oferendas vê a sub-aba e o que há nela (some também dos compromissos e da aba Geral). Sub-aba nova nasce oculta.
 - Sem nenhuma sub-aba visível (Iemanjá inclusa), a aba **Oferendas** não aparece para quem não administra.

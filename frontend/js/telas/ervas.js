@@ -4,6 +4,7 @@ import { centavos, reais, calcularPedidos, totaisPorErva, temPreco, textoFornece
 import { estado, pode, pessoasOrd, carregarErvas, carregarHistoricoErvas, escolherErva, acaoErvas, salvarPedidoDe, publicarErvas, avisar } from '../estado.js';
 import { esc, toast, baixar, hoje } from '../util.js';
 import { gerarImagemLista, compartilharImagem } from '../imagemLista.js';
+import { barraParaErvas } from './oferendas.js';
 
 // Dados da imagem do pedido ao fornecedor ou da cobrança.
 function dadosImagem(E, r, vista) {
@@ -333,7 +334,8 @@ export function render() {
   const admin = pode('ervas:gerenciar');
   const pub = estado.me?.ervasPublicada !== false;
   const topo = admin ? `<div class="card adm ervas-pub"><label class="of-sw"><input type="checkbox" role="switch" data-act="ervaspub" ${pub ? 'checked' : ''}><span class="of-sw-t" aria-hidden="true"></span><b>Visível para todos</b></label></div>` : '';
-  let h = `<section class="panel">${topo}${cabecalho(E)}${cardEscolha(E)}`;
+  // Ervas é uma sub-aba de Oferendas: a barra das sub-abas vem no topo.
+  let h = `<section class="panel">${barraParaErvas()}${topo}${cabecalho(E)}${cardEscolha(E)}`;
   if (admin) {
     const r = E.pedidos || calcularPedidos(E.ervas, [], E.frete);
     h += cardCompra(E, r) + cardPedidos(E, r) + cardHistorico();

@@ -9,7 +9,7 @@
 // Estrutura: veja db/ESTRUTURA-ESQUEMA.md para o mapa de versões, domínios e
 // quais migrações foram testadas no Postgres.
 
-export const VERSAO = 132;  // v132: oferendas_estado acha o nome de quem doou pelo id (usa o índice)
+export const VERSAO = 133;  // v133: o perfil Admin ervas sai; quem era dele vai para o Admin oferendas
 
 import { PERFIS_PADRAO } from '../shared/permissoes.js';
 
@@ -5903,4 +5903,12 @@ export const MIGRACOES = [
          ) order by i.criado_em) from oferenda_itens i where i.oferenda_id = o.id), '[]'::jsonb)
      ) order by o.data, o.criado_em), '[]'::jsonb) from oferendas o;
    $$`,
+  // ================================================== v133: Ervas vira sub-aba de Oferendas; o perfil Admin ervas sai
+  // O Admin oferendas passa a administrar as ervas e recebe quem era do Admin ervas; depois o Admin ervas é apagado.
+  // Só enquanto o Admin ervas existir: se o root mudar o Admin oferendas depois, a migração não desfaz.
+  `update perfis set abas = abas || jsonb_build_object('ervas', jsonb_build_object('ver', true, 'editar', true))
+    where chave = 'admin_oferendas' and exists (select 1 from perfis where chave = 'admin_ervas')`,
+  // A versão da sessão muda: quem estava logado com o perfil antigo entra de novo, já com o novo.
+  `update usuarios set papel = 'admin_oferendas', sessao_versao = sessao_versao + 1 where papel = 'admin_ervas'`,
+  `delete from perfis where chave = 'admin_ervas'`,
 ];
