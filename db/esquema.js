@@ -9,7 +9,7 @@
 // Estrutura: veja db/ESTRUTURA-ESQUEMA.md para o mapa de versões, domínios e
 // quais migrações foram testadas no Postgres.
 
-export const VERSAO = 148;  // v148: sub-aba Pedidos com o grupo de cada linha e sem o grupo Axé
+export const VERSAO = 149;  // v149: Diário com a Galeria de fotos da corrente
 
 import { PERFIS_PADRAO } from '../shared/permissoes.js';
 
@@ -6329,5 +6329,87 @@ export const MIGRACOES = [
        left join guias_grupos g on g.id = l.grupo_id
       where not coalesce(i.doacao, false)
         and translate(lower(btrim(coalesce(g.descricao, ''))), 'áàâãéêíóôõúç', 'aaaaeeiooouc') <> 'axe'
+   $$`,
+  // ================================================== v149: Diário — Galeria de fotos da corrente
+  // Uma foto por pessoa (chave p:/a:/u:), guardada no banco (JPEG em base64, reduzida no aparelho) e curtidas.
+  // Toda terça-feira (horário de Brasília) as fotos da semana anterior são apagadas: a limpeza roda a cada leitura e
+  // envio, então não precisa de agendamento.
+  `create table if not exists diario_fotos (
+     id        uuid primary key default gen_random_uuid(),
+     chave     text not null unique,
+     nome      text not null default '',
+     descricao text not null default '',
+     foto      text not null,
+     criado_em timestamptz not null default now()
+   )`,
+  `create table if not exists diario_curtidas (
+     foto_id uuid not null references diario_fotos(id) on delete cascade,
+     chave   text not null,
+     primary key (foto_id, chave)
+   )`,
+  // Começo da semana da galeria: a terça-feira mais recente, 0h em Brasília.
+  `create or replace function diario_fotos_limpar()
+   returns void language sql as $$
+     delete from diario_fotos
+      where (criado_em at time zone 'America/Sao_Paulo')
+            < date_trunc('week', (now() at time zone 'America/Sao_Paulo') - interval '1 day') + interval '1 day'
+   $$`,
+  // p = { chave } → [{ id, nome, descricao, criadoEm, v, curtidas, curti, minha }] (mais nova primeiro)
+  `create or replace function diario_fotos(p jsonb)
+   returns jsonb language plpgsql as $$
+   begin
+     perform diario_fotos_limpar();
+     return coalesce((select jsonb_agg(jsonb_build_object('id', f.id, 'nome', f.nome, 'descricao', f.descricao, 'criadoEm', f.criado_em,
+              'v', substr(md5(f.foto), 1, 10),
+              'curtidas', (select count(*) from diario_curtidas c where c.foto_id = f.id),
+              'curti', exists (select 1 from diario_curtidas c where c.foto_id = f.id and c.chave = p ->> 'chave'),
+              'minha', f.chave = p ->> 'chave') order by f.criado_em desc)
+       from diario_fotos f), '[]'::jsonb);
+   end;
+   $$`,
+  // p = { chave, nome, descricao, foto }
+  `create or replace function diario_foto_salvar(p jsonb)
+   returns jsonb language plpgsql as $$
+   begin
+     perform diario_fotos_limpar();
+     if exists (select 1 from diario_fotos where chave = p ->> 'chave') then
+       raise exception 'Você já tem uma foto na galeria: exclua a sua para subir outra.';
+     end if;
+     insert into diario_fotos (chave, nome, descricao, foto) values (p ->> 'chave', coalesce(p ->> 'nome', ''), coalesce(p ->> 'descricao', ''), p ->> 'foto');
+     return diario_fotos(p);
+   end;
+   $$`,
+  // p = { id, chave, admin }: a própria pessoa apaga a sua; o root, qualquer uma.
+  `create or replace function diario_foto_excluir(p jsonb)
+   returns jsonb language plpgsql as $$
+   begin
+     delete from diario_fotos where id = (p ->> 'id')::uuid and (coalesce((p ->> 'admin')::boolean, false) or chave = p ->> 'chave');
+     if not found then raise exception 'Foto não encontrada.'; end if;
+     return diario_fotos(p);
+   end;
+   $$`,
+  // p = { id, chave }: curte ou descurte.
+  `create or replace function diario_foto_curtir(p jsonb)
+   returns jsonb language plpgsql as $$
+   begin
+     if not exists (select 1 from diario_fotos where id = (p ->> 'id')::uuid) then raise exception 'Foto não encontrada.'; end if;
+     delete from diario_curtidas where foto_id = (p ->> 'id')::uuid and chave = p ->> 'chave';
+     if not found then insert into diario_curtidas (foto_id, chave) values ((p ->> 'id')::uuid, p ->> 'chave'); end if;
+     return diario_fotos(p);
+   end;
+   $$`,
+  `create or replace function diario_foto(p jsonb)
+   returns jsonb language sql stable as $$
+     select to_jsonb(foto) from diario_fotos where id = (p ->> 'id')::uuid
+   $$`,
+  // Cadastro apagado de vez: o diário, a foto da galeria e as curtidas dele vão juntos.
+  `create or replace function diario_apagar_trg()
+   returns trigger language plpgsql as $$
+   begin
+     delete from diario where chave = tg_argv[0] || old.id::text;
+     delete from diario_fotos where chave = tg_argv[0] || old.id::text;
+     delete from diario_curtidas where chave = tg_argv[0] || old.id::text;
+     return old;
+   end;
    $$`,
 ];

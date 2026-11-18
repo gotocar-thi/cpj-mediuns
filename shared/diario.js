@@ -32,7 +32,12 @@ export const MAX_EMOCOES = 3;
 export const DENSAS = GRUPOS_EMOCOES.find((g) => g.k === 'densa').itens.map(([k]) => k);
 // Nomes da primeira versão do Diário que viraram outra opção.
 const EMOCAO_ANTIGA = { agitado: 'ansioso', disperso: 'sobrecarregado' };
-export const SENSACOES = [['leve', 'Leve'], ['renovado', 'Renovado'], ['sonolento', 'Sonolento'], ['eletrizado', 'Eletrizado'], ['emocionado', 'Emocionado']];
+// Sensação depois da gira: nem sempre a gira traz resultado, então há também as neutras e as difíceis.
+export const GRUPOS_SENSACOES = [
+  { k: 'boa', titulo: 'Boas', itens: [['leve', 'Leve'], ['renovado', 'Renovado'], ['sonolento', 'Sonolento'], ['eletrizado', 'Eletrizado'], ['emocionado', 'Emocionado']] },
+  { k: 'dificil', titulo: 'Neutras ou difíceis', itens: [['igual', 'Sem diferença'], ['pesado', 'Pesado'], ['esgotado', 'Esgotado'], ['agitado', 'Agitado'], ['confuso', 'Confuso']] },
+];
+export const SENSACOES = GRUPOS_SENSACOES.flatMap((g) => g.itens);
 export const SONO = [['bem', 'Dormi bem'], ['pouco', 'Dormi pouco'], ['agitado', 'Sono agitado'], ['sonhos', 'Sonhos marcantes']];
 // Linhas que dá para escolher no conselho do guia (sem o Encontro das Linhas, que não é um guia).
 export const LINHAS_DIARIO = LINHAS.flatMap((g) => g.itens).filter(([k]) => k !== 'mista');
@@ -62,6 +67,14 @@ export const ERVAS_SUGESTOES = [...new Set([
   ...Object.values(BANHO_ORIXA).flatMap((x) => x.ervas),
   ...Object.values(BANHO_GUIA).flatMap((x) => x.ervas),
 ])].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+
+// ---------- cuidados do dia (bloco "Como você está hoje?") ----------
+// Banho de ervas: o de um orixá (as ervas da apostila de Orixás) ou até MAX_ERVAS_BANHO ervas das apostilas.
+export const ORIXAS_BANHO = Object.keys(BANHO_ORIXA);
+export const ERVAS_APOSTILA = [...new Set([...Object.values(BANHO_ORIXA), ...Object.values(BANHO_GUIA)].flatMap((x) => x.ervas))]
+  .sort((a, b) => a.localeCompare(b, 'pt-BR'));
+export const MAX_ERVAS_BANHO = 7;
+export const MAX_LITROS = 20;
 
 // ---------- Orientador (dia comum) ----------
 const MANUTENCAO = {
@@ -108,6 +121,24 @@ function emocoes(v) {
   const L = (Array.isArray(v) ? v : v ? [v] : []).map((e) => EMOCAO_ANTIGA[e] || e).filter((e) => umDe(e, EMOCOES));
   return L.length ? [...new Set(L)].slice(0, MAX_EMOCOES) : undefined;
 }
+// Litros de água: aceita vírgula; até 2 casas.
+export function litros(v) {
+  const n = typeof v === 'number' ? v : Number(String(v ?? '').replace(',', '.').trim() || NaN);
+  return Number.isFinite(n) && n > 0 && n <= MAX_LITROS ? Math.round(n * 100) / 100 : undefined;
+}
+const sim = (v) => (v === true ? true : undefined);
+function habitos(h) {
+  if (!h || typeof h !== 'object') return undefined;
+  const banho = h.banho === true;
+  const orixa = banho && ORIXAS_BANHO.includes(h.orixa) ? h.orixa : undefined;
+  const ervas = banho && !orixa && Array.isArray(h.ervas)
+    ? [...new Set(h.ervas.map((e) => ERVAS_APOSTILA.find((x) => x.toLowerCase() === String(e).toLowerCase())).filter(Boolean))].slice(0, MAX_ERVAS_BANHO) : [];
+  return limpo({
+    preceito: sim(h.preceito), atividade: sim(h.atividade),
+    agua: sim(h.agua), litros: h.agua === true ? litros(h.litros) : undefined,
+    banho: sim(banho), orixa, ervas: ervas.length ? ervas : undefined,
+  });
+}
 const nota = (v) => (Number.isInteger(v) && v >= 1 && v <= 5 ? v : undefined);
 const texto = (v, max) => (typeof v === 'string' && v.trim() ? v.replace(/\r/g, '').trim().slice(0, max) : undefined);
 const limpo = (o) => {
@@ -122,6 +153,7 @@ export const MAX_ERVAS = 15;
 //   gira: true|false (só quando a pessoa mudou; sem ele vale a agenda)
 //   antes: { humor (1 a 5, rostos), emo: [até 3], energia, sono }  · depois: { humor, emo, energia, sensacao }
 //   linha, conselho (dia de gira) · reflexao (dia comum)
+//   habitos: { preceito, atividade, agua, litros, banho, orixa | ervas: [até 7] } (só os marcados)
 //   banho: { ervas: [..], feito, origem: 'guia' | 'orientador' | 'proprio' (anotado pela pessoa num dia comum) }
 export function normalizarDia(d) {
   if (!d || typeof d !== 'object' || Array.isArray(d)) return {};
@@ -129,6 +161,7 @@ export function normalizarDia(d) {
     ? [...new Set(d.banho.ervas.map((e) => texto(e, 60)).filter(Boolean))].slice(0, MAX_ERVAS) : [];
   return limpo({
     gira: typeof d.gira === 'boolean' ? d.gira : undefined,
+    habitos: habitos(d.habitos),
     antes: limpo({ humor: nota(d.antes?.humor), emo: emocoes(d.antes?.emo), energia: nota(d.antes?.energia), sono: umDe(d.antes?.sono, SONO) }),
     depois: limpo({ humor: nota(d.depois?.humor), emo: emocoes(d.depois?.emo), energia: nota(d.depois?.energia), sensacao: umDe(d.depois?.sensacao, SENSACOES) }),
     linha: umDe(d.linha, LINHAS_DIARIO),

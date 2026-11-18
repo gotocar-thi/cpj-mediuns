@@ -20,7 +20,8 @@
 //                              · { op: 'orientacao', orixa, texto }  (só quem administra a aba; veja api/_lib/amaci.js)
 //                              · { op: 'presenca', eventoId, alunoId, status: 'p'|'f'|'' }  (só o admin root) → { presencaAdmin }
 //                              { acao: 'amaciPresenca', eventoId, lat?, lon? }  o aluno confirma a própria presença → { presenca }
-// GET  /api/pessoas?lista=diario  aba Diário: o diário de quem está logado · POST { acao: 'diario', op: 'salvar' | 'publicar' }
+// GET  /api/pessoas?lista=diario  aba Diário: o diário de quem está logado · POST { acao: 'diario', op: 'salvar' | 'publicar' | 'foto…' }
+//      /api/pessoas?lista=diarioFoto&id=  foto da Galeria do Diário (sem sessão)
 //                              (veja api/_lib/diario.js)
 import { rota, corpo, HttpError, validarData, validarId, hojeBR } from '../_lib/http.js';
 import { exigir } from '../_lib/sessao.js';
@@ -30,7 +31,7 @@ import { contagemPerfis, pessoasPorOrixaCabeca } from '../../shared/perfil.js';
 import { pode } from '../../shared/permissoes.js';
 import { amaci, acaoAmaci, presencaAluno } from '../_lib/amaci.js';
 import { dadosAluno, temDados, salvarDadosAluno, comExtras, cpfDoAluno, promoverAluno } from '../_lib/alunos.js';
-import { diario, acaoDiario } from '../_lib/diario.js';
+import { diario, acaoDiario, fotoGaleria } from '../_lib/diario.js';
 
 const ACOES_ALUNOS = ['alunos', 'aluno', 'alunoCpf', 'excluirAluno', 'reativarAluno', 'apagarAluno', 'turma', 'excluirTurma', 'promoverAlunoCPJ'];
 const ACOES_CURIMBA = ['curimbaAluno', 'curimbaExcluirAluno', 'curimbaAula', 'curimbaExcluirAula', 'curimbaPresenca'];
@@ -100,7 +101,8 @@ function acaoCurimba(b) {
 }
 
 export default rota({
-  GET: async (req) => {
+  GET: async (req, res) => {
+    if (req.query.lista === 'diarioFoto') return fotoGaleria(req, res);
     if (req.query.lista === 'alunos') {
       const eu = await exigir(req, 'alunos:ver');
       // Quem edita os alunos recebe também os cadastros pelo login (novos e consulentes).

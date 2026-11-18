@@ -231,12 +231,34 @@ const diarioDias = [
   { data: dia(-2), dados: { antes: { humor: 2, emo: ['ansioso'], energia: 2, sono: 'agitado' }, depois: { humor: 4, emo: ['grato'], energia: 3 }, reflexao: 'Encontrei um amigo antigo bem quando pensava nele.',
     banho: { ervas: ['Camomila'], feito: true, origem: 'orientador' } } },
 ];
+// Galeria: fotos guardadas só na memória da página (src no lugar do link da API).
+const pixel = (cor) => `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="400" height="500"><rect width="400" height="500" fill="${cor}"/></svg>`)}`;
+const galeriaDemo = [
+  { id: 'gd1', nome: 'Ana Souza', descricao: 'Gira de Ogum, que noite!', criadoEm: new Date().toISOString(), v: '1', curtidas: 3, curti: false, minha: false, src: pixel('#7cb85a') },
+  { id: 'gd2', nome: 'Bruno Lima', descricao: '', criadoEm: new Date().toISOString(), v: '1', curtidas: 1, curti: true, minha: false, src: pixel('#8ea6d8') },
+];
 const diarioDemo = () => {
   if (vcAtual) throw new ErroDemo(403, 'O Diário é pessoal: não abre no "Ver como".');
-  return { publicada: diarioPublicado, root: true, dias: copia(diarioDias) };
+  return { publicada: diarioPublicado, root: true, dias: copia(diarioDias), galeria: copia(galeriaDemo) };
 };
 function acaoDiarioDemo(b) {
   if (b.op === 'publicar') { diarioPublicado = !!b.publicada; return diarioDemo(); }
+  if (b.op === 'fotoCurtir') {
+    const f = galeriaDemo.find((x) => x.id === b.id);
+    if (f) { f.curti = !f.curti; f.curtidas += f.curti ? 1 : -1; }
+    return { galeria: copia(galeriaDemo) };
+  }
+  if (b.op === 'fotoExcluir') {
+    const i = galeriaDemo.findIndex((x) => x.id === b.id);
+    if (i >= 0) galeriaDemo.splice(i, 1);
+    return { galeria: copia(galeriaDemo) };
+  }
+  if (b.op === 'fotoEnviar') {
+    if (galeriaDemo.some((x) => x.minha)) throw new ErroDemo(400, 'Você já tem uma foto na galeria: exclua a sua para subir outra.');
+    galeriaDemo.unshift({ id: 'gd' + Date.now(), nome: 'Root', descricao: String(b.descricao || '').trim().slice(0, 200), criadoEm: new Date().toISOString(),
+      v: '1', curtidas: 0, curti: false, minha: true, src: 'data:image/jpeg;base64,' + b.foto });
+    return { galeria: copia(galeriaDemo) };
+  }
   const dados = normalizarDia(b.dados);
   const i = diarioDias.findIndex((x) => x.data === b.data);
   if (i >= 0) diarioDias.splice(i, 1);

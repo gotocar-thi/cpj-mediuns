@@ -349,6 +349,8 @@ main.addEventListener('click', async (e) => {
   if (e.target.closest('[data-conta="cadastro"]')) { telaLogin = 'cadastro'; cadastroCpf = null; erroLogin = ''; render(); window.scrollTo(0, 0); document.getElementById('c-cpf')?.focus(); return; }
   if (e.target.closest('[data-conta="trocarcpf"]')) { cadastroCpf = null; erroLogin = ''; render(); document.getElementById('c-cpf')?.focus(); return; }
   if (e.target.closest('[data-conta="esqueci"]')) { telaLogin = 'esqueci'; erroLogin = ''; render(); return; }
+  // Diário: tocar na barra de energia sem arrastar também marca (o change não dispara quando o valor não muda).
+  if (prefs.tab === 'diario' && e.target.dataset.act === 'dienslide') { TELAS.diario.mudancas.dienslide(e.target); return; }
   const el = e.target.closest('[data-act]');
   if (!el || el.tagName === 'SELECT' || el.tagName === 'INPUT') return;
   const a = el.dataset.act;
@@ -465,6 +467,7 @@ main.addEventListener('input', (e) => {
   if (prefs.tab === 'amaci' && e.target.id === 'am-ori') TELAS.amaci.digitando(e.target);
   // Diário: conselho e reflexão guardados enquanto digita (salvam ao sair do campo).
   if (prefs.tab === 'diario' && e.target.dataset.diario) TELAS.diario.digitando(e.target);
+  if (prefs.tab === 'diario' && e.target.dataset.act === 'dienslide') TELAS.diario.arrastando(e.target);
   if (prefs.tab === 'oferendas' && e.target.form?.querySelector('[data-previa]')) TELAS.oferendas?.atualizarPrevia(e.target.form);
 });
 

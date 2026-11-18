@@ -1,21 +1,25 @@
 // Aba Diário: o registro pessoal de cada dia (regras em shared/diario.js; servidor em api/_lib/diario.js).
-// No topo, a Pílula de sabedoria (um conselho do guia de um dia anterior) e os banhos que faltam tomar; depois o
-// calendário do mês (ponto dourado: gira registrada; lilás: dia comum com manhã e noite; 🌿: banho tomado) com a lua do
-// dia escolhido. O dia muda conforme a agenda (ou o interruptor "Dia de gira"): na gira, Chegada, Saída, Linha, Banho e
+// No topo, "Como você está hoje?" com os cuidados do dia (preceito, atividade física, água e banho de ervas); depois a
+// Pílula de sabedoria (um conselho do guia de um dia anterior), os banhos que faltam tomar e o calendário do mês (ponto
+// dourado: gira registrada; lilás: dia comum com manhã e noite; 🌿: banho tomado; 🏋️: atividade física) com a lua do
+// dia escolhido. No fim, a Galeria de fotos da corrente (carrossel, curtidas, uma foto por pessoa) e o bloco do root. O dia muda conforme a agenda (ou o interruptor "Dia de gira"): na gira, Chegada, Saída, Linha, Banho e
 // Conselho do guia; no dia comum, Manhã, Noite, Reflexão e o Orientador, que sugere um banho quando o estado é pesado.
-// Cada check-in tem a escala de rostos (1 a 5), as emoções em dois grupos (leve e densa; até 3) e a energia.
+// Cada check-in tem a escala de rostos (1 a 5), as emoções em dois grupos (leve e densa; até 3) e a energia (barra de
+// 1 a 5, do vermelho ao verde). O conselho do guia pode vir de uma foto do papel (leitura do texto no aparelho).
 // Toques salvam na hora; os textos salvam ao sair do campo. O root liga "Visível para todos"; desligado, só ele vê.
 
-import { estado, avisar, carregarDiario, salvarDiaDiario, publicarDiario } from '../estado.js';
+import { estado, avisar, carregarDiario, salvarDiaDiario, publicarDiario, acaoGaleriaDiario } from '../estado.js';
 import { esc, toast, hoje, dLong, dDM, pd } from '../util.js';
 import { linhaDaEntidade, LINHA_LABEL } from '/shared/regras.js';
 import {
-  EMOCOES, GRUPOS_EMOCOES, HUMOR, MAX_EMOCOES, SENSACOES, SONO, LINHAS_DIARIO, TEMPERATURAS, AVISO_QUENTE, ERVAS_SUGESTOES, MAX_CONSELHO, MAX_REFLEXAO,
-  temperaturaDaErva, sugestaoOrientador, faseDaLua, deltaAxe,
+  EMOCOES, GRUPOS_EMOCOES, HUMOR, MAX_EMOCOES, GRUPOS_SENSACOES, SONO, LINHAS_DIARIO, TEMPERATURAS, AVISO_QUENTE, ERVAS_SUGESTOES, MAX_CONSELHO, MAX_REFLEXAO,
+  ORIXAS_BANHO, ERVAS_APOSTILA, MAX_ERVAS_BANHO, litros, temperaturaDaErva, sugestaoOrientador, faseDaLua, deltaAxe,
 } from '/shared/diario.js';
+import { BANHO_ORIXA } from '/shared/banhos.js';
 
-// dia: data aberta; mes: mês do calendário; rasc: textos ainda não salvos por data; ouvindo: campo com o microfone ligado.
-const ui = { dia: hoje(), mes: hoje().slice(0, 7), rasc: {}, ouvindo: null };
+// dia: data aberta; mes: mês do calendário; rasc: textos ainda não salvos por data; ouvindo: campo com o microfone ligado;
+// ocr: texto do andamento da leitura da foto do papel; gal: foto escolhida para a galeria (base64), descrição e envio.
+const ui = { dia: hoje(), mes: hoje().slice(0, 7), rasc: {}, ouvindo: null, ocr: null, gal: { foto: null, desc: '', enviando: false } };
 let reconhecimento = null;
 export function limpar() { ui.dia = hoje(); ui.mes = ui.dia.slice(0, 7); }
 
@@ -62,18 +66,92 @@ function emocoes(campo, marcadas = []) {
   const sel = EMOCOES.filter(([k]) => marcadas.includes(k));
   return `${grupos}${sel.length ? `<ul class="di-emo-sel">${sel.map(([, t, x]) => `<li><b>${t}</b> · ${x}</li>`).join('')}</ul>` : ''}`;
 }
+// Energia: barra de 1 (vermelho) a 5 (verde). Sem marcação, o pino fica apagado no meio até a pessoa tocar.
+const NIVEL_ENERGIA = ['', 'Muito baixa', 'Baixa', 'Média', 'Boa', 'Alta'];
+const textoEnergia = (n) => (n ? `${n} · ${NIVEL_ENERGIA[n]}` : 'Toque ou arraste para marcar');
 function energia(campo, valor) {
-  return `<div class="di-en" role="group" aria-label="Energia de 1 a 5">${[1, 2, 3, 4, 5].map((n) => `<button type="button" class="di-en-b di-en-${n}" data-act="dienergia" data-campo="${campo}" data-v="${n}" aria-pressed="${valor === n}" aria-label="Energia ${n}">${n}</button>`).join('')}</div>
-    <div class="di-en-leg muted"><span>baixa</span><span>alta</span></div>`;
+  return `<div class="di-slide${valor ? '' : ' vazio'}" style="--cor:${valor ? corEnergia(valor) : 'var(--line)'}">
+    <div class="di-slide-h"><output>${textoEnergia(valor)}</output>${valor ? `<button type="button" class="btn link small" data-act="dienlimpar" data-campo="${campo}">Limpar</button>` : ''}</div>
+    <input type="range" min="1" max="5" step="1" value="${valor || 3}" data-act="dienslide" data-campo="${campo}" aria-label="Energia de 1 a 5" aria-valuetext="${textoEnergia(valor)}">
+    <div class="di-en-leg muted"><span>baixa</span><span>alta</span></div></div>`;
 }
-function campoTexto(campo, rotulo, valor, max, voz) {
+// fixo: o campo mostra até 4 linhas e rola o resto (o conselho do guia pode ter umas 20 linhas).
+function campoTexto(campo, rotulo, valor, max, voz, extra = '', fixo = false) {
   const v = ui.rasc[ui.dia]?.[campo] ?? valor ?? '';
   const mic = voz && SR ? `<button type="button" class="btn small di-mic${ui.ouvindo === campo ? ' ouvindo' : ''}" data-act="divoz" data-campo="${campo}">${ui.ouvindo === campo ? '⏹ Parar' : '🎤 Falar'}</button>` : '';
-  return `<label class="field di-txt"><span class="di-txt-h">${rotulo}${mic}</span>
-    <textarea id="di-${campo}" rows="${Math.min(8, Math.max(3, v.split('\n').length + 1))}" maxlength="${max}" data-diario="${campo}" data-act="ditexto">${esc(v)}</textarea></label>`;
+  const linhas = fixo ? 4 : Math.min(8, Math.max(3, v.split('\n').length + 1));
+  return `<label class="field di-txt${fixo ? ' di-txt-fixo' : ''}"><span class="di-txt-h">${rotulo}<span class="di-txt-bt">${extra}${mic}</span></span>
+    <textarea id="di-${campo}" rows="${linhas}" maxlength="${max}" data-diario="${campo}" data-act="ditexto">${esc(v)}</textarea></label>`;
 }
 const corEnergia = (n) => `var(--di-en-${n})`;
 const ORIGEM = { guia: 'recomendado pelo guia', orientador: 'sugerido pelo Orientador', proprio: 'anotado por você' };
+
+// ---------- cuidados do dia ----------
+function cuidados(d) {
+  const H = d.habitos || {};
+  const caixa = (k, t) => `<label class="di-hab-c"><input type="checkbox" data-act="dihab" data-k="${k}" ${H[k] ? 'checked' : ''}><span>${t}</span></label>`;
+  let h = `<div class="di-hab">${caixa('preceito', '🕯️ Preceito ok')}${caixa('atividade', '🏋️ Fez atividade física?')}${caixa('agua', '💧 Tomou água?')}`;
+  if (H.agua) {
+    h += `<label class="field di-hab-sub">Quantos litros?<input type="text" inputmode="decimal" maxlength="5" data-act="dilitros" placeholder="Ex.: 1,5" value="${H.litros ? String(H.litros).replace('.', ',') : ''}"></label>`;
+  }
+  h += caixa('banho', '🌿 Tomou banho de ervas?');
+  if (H.banho) {
+    h += `<div class="di-hab-sub"><label class="field">Banho de orixá<select data-act="dihaborixa"><option value="">—</option>
+      ${ORIXAS_BANHO.map((o) => `<option value="${esc(o)}" ${o === H.orixa ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select></label>`;
+    if (H.orixa) {
+      h += `<p class="muted di-hab-ervas">Ervas de ${esc(H.orixa)}: ${esc(BANHO_ORIXA[H.orixa].ervas.join(', '))}</p>`;
+    } else {
+      const E = H.ervas || [];
+      h += `<p class="di-rot">ou as ervas <span class="muted">(até ${MAX_ERVAS_BANHO})</span></p>`;
+      if (E.length) h += `<div class="di-ervas">${E.map((e, i) => `<span class="di-erva">${esc(e)}<button type="button" data-act="dirmhaberva" data-i="${i}" aria-label="Tirar ${esc(e)}">×</button></span>`).join('')}</div>`;
+      if (E.length < MAX_ERVAS_BANHO) {
+        h += `<select data-act="dihaberva" aria-label="Escolher erva"><option value="">＋ Escolher erva…</option>
+          ${ERVAS_APOSTILA.filter((e) => !E.includes(e)).map((e) => `<option value="${esc(e)}">${esc(e)}</option>`).join('')}</select>`;
+      }
+    }
+    h += '</div>';
+  }
+  return h + '</div>';
+}
+
+function cabecalho() {
+  const d = dadosDe(ui.dia);
+  const gira = ehGira(ui.dia, d);
+  const auto = agendaTemGira(ui.dia);
+  const nome = String(estado.me?.nome || '').split(' ')[0];
+  const ehHoje = ui.dia === hoje();
+  return `<div class="card di-cab"><p class="di-ola">${ehHoje ? `Olá${nome ? ', ' + esc(nome) : ''} 🤍` : 'Seu registro de'}</p>
+    <h2>${ehHoje ? 'Como você está hoje?' : dLong(ui.dia)}</h2>${ehHoje ? `<p class="muted di-data">${dLong(ui.dia)}</p>` : ''}
+    <label class="of-sw"><input type="checkbox" role="switch" data-act="digira" ${gira ? 'checked' : ''}><span class="of-sw-t" aria-hidden="true"></span><b>${ehHoje ? 'Hoje é dia de gira' : 'Dia de gira'}</b>
+      <span class="muted">${auto ? '(pela agenda)' : ''}</span></label>${cuidados(d)}</div>`;
+}
+
+// ---------- Galeria de fotos da corrente ----------
+// src: só no modo demo (a foto fica na memória da página).
+const fotoUrl = (f) => f.src || `/api/pessoas?lista=diarioFoto&id=${encodeURIComponent(f.id)}&v=${encodeURIComponent(f.v)}`;
+function galeria(D) {
+  if (!D.galeria) return '';
+  const L = D.galeria, g = ui.gal;
+  let h = `<div class="card di-gal"><div class="grp-h"><h2>📸 Galeria de fotos</h2>${L.length ? `<span class="count">${L.length}</span>` : ''}</div>
+    <p class="muted di-gal-sub">Uma foto por pessoa. Toda terça-feira a galeria recomeça do zero.</p>`;
+  h += L.length ? `<div class="di-gal-l" role="list">${L.map((f) => {
+    const apagar = f.minha || D.root;
+    const conf = estado.confirm === 'dg:' + f.id;
+    return `<figure class="di-gal-i" role="listitem"><img src="${fotoUrl(f)}" alt="${esc(f.descricao || 'Foto de ' + f.nome)}" loading="lazy">
+      <figcaption><b>${esc(f.nome)}</b>${f.descricao ? `<span>${esc(f.descricao)}</span>` : ''}</figcaption>
+      <div class="di-gal-a"><button type="button" class="di-cur" data-act="dicurtir" data-id="${f.id}" aria-pressed="${f.curti}" aria-label="${f.curti ? 'Descurtir' : 'Curtir'}">${f.curti ? '❤️' : '🤍'} ${f.curtidas}</button>
+        ${apagar ? (conf ? `<button type="button" class="btn small danger" data-act="digalexcluir" data-id="${f.id}">Excluir?</button>`
+          : `<button type="button" class="btn small link" data-act="askdel" data-k="dg:${f.id}">Excluir</button>`) : ''}</div></figure>`;
+  }).join('')}</div>` : '<p class="muted" style="margin:0">Nenhuma foto nesta semana ainda.</p>';
+  if (!L.some((f) => f.minha)) {
+    h += g.foto ? `<div class="di-gal-novo"><img class="di-gal-prev" src="data:image/jpeg;base64,${g.foto}" alt="Foto escolhida">
+        <label class="field">Descrição<input type="text" maxlength="200" data-diario="galdesc" placeholder="Opcional" value="${esc(g.desc)}"></label>
+        <div class="di-gal-bt"><button type="button" class="btn primary" data-act="digalenviar" ${g.enviando ? 'disabled' : ''}>${g.enviando ? 'Enviando…' : 'Confirmar'}</button>
+          <button type="button" class="btn" data-act="digalcancelar" ${g.enviando ? 'disabled' : ''}>Cancelar</button></div></div>`
+      : `<label class="btn primary di-gal-subir">📷 Subir foto<input type="file" accept="image/*" data-act="digalfoto" hidden></label>`;
+  }
+  return h + '</div>';
+}
 
 function cardRoot(D) {
   if (!D.root) return '';
@@ -116,7 +194,8 @@ function calendario(D) {
     const marcas = [];
     if (x && ehGira(data, x)) marcas.push('<i class="di-p di-p-gira"></i>');
     else if (x && completo(x.antes) && completo(x.depois)) marcas.push('<i class="di-p di-p-dia"></i>');
-    if (x?.banho?.feito) marcas.push('<i class="di-folha">🌿</i>');
+    if (x?.banho?.feito || x?.habitos?.banho) marcas.push('<i class="di-folha">🌿</i>');
+    if (x?.habitos?.atividade) marcas.push('<i class="di-folha">🏋️</i>');
     const cls = ['di-d', data === ui.dia ? 'sel' : '', data === hj ? 'hoje' : '', !x && agendaTemGira(data) ? 'agenda' : ''].filter(Boolean).join(' ');
     cel += `<button type="button" class="${cls}" data-act="didia" data-d="${data}" ${data > hj ? 'disabled' : ''} aria-label="${dLong(data)}" aria-pressed="${data === ui.dia}">
       <span>${d}</span><span class="di-marcas">${marcas.join('')}</span></button>`;
@@ -127,7 +206,7 @@ function calendario(D) {
       <h2>${MESES[m - 1].replace(/^./, (c) => c.toUpperCase())} de ${y}</h2>
       <button class="btn small" data-act="dimes" data-v="1" aria-label="Próximo mês" ${ui.mes >= hj.slice(0, 7) ? 'disabled' : ''}>▸</button></div>
     <div class="di-grade">${['D', 'S', 'T', 'Q', 'Q', 'S', 'S'].map((s) => `<b>${s}</b>`).join('')}${cel}</div>
-    <div class="di-leg muted"><span><i class="di-p di-p-gira"></i> gira</span><span><i class="di-p di-p-dia"></i> manhã e noite</span><span>🌿 banho tomado</span></div>
+    <div class="di-leg muted"><span><i class="di-p di-p-gira"></i> gira</span><span><i class="di-p di-p-dia"></i> manhã e noite</span><span>🌿 banho tomado</span><span>🏋️ atividade física</span></div>
     <p class="di-lua" title="${esc(textoLua)}"><span aria-hidden="true">${iconeLua}</span> <b>${nomeLua}</b> · ${esc(textoLua)}</p></div>`;
 }
 
@@ -167,19 +246,12 @@ function banho(d, gira) {
     ${B.ervas.length ? `<label class="of-sw"><input type="checkbox" role="switch" data-act="difeito" ${B.feito ? 'checked' : ''}><span class="of-sw-t" aria-hidden="true"></span><b>Banho tomado</b></label>` : ''}</div>`;
 }
 
-function dia(D) {
+function dia() {
   const d = dadosDe(ui.dia);
   const gira = ehGira(ui.dia, d);
-  const auto = agendaTemGira(ui.dia);
   const linha = gira ? linhaDoDia(ui.dia, d) : '';
   const A = d.antes || {}, P = d.depois || {};
-  const nome = String(estado.me?.nome || '').split(' ')[0];
-  const ehHoje = ui.dia === hoje();
-  let h = `<div class="card di-cab"><p class="di-ola">${ehHoje ? `Olá${nome ? ', ' + esc(nome) : ''} 🤍` : 'Seu registro de'}</p>
-    <h2>${ehHoje ? 'Como você está hoje?' : dLong(ui.dia)}</h2>${ehHoje ? `<p class="muted di-data">${dLong(ui.dia)}</p>` : ''}
-    <label class="of-sw"><input type="checkbox" role="switch" data-act="digira" ${gira ? 'checked' : ''}><span class="of-sw-t" aria-hidden="true"></span><b>${ehHoje ? 'Hoje é dia de gira' : 'Dia de gira'}</b>
-      <span class="muted">${auto ? '(pela agenda)' : ''}</span></label></div>`;
-  h += `<div class="card di-check di-check-a"><h3>${gira ? '🕯️ Antes da gira' : '🌅 Ao acordar'}</h3>
+  let h = `<div class="card di-check di-check-a"><h3>${gira ? '🕯️ Antes da gira' : '🌅 Ao acordar'}</h3>
     <p class="di-rot">${gira ? 'Como você está chegando?' : 'Como você acordou?'}</p>${rostos('antes.humor', A.humor)}
     <p class="di-rot">O que você sente? <span class="muted">(até ${MAX_EMOCOES})</span></p>${emocoes('antes.emo', A.emo)}
     ${gira ? '' : `<p class="di-rot">Sono e sonhos</p>${chips('antes.sono', SONO, A.sono)}`}
@@ -188,13 +260,14 @@ function dia(D) {
     <p class="di-rot">${gira ? 'Como você está saindo?' : 'Como você está encerrando o dia?'}</p>${rostos('depois.humor', P.humor)}
     <p class="di-rot">O que você sente? <span class="muted">(até ${MAX_EMOCOES})</span></p>${emocoes('depois.emo', P.emo)}
     <p class="di-rot">Energia ${gira ? 'depois do trabalho' : 'da noite'}</p>${energia('depois.energia', P.energia)}
-    ${gira ? `<p class="di-rot">Sensação</p>${chips('depois.sensacao', SENSACOES, P.sensacao)}`
+    ${gira ? `<p class="di-rot">Sensação</p>${GRUPOS_SENSACOES.map((g) => `<div class="di-sens"><span class="muted">${g.titulo}</span>${chips('depois.sensacao', g.itens, P.sensacao)}</div>`).join('')}`
       : campoTexto('reflexao', 'Reflexão, gratidão ou sincronicidades (opcional)', d.reflexao, MAX_REFLEXAO, true)}</div>`;
   h += termometro(d, gira);
   if (gira) {
     h += `<div class="card"><h3>🙏 Orientações do guia</h3>
       <label class="field">Linha / falange<select data-act="dilinha"><option value="">—</option>${LINHAS_DIARIO.map(([k, t]) => `<option value="${k}" ${k === linha ? 'selected' : ''}>${t}</option>`).join('')}</select></label>
-      ${campoTexto('conselho', 'Conselho do guia', d.conselho, MAX_CONSELHO, true)}</div>`;
+      ${campoTexto('conselho', 'Conselho do guia', d.conselho, MAX_CONSELHO, true,
+        ui.ocr ? `<span class="muted di-ocr">${esc(ui.ocr)}</span>` : `<label class="btn small">📷 Foto do papel<input type="file" accept="image/*" data-act="diocr" hidden></label>`, true)}</div>`;
   }
   return h + banho(d, gira);
 }
@@ -204,7 +277,7 @@ export function render() {
   if (D === null) { carregarDiario(); return '<div class="loading">Carregando o diário…</div>'; }
   if (D.erro) return `<section class="panel"><div class="card"><p class="erro">${esc(D.erro)}</p><button class="btn" data-act="direcarregar">Tentar de novo</button></div></section>`;
   if (ui.dia > hoje()) limpar();
-  return `<section class="panel di-tela">${cardRoot(D)}${pilula(D)}${pendencias(D)}${calendario(D)}${dia(D)}</section>`;
+  return `<section class="panel di-tela">${cabecalho()}${pilula(D)}${pendencias(D)}${calendario(D)}${dia()}${galeria(D)}${cardRoot(D)}</section>`;
 }
 
 // ---------- ações ----------
@@ -225,7 +298,92 @@ function salvarTexto(campo) {
   salvar((d) => { d[campo] = v; if (campo === 'conselho' && !d.linha && linhaDoDia(data, d)) d.linha = linhaDoDia(data, d); }).then((ok) => { if (ok && ui.rasc[data]) delete ui.rasc[data][campo]; });
 }
 export function digitando(t) {
+  if (t.dataset.diario === 'galdesc') { ui.gal.desc = t.value; return; }
   (ui.rasc[ui.dia] ||= {})[t.dataset.diario] = t.value;
+}
+// Barra de energia enquanto arrasta: só a cor e o texto (salva ao soltar).
+export function arrastando(t) {
+  const n = Number(t.value);
+  const box = t.closest('.di-slide');
+  box.classList.remove('vazio');
+  box.style.setProperty('--cor', corEnergia(n));
+  box.querySelector('output').textContent = textoEnergia(n);
+}
+function mudarHabitos(muda) {
+  return salvar((d) => { d.habitos = { ...(d.habitos || {}) }; muda(d.habitos); });
+}
+
+// ---------- foto do papel: leitura do texto (Tesseract.js, baixado só quando alguém usa) ----------
+const TESSERACT = 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js';
+let tesseract = null;
+function carregarTesseract() {
+  return tesseract ||= new Promise((ok, erro) => {
+    if (window.Tesseract) { ok(window.Tesseract); return; }
+    const sc = document.createElement('script');
+    sc.src = TESSERACT;
+    sc.onload = () => ok(window.Tesseract);
+    sc.onerror = () => { tesseract = null; sc.remove(); erro(new Error('sem leitor')); };
+    document.head.appendChild(sc);
+  });
+}
+async function abrirImagem(arquivo) {
+  try { return await createImageBitmap(arquivo, { imageOrientation: 'from-image' }); } catch { /* tenta pelo <img> */ }
+  const url = URL.createObjectURL(arquivo);
+  try { const img = new Image(); img.src = url; await img.decode(); return img; } finally { URL.revokeObjectURL(url); }
+}
+function canvasDe(img, lado) {
+  const k = Math.min(1, lado / Math.max(img.width, img.height));
+  const c = document.createElement('canvas');
+  c.width = Math.round(img.width * k);
+  c.height = Math.round(img.height * k);
+  c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+  return c;
+}
+async function lerPapel(arquivo) {
+  if (ui.ocr) return;
+  const data = ui.dia;
+  ui.ocr = 'Preparando a leitura…';
+  avisar();
+  let worker = null;
+  try {
+    const T = await carregarTesseract();
+    let ultimo = -1;
+    worker = await T.createWorker('por', 1, { logger: (m) => {
+      if (m.status !== 'recognizing text') return;
+      const p = Math.floor(m.progress * 10) * 10;
+      if (p !== ultimo) { ultimo = p; ui.ocr = `Lendo o papel… ${p}%`; avisar(); }
+    } });
+    const { data: { text } } = await worker.recognize(canvasDe(await abrirImagem(arquivo), 2000));
+    const lido = String(text || '').replace(/[ \t]+/g, ' ').replace(/ *\n */g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+    if (!lido) toast('Não deu para ler o texto. Tente com mais luz e o papel bem reto.');
+    else {
+      const atual = ui.rasc[data]?.conselho ?? dadosDe(data).conselho ?? '';
+      (ui.rasc[data] ||= {}).conselho = ((atual ? atual.replace(/\s+$/, '') + '\n' : '') + lido).slice(0, MAX_CONSELHO);
+      toast('Texto lido: confira e corrija o que precisar.');
+    }
+  } catch { toast('Não foi possível ler a foto agora. Confira a internet e tente de novo.'); }
+  finally {
+    worker?.terminate().catch(() => {});
+    ui.ocr = null;
+    avisar();
+    if (ui.dia === data) salvarTexto('conselho');
+  }
+}
+
+// ---------- galeria: a foto é reduzida no aparelho (maior lado 1280 px, JPEG até ~600 KB) ----------
+async function escolherFotoGaleria(arquivo) {
+  try {
+    const c = canvasDe(await abrirImagem(arquivo), 1280);
+    for (let q = 0.82; q > 0.3; q -= 0.12) {
+      const blob = await new Promise((ok) => c.toBlob(ok, 'image/jpeg', q));
+      if (blob && blob.size <= 600 * 1024) {
+        ui.gal.foto = await new Promise((ok, erro) => { const r = new FileReader(); r.onload = () => ok(String(r.result).split(',')[1]); r.onerror = erro; r.readAsDataURL(blob); });
+        avisar();
+        return;
+      }
+    }
+    toast('Foto grande demais.');
+  } catch { toast('Não foi possível abrir essa foto.'); }
 }
 export async function addErva(form) {
   const el = form.querySelector('#di-erva');
@@ -291,6 +449,27 @@ export const cliques = {
     });
   },
   dienergia(el) { marcar(el.dataset.campo, Number(el.dataset.v)); },
+  dienlimpar(el) {
+    const [g, k] = el.dataset.campo.split('.');
+    salvar((d) => { if (d[g]) delete d[g][k]; });
+  },
+  dirmhaberva(el) {
+    const i = Number(el.dataset.i);
+    mudarHabitos((h) => { h.ervas = (h.ervas || []).filter((_, j) => j !== i); });
+  },
+  dicurtir(el) { acaoGaleriaDiario('fotoCurtir', { id: el.dataset.id }); },
+  async digalexcluir(el) { if (await acaoGaleriaDiario('fotoExcluir', { id: el.dataset.id })) toast('Foto excluída.'); },
+  digalcancelar() { ui.gal = { foto: null, desc: '', enviando: false }; avisar(); },
+  async digalenviar() {
+    const g = ui.gal;
+    if (!g.foto || g.enviando) return;
+    g.enviando = true;
+    avisar();
+    const ok = await acaoGaleriaDiario('fotoEnviar', { foto: g.foto, descricao: g.desc });
+    ui.gal = ok ? { foto: null, desc: '', enviando: false } : { ...g, enviando: false };
+    if (ok) toast('Foto na galeria. 📸');
+    avisar();
+  },
   dirmerva(el) {
     const i = Number(el.dataset.i);
     salvar((d) => {
@@ -323,5 +502,35 @@ export const mudancas = {
   },
   dilinha(t) { salvar((d) => { if (t.value) d.linha = t.value; else delete d.linha; }); },
   difeito(t) { salvar((d) => { if (d.banho) d.banho.feito = t.checked; }); },
+  // Energia: salva o valor ao soltar (o toque sem arrastar também marca: ver main.js).
+  dienslide(t) {
+    const [g, k] = t.dataset.campo.split('.');
+    const v = Number(t.value);
+    if (dadosDe(ui.dia)[g]?.[k] === v) return;
+    salvar((d) => { d[g] = d[g] || {}; d[g][k] = v; });
+  },
+  dihab(t) {
+    const k = t.dataset.k;
+    mudarHabitos((h) => {
+      if (t.checked) { h[k] = true; return; }
+      delete h[k];
+      if (k === 'agua') delete h.litros;
+      if (k === 'banho') { delete h.orixa; delete h.ervas; }
+    });
+  },
+  dilitros(t) {
+    const v = t.value.trim();
+    const n = litros(v);
+    if (v && n === undefined) { toast('Litros: um número até 20 (ex.: 1,5).'); return; }
+    mudarHabitos((h) => { if (n) h.litros = n; else delete h.litros; });
+  },
+  dihaborixa(t) { mudarHabitos((h) => { if (t.value) { h.orixa = t.value; delete h.ervas; } else delete h.orixa; }); },
+  dihaberva(t) {
+    const e = t.value;
+    if (!e) return;
+    mudarHabitos((h) => { h.ervas = [...new Set([...(h.ervas || []), e])].slice(0, MAX_ERVAS_BANHO); });
+  },
+  diocr(t) { const f = t.files?.[0]; t.value = ''; if (f) lerPapel(f); },
+  digalfoto(t) { const f = t.files?.[0]; t.value = ''; if (f) escolherFotoGaleria(f); },
   ditexto(t) { if (ui.ouvindo !== t.dataset.diario) salvarTexto(t.dataset.diario); },
 };

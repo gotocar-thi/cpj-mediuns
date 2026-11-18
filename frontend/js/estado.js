@@ -918,6 +918,14 @@ export async function salvarDiaDiario(data, dados) {
     avisar();
   }
 }
+// Galeria de fotos do Diário: op = fotoEnviar | fotoExcluir | fotoCurtir; o servidor devolve a galeria inteira.
+export async function acaoGaleriaDiario(op, dados = {}) {
+  try {
+    const r = await api('POST', '/pessoas', { acao: 'diario', op, ...dados });
+    if (estado.diario?.dias) estado.diario = { ...estado.diario, galeria: r.galeria };
+    return true;
+  } catch (e) { toast(e.message); return false; } finally { avisar(); }
+}
 export async function publicarDiario(publicada) {
   try {
     estado.diario = await api('POST', '/pessoas', { acao: 'diario', op: 'publicar', publicada });

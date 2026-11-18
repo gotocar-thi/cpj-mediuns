@@ -2959,3 +2959,38 @@ test('diário: só o root vê até ligar; cada um lê e grava só o seu, com os 
   assert.equal((await ler(ana)).json.dias.length, 0, 'dia vazio é apagado');
   await pub(false);
 });
+
+test('diário: cuidados do dia e Galeria de fotos (uma por pessoa, curtidas, exclusão)', async () => {
+  const pub = (publicada) => api('POST', '/api/pessoas', ADMIN, { acao: 'diario', op: 'publicar', publicada });
+  const ler = (tok) => api('GET', '/api/pessoas?lista=diario', tok);
+  const op = (tok, b) => api('POST', '/api/pessoas', tok, { acao: 'diario', ...b });
+  const ana = await tokenCorrente('Ana');
+  await pub(true);
+  const r = await op(ana, { op: 'salvar', data: '2024-03-05', dados: { habitos: { preceito: true, agua: true, litros: '1,5', banho: true, ervas: ['arruda', 'inventada'] } } });
+  assert.deepEqual(r.json.dados, { habitos: { preceito: true, agua: true, litros: 1.5, banho: true, ervas: ['arruda'] } });
+  await op(ana, { op: 'salvar', data: '2024-03-05', dados: {} });
+
+  const jpeg = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(200, 1)]).toString('base64');
+  assert.deepEqual((await ler(ana)).json.galeria, []);
+  assert.equal((await op(ana, { op: 'fotoEnviar', foto: Buffer.alloc(200, 1).toString('base64') })).status, 400, 'só JPEG');
+  const env = await op(ana, { op: 'fotoEnviar', foto: jpeg, descricao: '  Gira  linda ' });
+  assert.equal(env.status, 200, JSON.stringify(env.json));
+  const [f] = env.json.galeria;
+  assert.equal(f.descricao, 'Gira linda');
+  assert.equal(f.minha, true);
+  assert.equal((await op(ana, { op: 'fotoEnviar', foto: jpeg })).status, 400, 'uma foto por pessoa');
+  const img = await fetch(`${base}/api/pessoas?lista=diarioFoto&id=${f.id}&v=${f.v}`);
+  assert.equal(img.headers.get('content-type'), 'image/jpeg');
+  assert.equal(Buffer.from(await img.arrayBuffer()).toString('base64'), jpeg);
+  assert.equal((await op(ADMIN, { op: 'fotoCurtir', id: f.id })).json.galeria[0].curtidas, 1);
+  const g = (await ler(ADMIN)).json.galeria[0];
+  assert.equal(g.curti, true);
+  assert.equal(g.minha, false);
+  assert.equal((await op(ADMIN, { op: 'fotoCurtir', id: f.id })).json.galeria[0].curtidas, 0, 'tocar de novo descurte');
+  // A semana da galeria acaba na terça: foto antiga some na próxima leitura.
+  sql(`update diario_fotos set criado_em = now() - interval '8 days' where id = '${f.id}'`);
+  assert.deepEqual((await ler(ana)).json.galeria, []);
+  const nova = (await op(ana, { op: 'fotoEnviar', foto: jpeg })).json.galeria[0];
+  assert.equal((await op(ADMIN, { op: 'fotoExcluir', id: nova.id })).status, 200, 'o root apaga qualquer uma');
+  await pub(false);
+});
