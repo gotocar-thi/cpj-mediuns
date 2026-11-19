@@ -714,6 +714,16 @@ button.eu-avatar{cursor:zoom-in}
 .modal h3{margin:0;font-family:var(--f-display);font-size:1.2rem}
 .versao-app{display:block;margin-top:-10px;text-align:center;font-size:.72rem;color:var(--muted)}
 .versao-app[hidden]{display:none}
+.vis-topo{display:flex;align-items:flex-end;gap:6px}
+.vis-topo .field{min-width:0}
+.vis-wa,.vis-atual{min-height:44px;flex:none}
+.vis-wa{text-decoration:none}
+.vis-atual{width:44px;padding:0}
+.vis-grupo{display:grid;gap:2px}
+.vis-grupo .grp-h h3{margin:0;font-size:.95rem}
+.vis-linha{display:flex;justify-content:space-between;gap:8px;padding:5px 0;border-top:1px solid var(--line);font-size:.92rem}
+.vis-linha .nm{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.vis-linha .muted{flex:none;font-size:.8rem}
 .root-secao{margin:8px 0 -6px;font:700 .8rem var(--f-body);letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
 /* Admin root → Acessos e perfis: um grupo por perfil */
 .acessos-topo{display:flex;gap:8px;align-items:center}
@@ -2181,7 +2191,13 @@ div.pf-of-total{cursor:default}
 .di-p-gira{background:var(--gold)}
 .di-p-dia{background:var(--di-lilas)}
 .di-p-evento{background:var(--accent)}
-.gira-cal{display:grid;gap:8px;width:100%}
+.gira-cal{--roxo:#8f6fdc;display:grid;gap:8px;width:100%;box-sizing:border-box;padding:12px;border-radius:20px;
+  border:1px solid color-mix(in srgb,var(--roxo) 28%,var(--line));
+  background:linear-gradient(165deg,color-mix(in srgb,var(--roxo) 22%,var(--surface)) 0%,color-mix(in srgb,var(--roxo) 6%,var(--surface)) 60%,var(--surface) 100%)}
+.gira-cal .di-d{border-radius:12px;background:color-mix(in srgb,var(--bg) 75%,transparent)}
+.gira-cal .di-d.hoje{border-color:color-mix(in srgb,var(--roxo) 45%,var(--line))}
+.gira-cal .di-d.sel{border-color:var(--roxo);background:color-mix(in srgb,var(--roxo) 24%,var(--surface))}
+.gira-cal .di-cal-h .btn{border-color:color-mix(in srgb,var(--roxo) 30%,var(--line))}
 .di-folha{font-style:normal;font-size:.7rem;line-height:1}
 .di-leg{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:.78rem}
 .di-leg span{display:inline-flex;align-items:center;gap:4px}

@@ -2,7 +2,7 @@
 
 import { estadoDoApp, logado, entrar, cadastrar, criarSenhaContato, verificarCpf, entrarCpf, criarSenhaCpf, instalar, sair, trocarSenha, criarSenhaCorrente } from './auth.js';
 import { quandoSessaoExpirar, definirVerComo } from './api.js';
-import { estado, prefs, salvarPrefs, pode, visaoAtiva, aoMudar, avisar, carregarTudo, atualizarDoServidor, atualizarOferendasAoAbrir, atualizarAoAbrir, atualizarUsuariosAoAbrir, salvarPerfilAgora, mudarVisaoRoot, verComoPessoa, ehRootReal, veErvas, veOferendas, veGuias, veAmaci, veTransparencia, vePedidos, veDiario, vePessoas, temPendencia } from './estado.js';
+import { estado, prefs, salvarPrefs, pode, visaoAtiva, aoMudar, avisar, carregarTudo, atualizarDoServidor, atualizarOferendasAoAbrir, atualizarAoAbrir, atualizarUsuariosAoAbrir, registrarVisita, salvarPerfilAgora, mudarVisaoRoot, verComoPessoa, ehRootReal, veErvas, veOferendas, veGuias, veAmaci, veTransparencia, vePedidos, veDiario, vePessoas, temPendencia } from './estado.js';
 import { esc, toast, hoje, mascaraTel, guardarRascunhos, devolverRascunhos } from './util.js';
 import { iniciarAtualizacao } from './atualizacao.js';
 import { PIN_NOVO, PIN_NOVO_MSG } from '/shared/permissoes.js';
@@ -162,6 +162,7 @@ function render() {
   const abaTopo = grupoDa(prefs.tab)?.topo || prefs.tab;
   tabs.querySelectorAll('button').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.tab === abaTopo)));
   renderConta();
+  registrarVisita(prefs.tab);
 
   const tela = TELAS[prefs.tab];
   if (!tela) { abrirTela(prefs.tab); return; }
@@ -250,7 +251,7 @@ tabs.addEventListener('click', (e) => {
   // As abas abrem na hora com o que já está no aparelho e buscam de novo por trás (atualizarAoAbrir; a primeira vez
   // carrega). O que volta ao padrão ao entrar (blocos minimizados, janelas fechadas) continua voltando.
   // Admin root: o bloco Senhas volta minimizado.
-  if (b.dataset.tab === 'usuarios') { atualizarUsuariosAoAbrir(); estado.senhasAberto = false; estado.senhaEdit = null; }
+  if (b.dataset.tab === 'usuarios') { atualizarUsuariosAoAbrir(); estado.senhasAberto = false; estado.senhaEdit = null; estado.visitas = null; }
   if (b.dataset.tab === 'ervas') { atualizarAoAbrir('ervas', '/ervas'); estado.ervasCompra = null; estado.ervasFechar = false; estado.ervasNova = null; estado.ervasHist = null; }
   // Oferendas: abre com o que já está no aparelho e busca de novo por trás (para ver as que o admin acabou de publicar).
   if (b.dataset.tab === 'oferendas') { atualizarOferendasAoAbrir(); TELAS.oferendas?.aoAbrirAba(); }

@@ -24,6 +24,7 @@
 //   GET  /api/auth/anamnese → { perguntas: [{ id, texto, tipo }], minhas: { perguntaId: resposta } | null, todas?: [{ pessoaId, perguntaId, resposta }] (admin do perfil) }
 //   POST /api/auth/anamnese { acao: 'responder', respostas: { perguntaId: resposta } }  a própria pessoa
 //                           { acao: 'pergunta', texto, tipo: 'texto'|'simnao' } · { acao: 'excluirPergunta', id }  (admin do perfil)  → como o GET
+//   POST /api/auth/visita   { aba }  a pessoa abriu essa aba (lista "Quem entrou nas abas" do Admin root; o root não conta) → { ok }
 
 import { rota, corpo, validarId, HttpError } from '../_lib/http.js';
 import { db } from '../_lib/db.js';
@@ -36,6 +37,8 @@ import { rotaCpf, cifrar, hashCpf, cadastroPorCpf } from '../_lib/cpf.js';
 import { dadosAluno } from '../_lib/alunos.js';
 import { randomUUID } from 'node:crypto';
 import { temAbaPublica } from '../../shared/oferendas.js';
+import { abaValida } from '../../shared/visitas.js';
+import { chavePessoa } from '../../shared/ervas.js';
 import { gerarHash, conferirSenha, emitirToken, emitirTokenCorrente, emitirTokenGrupo, iguaisSeguro, limitarPorIp, SENHA_MINIMA } from '../_lib/senhas.js';
 import { permissoesDe, grupoAcesso, pode, PIN_VALIDO, PIN_NOVO, PIN_NOVO_MSG, PERMISSOES_GRUPO } from '../../shared/permissoes.js';
 import { normalizarNome } from '../../shared/ervas.js';
@@ -260,6 +263,17 @@ const acoes = {
     const { listas, extras } = await listasIniciais(u, { versao: atualizar ? String(req.query.versao || '') : '', me: !atualizar });
     if (atualizar) return listas;
     return { me: await dadosDoMe(u, extras && { ...extras, transparenciaPublicada: await transparencia, diarioPublicada: await diarioPub }), ...listas };
+  },
+
+  // Abriu uma aba: soma uma entrada de hoje (o banco guarda só os últimos 3 dias). O root e o "Ver como" não contam.
+  async visita(req) {
+    if (req.method !== 'POST') throw new HttpError(405, 'Método não permitido.');
+    const eu = await exigir(req);
+    if (eu.verComo || pode(eu, 'usuarios:gerenciar')) return { ok: true };
+    const aba = String(corpo(req).aba || '');
+    if (!abaValida(aba)) throw new HttpError(400, 'Aba inválida.');
+    await db.rpc('visita_registrar', { chave: chavePessoa(eu), aba, nome: String(eu.nome || '').trim() });
+    return { ok: true };
   },
 
   // Perfil da própria pessoa (todo mundo que está no cadastro da corrente).

@@ -1,9 +1,11 @@
-// Aba "Admin root" (só o admin root): Acessos e perfis (um bloco só, por perfil) e, do Histórico,
+// Aba "Admin root" (só o admin root): Acessos e perfis (um bloco só, por perfil), Quem entrou nas abas e, do Histórico,
 // Cadastrar gira antiga e Cadastrar escala, e os eventos da casa (cadastrar e eventos cadastrados).
 
 import { SEM_CADASTRO, ABAS, ABAS_CONSULENTE, PERFIS_SISTEMA, PIN_NOVO, PIN_NOVO_MSG, normalizarAbas } from '/shared/permissoes.js';
-import { estado, pessoasOrd, carregarUsuarios, carregarPerfil, criarUsuario, atualizarUsuario, excluirUsuario, atualizarPessoa, adicionarPessoas, acaoUsuarios, salvarApelidosEntidade, salvarConfigCasa, avisar } from '../estado.js';
-import { esc, toast, ajustarRolagem } from '../util.js';
+import { estado, pessoasOrd, carregarUsuarios, carregarVisitas, carregarPerfil, criarUsuario, atualizarUsuario, excluirUsuario, atualizarPessoa, adicionarPessoas, acaoUsuarios, salvarApelidosEntidade, salvarConfigCasa, avisar } from '../estado.js';
+import { esc, toast, ajustarRolagem, hoje } from '../util.js';
+import { ICONE_WHATS } from './giraComum.js';
+import { ABAS_VISITA, VISITAS_DIAS, agruparVisitas, textoVisitas } from '/shared/visitas.js';
 import { emDemo } from '../auth.js';
 import { renderAjustesPerfil, formSenha } from './perfil.js';
 import { blocosEventos, blocoTipos, cliques as cliquesEventos } from './eventos.js';
@@ -70,10 +72,40 @@ const pessoasLivres = (manter = null) => {
 export function render() {
   if (estado.usuarios === null) { carregarUsuarios(); return `<div class="loading">Carregando usuários…</div>`; }
   if (abertosRoot.has('ajperfil') && estado.perfil === null) { estado.perfil = undefined; carregarPerfil(); }
-  let h = `<section class="panel">${cardAcessos()}
+  let h = `<section class="panel">${cardAcessos()}${cardVisitas()}
     ${secao('Configurações da casa')}${cardConfig()}${cardEntidades()}${cardEventos()}
     ${secao('Pessoas e histórico')}${cardAjustesPerfil()}${cardRegistros()}${cardBackup()}</section>`;
   return h;
+}
+
+// ---------- quem entrou nas abas ----------
+// Últimos 3 dias, uma aba por vez (começa em Compras), agrupado pelo grupo do cadastro; o WhatsApp manda a lista.
+let abaVisitas = 'guias';
+function quandoVisita(iso) {
+  const d = new Date(iso);
+  const dia = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const hora = d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  const ontem = new Date(); ontem.setDate(ontem.getDate() - 1);
+  const ehOntem = dia === `${ontem.getFullYear()}-${String(ontem.getMonth() + 1).padStart(2, '0')}-${String(ontem.getDate()).padStart(2, '0')}`;
+  return `${dia === hoje() ? 'hoje' : ehOntem ? 'ontem' : d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })} ${hora}`;
+}
+function cardVisitas() {
+  const ab = abertosRoot.has('visitas');
+  let h = `<div class="card adm root">${cabRoot('visitas', '<span aria-hidden="true">👀</span> Quem entrou nas abas', `últimos ${VISITAS_DIAS} dias`, ab)}`;
+  if (!ab) return h + '</div>';
+  if (estado.visitas === null) { estado.visitas = undefined; carregarVisitas(); }
+  if (!Array.isArray(estado.visitas)) return h + '<div class="loading">Carregando…</div></div>';
+  const pessoasNa = (k) => new Set(estado.visitas.filter((v) => v.aba === k).map((v) => v.chave)).size;
+  const grupos = agruparVisitas(estado.visitas, abaVisitas);
+  const total = grupos.reduce((s, g) => s + g.pessoas.length, 0);
+  const txt = textoVisitas(grupos, abaVisitas, quandoVisita);
+  h += `<div class="vis-topo"><label class="field grow">Aba<select data-act="visaba">${ABAS_VISITA.map(([k, t]) => `<option value="${k}" ${k === abaVisitas ? 'selected' : ''}>${t} (${pessoasNa(k)})</option>`).join('')}</select></label>
+    ${total ? `<a class="btn wa-bt vis-wa" href="https://wa.me/?text=${encodeURIComponent(txt)}" target="_blank" rel="noopener"><span class="wa-ico" aria-hidden="true">${ICONE_WHATS}</span> Exportar</a>` : ''}
+    <button class="btn vis-atual" data-act="visatualizar" title="Atualizar a lista" aria-label="Atualizar a lista">↻</button></div>`;
+  if (!total) return h + `<p class="muted" style="margin:0">Ninguém entrou nesta aba nos últimos ${VISITAS_DIAS} dias.</p></div>`;
+  h += grupos.map((g) => `<div class="vis-grupo"><div class="grp-h"><h3>${esc(g.grupo)}</h3><span class="count">${g.pessoas.length}</span></div>
+    ${g.pessoas.map((p) => `<div class="vis-linha"><span class="nm">${esc(p.nome)}</span><span class="muted">${quandoVisita(p.ultima)}${p.vezes > 1 ? ` · ${p.vezes}×` : ''}</span></div>`).join('')}</div>`).join('');
+  return h + `<p class="muted" style="margin:0;font-size:.8rem">Hora da última entrada · × = quantas vezes abriu nos ${VISITAS_DIAS} dias. O root não entra na lista.</p></div>`;
 }
 
 // Uma pessoa com acesso: nome (do cadastro), e-mail, troca de perfil, Nova senha e Excluir.
@@ -261,7 +293,8 @@ export const cliques = {
     if (inp) { inp.focus(); if (inp.tagName === 'INPUT') inp.select(); }
   },
   cancelauren() { estado.renomearUsuario = null; avisar(); },
-  dobrarroot(el) { if (emDemo()) { toast('Modo demonstração: os blocos do Admin root não abrem.'); return; } const k = el.dataset.k; if (abertosRoot.has(k)) abertosRoot.delete(k); else abertosRoot.add(k); avisar(); },
+  visatualizar() { estado.visitas = null; avisar(); },
+  dobrarroot(el) { if (emDemo() && el.dataset.k !== 'visitas') { toast('Modo demonstração: os blocos do Admin root não abrem.'); return; } const k = el.dataset.k; if (abertosRoot.has(k)) abertosRoot.delete(k); else abertosRoot.add(k); avisar(); },
   editaralias(el) {
     const index = Number(el.dataset.index);
     const alias = estado.entidadesApelidos?.[index];
@@ -359,6 +392,7 @@ export async function renomear(form) {
 }
 
 export const mudancas = {
+  visaba(t) { abaVisitas = t.value; avisar(); },
   ...mudancasGiraAntiga,
   ...mudancasEscala,
   // Editar inclui ver; tirar o ver tira o editar.

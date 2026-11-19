@@ -6,6 +6,7 @@ import { token, emDemo } from './auth.js';
 import { giraVazia, ordenarPessoas, pessoasDe, expandirRetrato } from '/shared/regras.js';
 import { permissoesDe, PERFIS_PADRAO, PERMISSOES_GRUPO } from '/shared/permissoes.js';
 import { definirConfig } from '/shared/config.js';
+import { abaValida } from '/shared/visitas.js';
 import { hoje, toast } from './util.js';
 
 export const estado = {
@@ -47,6 +48,7 @@ export const estado = {
   fotosPessoa: {},     // aba Perfil: pessoaId → foto (data URL; '' = sem foto; null = buscando)
   pfUi: { abertos: {}, infoBuscaVisivel: false, infoBusca: '' },
   perfisCfg: null,     // aba Admin root: perfis e as abas de cada um
+  visitas: null,       // aba Admin root: quem entrou em cada aba nos últimos 3 dias (GET /api/usuarios?lista=visitas)
   senhas: null,        // aba Admin root: quem tem senha (PIN) no acesso da corrente
   alunos: null,        // aba Pessoas: { turmas, alunos }
   alunosAdicionarTurma: null, // aba Pessoas: turma com o formulário de inclusão de alunos aberto
@@ -1141,6 +1143,23 @@ export function atualizarAoAbrir(chave, rota) {
   if (atual && !atual.erro) buscarPorTras([chave], async () => [await api('GET', rota)]);
   else estado[chave] = null;
 }
+// ---------- quem entrou nas abas ----------
+// Ao abrir uma aba, avisa o servidor (sem esperar nem mostrar erro). A mesma aba de novo só conta depois de 5 min.
+// O root e o "Ver como" não contam (o servidor também confere).
+const visitasAvisadas = new Map();
+export function registrarVisita(aba) {
+  if (!estado.me || estado.verComo || ehRootReal() || !abaValida(aba)) return;
+  const agora = Date.now();
+  if (agora - (visitasAvisadas.get(aba) || 0) < 5 * 60 * 1000) return;
+  visitasAvisadas.set(aba, agora);
+  api('POST', '/auth/visita', { aba }).catch(() => visitasAvisadas.delete(aba));
+}
+// Bloco do Admin root: [{ chave, aba, dia, nome, grupo, vezes, ultima }] dos últimos 3 dias (null = ainda não carregou).
+export async function carregarVisitas() {
+  try { estado.visitas = await api('GET', '/usuarios?lista=visitas'); } catch (e) { toast(e.message); estado.visitas = estado.visitas || []; }
+  avisar();
+}
+
 // Admin root: usuários, perfis e senhas vêm juntos, numa chamada só.
 export function atualizarUsuariosAoAbrir() {
   if (estado.usuarios && estado.perfisCfg && estado.senhas) {

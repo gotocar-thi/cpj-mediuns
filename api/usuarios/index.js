@@ -2,6 +2,7 @@
 // GET  /api/usuarios?lista=perfis   perfis e o que cada um vê/edita por aba
 // GET  /api/usuarios?lista=senhas   pessoas da corrente e se têm senha (PIN)
 // GET  /api/usuarios?lista=tudo     { usuarios, perfis, senhas } numa chamada só (abertura da aba Admin root)
+// GET  /api/usuarios?lista=visitas  quem entrou em cada aba nos últimos 3 dias: [{ chave, aba, dia, nome, grupo, vezes, ultima }]
 // POST /api/usuarios   { email, senha, papel, pessoaId }  (root: { nome } no lugar de pessoaId)
 //                      { acao: 'perfil', chave?, nome, abas }  cria ou edita um perfil → perfis
 //                      { acao: 'excluirPerfil', chave }        → perfis
@@ -65,6 +66,7 @@ export default rota({
       const [usuarios, perfis, senhas] = await Promise.all([db.rpc('usuarios_listar'), db.rpc('perfis_config'), db.rpc('senhas_listar')]);
       return { usuarios: semVersao(usuarios), perfis, senhas };
     }
+    if (req.query.lista === 'visitas') return db.rpc('visitas_listar');
     if (req.query.lista === 'perfis') return db.rpc('perfis_config');
     if (req.query.lista === 'senhas') return db.rpc('senhas_listar');
     return semVersao(await db.rpc('usuarios_listar'));

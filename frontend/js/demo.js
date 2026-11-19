@@ -467,6 +467,7 @@ function lerGet(caminho, q) {
     if (lista === 'perfis') return copia(PERFIS_PADRAO);
     if (lista === 'senhas') return senhas;
     if (lista === 'tudo') return { usuarios, perfis: copia(PERFIS_PADRAO), senhas };
+    if (lista === 'visitas') return visitasDemo();
     return usuarios;
   }
   if (caminho === '/ervas') return lista === 'historico' ? [] : ervas();
@@ -581,11 +582,24 @@ function escrever(metodo, caminho, b) {
   }
   if (caminho === '/pessoas' && b?.acao === 'amaci' && b.op === 'presenca') { marcarAmaci(b.eventoId, b.alunoId, b.status); return amaci(); }
   if (caminho === '/oferendas' && b?.acao === 'doar') return doar(b);
+  if (caminho === '/auth/visita') return { ok: true };
   if (caminho === '/auth/perfil' && b?.perfil) {
     db.perfis[EU_ID] = normalizarPerfil(b.perfil);
     return perfil().eu;
   }
   throw new ErroDemo(400, AVISO_DEMO);
+}
+
+// Bloco "Quem entrou nas abas" (Admin root): algumas entradas de exemplo nos últimos 3 dias.
+function visitasDemo() {
+  const h = (dias, hora) => { const d = new Date(); d.setDate(d.getDate() - dias); d.setHours(hora, 15, 0, 0); return d.toISOString(); };
+  const ps = db.pessoas.filter((p) => !p.saida);
+  const linhas = [];
+  ps.slice(0, 6).forEach((p, i) => linhas.push({ chave: 'p:' + p.id, aba: 'guias', dia: dia(-(i % 3)), nome: p.nome, grupo: p.funcao === 'curimba' ? 'Curimba' : 'Corrente CPJ', vezes: 1 + (i % 3), ultima: h(i % 3, 9 + i) }));
+  ps.slice(2, 5).forEach((p, i) => linhas.push({ chave: 'p:' + p.id, aba: 'gira', dia: dia(0), nome: p.nome, grupo: 'Corrente CPJ', vezes: 2, ultima: h(0, 8 + i) }));
+  [['Aluna Teste', 'Turma 10'], ['Bruno Aluno', 'Turma 09'], ['Carla Nova', 'Alunos sem turma']].forEach(([nome, grupo], i) =>
+    linhas.push({ chave: 'a:demo' + i, aba: 'guias', dia: dia(-1), nome, grupo, vezes: 1, ultima: h(1, 19 + i) }));
+  return linhas;
 }
 
 // Mesmo contrato de api(): devolve o JSON ou lança erro com { status, message }.

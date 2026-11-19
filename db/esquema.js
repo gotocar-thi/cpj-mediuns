@@ -9,7 +9,7 @@
 // Estrutura: veja db/ESTRUTURA-ESQUEMA.md para o mapa de versões, domínios e
 // quais migrações foram testadas no Postgres.
 
-export const VERSAO = 150;  // v150: Diário com o interruptor do Orientador (root)
+export const VERSAO = 151;  // v151: quem entrou em cada aba (Admin root, últimos 3 dias)
 
 import { PERFIS_PADRAO } from '../shared/permissoes.js';
 
@@ -6424,5 +6424,45 @@ export const MIGRACOES = [
      on conflict (chave) do update set valor = excluded.valor;
      return diario_orientador();
    end;
+   $$`,
+  // ================================================== v151: quem entrou em cada aba (bloco do Admin root)
+  // Uma linha por pessoa (chave como a do diário: p:, a:, u:), aba e dia; guarda só os últimos 3 dias.
+  `create table if not exists visitas_abas (
+     chave   text not null,
+     aba     text not null,
+     dia     date not null,
+     nome    text not null default '',
+     vezes   integer not null default 1,
+     ultima  timestamptz not null default now(),
+     primary key (chave, aba, dia)
+   )`,
+  `create index if not exists visitas_abas_dia on visitas_abas (dia)`,
+  // p = { chave, aba, nome }: soma uma entrada de hoje e apaga o que passou dos 3 dias.
+  `create or replace function visita_registrar(p jsonb)
+   returns jsonb language plpgsql as $$
+   declare v_hoje date := (now() at time zone 'America/Sao_Paulo')::date;
+   begin
+     insert into visitas_abas (chave, aba, dia, nome) values (p ->> 'chave', p ->> 'aba', v_hoje, coalesce(p ->> 'nome', ''))
+     on conflict (chave, aba, dia) do update set vezes = visitas_abas.vezes + 1, ultima = now(), nome = excluded.nome;
+     delete from visitas_abas where dia < v_hoje - 2;
+     return '{}'::jsonb;
+   end;
+   $$`,
+  // Últimos 3 dias, com o nome e o grupo de hoje no cadastro: Corrente CPJ ou Curimba (pessoas), a turma do aluno
+  // (ou "Alunos sem turma") e "Outros" (usuário sem cadastro).
+  `create or replace function visitas_listar(p jsonb default '{}'::jsonb)
+   returns jsonb language sql stable as $$
+     select coalesce(jsonb_agg(jsonb_build_object(
+         'chave', v.chave, 'aba', v.aba, 'dia', v.dia, 'vezes', v.vezes, 'ultima', v.ultima,
+         'nome', coalesce(pe.nome, al.nome, nullif(v.nome, ''), 'Sem nome'),
+         'grupo', case when pe.id is not null then case when pe.funcao = 'curimba' then 'Curimba' else 'Corrente CPJ' end
+                       when al.id is not null then coalesce(t.nome, 'Alunos sem turma')
+                       else 'Outros' end
+       ) order by v.ultima desc), '[]'::jsonb)
+     from visitas_abas v
+     left join pessoas pe on v.chave like 'p:%' and pe.id::text = substr(v.chave, 3)
+     left join alunos al on v.chave like 'a:%' and al.id::text = substr(v.chave, 3)
+     left join turmas_alunos t on t.id = al.turma_id
+     where v.dia >= (now() at time zone 'America/Sao_Paulo')::date - 2
    $$`,
 ];

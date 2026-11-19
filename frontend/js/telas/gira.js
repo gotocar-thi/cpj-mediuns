@@ -136,7 +136,8 @@ function cabecalhoGira(g) {
   return `<div class="datehead cab-gira"><span class="eyebrow">${esc(dLong(g.data))}</span>${titulo}${orixaDaGira(g) ? `<span class="ent">Orixá: ${esc(orixaDaGira(g))}</span>` : ''}</div>`;
 }
 
-// Calendário do mês (o mesmo do Diário) com as giras e os eventos marcados; tocar num dia abre esse dia.
+// Calendário do mês (o mesmo do Diário) com as giras e os eventos marcados (os cadastrados na gira e os da agenda do
+// Admin root); tocar num dia abre esse dia.
 // Embaixo, o que há no dia escolhido: a gira/evento cadastrado e os eventos da agenda. Para todos, em qualquer estado.
 // O mês mostrado segue o dia aberto até a pessoa trocar de mês nas setas do calendário.
 const cal = { mes: '', ref: '' };
@@ -151,9 +152,15 @@ function descricaoDoDia(g) {
   return `<p class="di-lua gira-cal-desc"><span aria-hidden="true">📅</span> <b>${dia}</b> · ${itens.length ? itens.join(' · ') : '<span class="muted">nenhuma gira ou evento</span>'}</p>`;
 }
 function seletorData(g) {
+  // Até dois pontos por dia: dourado se há gira (cadastrada ou na agenda) e azul se há evento.
+  const porDia = {};
+  for (const e of estado.eventos || []) (porDia[e.data] ||= []).push(e);
   const marcas = (data) => {
     const x = estado.giras[data];
-    return x ? `<i class="di-p ${x.evento ? 'di-p-evento' : 'di-p-gira'}"></i>` : '';
+    const ag = porDia[data] || [];
+    const gira = (x && !x.evento) || ag.some((e) => e.tipo === 'gira');
+    const evento = !!x?.evento || ag.some((e) => e.tipo !== 'gira');
+    return `${gira ? '<i class="di-p di-p-gira"></i>' : ''}${evento ? '<i class="di-p di-p-evento"></i>' : ''}`;
   };
   return `<div class="gira-cal">
     ${calendarioMes({ mes: mesDoCalendario(), sel: g.data, acaoDia: 'giradia', acaoMes: 'girames', marcas })}
