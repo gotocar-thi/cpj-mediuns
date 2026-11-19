@@ -3,6 +3,7 @@
 //
 //   dadosResumo(pessoas, g) → { gira, data, presentes, ausentes, faltas, licenca, pct, atendimentos, total }
 //   textoResumo(pessoas, g, local?, giras?) → texto pronto para colar no WhatsApp
+//   recorrencia(pessoas, g, giras) → { a: { id: n }, f: { id: n } } — ausências e faltas nas últimas giras (só quem repete)
 //   limpezaResumo(pessoas, g, giras) → turma da limpeza com a situação de cada um (ou null)
 //   textoLimpeza(pessoas, g, giras) → prévia da gira com a turma da limpeza para o grupo do WhatsApp (ou '')
 
@@ -39,6 +40,26 @@ export function dadosResumo(pessoas, g) {
     atendimentos, total: atendimentos.preferencial + atendimentos.normal + atendimentos.passe,
   };
 }
+
+// Recorrência no resumo: quantas ausências (e, à parte, quantas faltas) cada um teve nas últimas RECORRENCIA_GIRAS
+// giras encerradas, contando a do resumo. Eventos não entram. Só aparece quem tem RECORRENCIA_MIN ou mais.
+export const RECORRENCIA_GIRAS = 12;
+export const RECORRENCIA_MIN = 2;
+export function recorrencia(pessoas, atual, giras = []) {
+  const ultimas = [...(giras || []).filter((g) => g && g.data !== atual.data && g.encerrada && !g.evento && g.data < atual.data), atual]
+    .sort((a, b) => a.data.localeCompare(b.data))
+    .slice(-RECORRENCIA_GIRAS);
+  const conta = { a: {}, f: {} };
+  for (const g of ultimas) {
+    for (const p of daGira(pessoas || [], g)) {
+      const st = presencaDe(p, g);
+      if (st === 'a' || st === 'f') conta[st][p.id] = (conta[st][p.id] || 0) + 1;
+    }
+  }
+  for (const st of ['a', 'f']) for (const id of Object.keys(conta[st])) if (conta[st][id] < RECORRENCIA_MIN) delete conta[st][id];
+  return conta;
+}
+const sufixo = (n, um, varios) => (n ? ` - ${n} ${n === 1 ? um : varios} nas últimas ${RECORRENCIA_GIRAS} giras` : '');
 
 // Histórico encerrado da mesma entidade para o gráfico da imagem de resumo.
 export function historicoAtendimentos(giras, atual) {
@@ -167,12 +188,14 @@ export function textoResumo(pessoas, g, local = LOCAL_PADRAO, giras = []) {
     L.push(`💫 Total: ${d.total}`);
   }
   L.push('');
+  // Quem repete leva o total depois de " - " (o Histórico, ao ler de volta, fica só com o nome).
+  const rec = recorrencia(pessoas, g, giras);
   L.push('AUSENTES');
-  if (d.ausentes.length) d.ausentes.forEach((p) => L.push(`❌ ${p.nome}`)); else L.push('Nenhum registro');
+  if (d.ausentes.length) d.ausentes.forEach((p) => L.push(`❌ ${p.nome}${sufixo(rec.a[p.id], 'ausência', 'ausências')}`)); else L.push('Nenhum registro');
   if (d.faltas.length) {
     L.push('');
     L.push('FALTAS');
-    d.faltas.forEach((p) => L.push(`🚫 ${p.nome}`));
+    d.faltas.forEach((p) => L.push(`🚫 ${p.nome}${sufixo(rec.f[p.id], 'falta', 'faltas')}`));
   }
   L.push('');
   L.push('EM LICENÇA');

@@ -1,7 +1,7 @@
 // Compartilhar o resumo de uma gira encerrada no WhatsApp: texto ou imagem.
 // Usado na aba Gira e na aba Histórico.
 
-import { textoResumo, dadosResumo, linhaLicenca, limpezaResumo, historicoAtendimentos, historicoFrequencia, LOCAL_PADRAO } from '/shared/resumoGira.js';
+import { textoResumo, dadosResumo, linhaLicenca, limpezaResumo, historicoAtendimentos, historicoFrequencia, recorrencia, RECORRENCIA_GIRAS, LOCAL_PADRAO } from '/shared/resumoGira.js';
 import { giraEspecial } from '/shared/regras.js';
 import { config } from '/shared/config.js';
 import { compartilharImagem } from './imagemLista.js';
@@ -15,6 +15,10 @@ const giraDe = (data) => estado.giras[data];
 function dadosImagem(g, CR) {
   const d = dadosResumo(estado.pessoas, g);
   const pilulas = (l) => l.map((p) => ({ texto: p.nome }));
+  // Ausentes e faltas: quem repete leva um selo com o total nas últimas giras (legenda no título do grupo).
+  const rec = recorrencia(estado.pessoas, g, girasLista());
+  const comSelo = (l, conta, cor) => l.map((p) => ({ texto: p.nome, ...(conta[p.id] ? { n: conta[p.id], corN: cor } : {}) }));
+  const legenda = (l, conta) => (l.some((p) => conta[p.id]) ? `nº = últimas ${RECORRENCIA_GIRAS} giras` : '');
   // Limpeza: quem esteve presente fica neutro; os outros mostram a situação, com a cor dela.
   const COR_SIT = { Falta: CR.falta, Ausente: CR.ausente };
   const naLimpeza = (l) => l.map((x) => (x.situacao === 'Presente' || x.situacao === 'Curimba'
@@ -24,8 +28,8 @@ function dadosImagem(g, CR) {
     quadros: [['Presentes', d.presentes.length, CR.presente], ['Ausentes', d.ausentes.length, CR.ausente], ['Faltas', d.faltas.length, CR.falta], ['Em licença', d.licenca.length, CR.licenca]],
     nota: `Ausência ${d.pct.ausencia}% · Licença ${d.pct.licenca}%`,
     grupos: [
-      { titulo: `Ausentes · ${d.ausentes.length}`, cor: CR.ausente, pilulas: pilulas(d.ausentes) },
-      { titulo: `Faltas · ${d.faltas.length}`, cor: CR.falta, pilulas: pilulas(d.faltas) },
+      { titulo: `Ausentes · ${d.ausentes.length}`, cor: CR.ausente, pilulas: comSelo(d.ausentes, rec.a, CR.ausente), legenda: legenda(d.ausentes, rec.a) },
+      { titulo: `Faltas · ${d.faltas.length}`, cor: CR.falta, pilulas: comSelo(d.faltas, rec.f, CR.falta), legenda: legenda(d.faltas, rec.f) },
       { titulo: `Em licença · ${d.licenca.length}`, cor: CR.licenca, linhas: d.licenca.map(linhaLicenca) },
     ],
   }, d.evento ? {

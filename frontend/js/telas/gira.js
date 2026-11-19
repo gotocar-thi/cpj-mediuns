@@ -5,10 +5,10 @@ import { estado, prefs, salvarPrefs, pode, visaoAtiva, pessoasOrd, pessoasComSai
 import { esc, dLong, dDM, toast, baixar, hoje } from '../util.js';
 import { textoWhats } from '../exportar.js';
 import { calendarioMes, mesMais } from '../calendario.js';
-import { botaoResumo, painelResumo, cliquesResumo } from '../compartilharResumo.js';
+import { painelResumo, cliquesResumo } from '../compartilharResumo.js';
 import { dadosResumo, textoLimpeza } from '/shared/resumoGira.js';
 import { config } from '/shared/config.js';
-import { aniversariantesDoDia, mensagensAniversario } from '/shared/eventos.js';
+import { aniversariantesDoDia, mensagensAniversario, rotuloTipo } from '/shared/eventos.js';
 import { banhosDaGira } from '/shared/banhos.js';
 import { htmlStatus, abertos, cabDobra, caixaPendente, ICONE_WHATS } from './giraComum.js';
 import { blocoEu } from './giraEu.js';
@@ -97,9 +97,14 @@ function blocosFora(ps, g) {
 
 // Quadro "Gira encerrada" (para todos, só informa): atendimentos e presença.
 const numeroParticipantes = (g) => `<div class="atend-nums participantes"><div class="at-participantes"><b>${Number(g.participantes) || 0}</b><span>Participantes</span></div></div>`;
-function blocoEncerrada(ps, g) {
+// Na mesma linha do ✓ Encerrado: o WhatsApp do resumo e, para o admin, o Reabrir (só o ícone, pouco usado).
+function blocoEncerrada(ps, g, { resumo: verResumo = false, reabrir = false } = {}) {
   const resumo = dadosResumo(estado.pessoas, g);
-  return `<div class="enc-quadro"><h3 class="enc-titulo"><span aria-hidden="true">✓</span> ${g.evento ? 'Evento encerrado' : 'Gira encerrada'}</h3>
+  const aberto = estado.resumo?.data === g.data;
+  const btResumo = verResumo ? `<button class="btn small wa-bt enc-rs" data-act="rsabrir" data-d="${g.data}">${aberto ? '<span aria-hidden="true">✕</span> Fechar' : `<span class="wa-ico" aria-hidden="true">${ICONE_WHATS}</span> Resumo`}</button>` : '';
+  const btReabrir = reabrir ? '<button class="btn small enc-reabrir" data-act="reabrir" title="Reabrir a gira" aria-label="Reabrir a gira">↺</button>' : '';
+  return `<div class="enc-quadro"><div class="enc-titulo"><span aria-hidden="true">✓</span><h3>Encerrado</h3>${btResumo || btReabrir ? `<div class="enc-acoes">${btResumo}${btReabrir}</div>` : ''}</div>
+    ${verResumo ? painelResumo(g) : ''}
     ${g.evento ? numeroParticipantes(g) : numerosAtend(g.atendimentos)}
     ${contagemPresentes(ps, g, resumo)}</div>`;
 }
@@ -132,13 +137,20 @@ function cabecalhoGira(g) {
 }
 
 // Calendário do mês (o mesmo do Diário) com as giras e os eventos marcados; tocar num dia abre esse dia.
-// Embaixo, as setas para o evento anterior e o próximo. Para todos, em qualquer estado da gira.
+// Embaixo, o que há no dia escolhido: a gira/evento cadastrado e os eventos da agenda. Para todos, em qualquer estado.
 // O mês mostrado segue o dia aberto até a pessoa trocar de mês nas setas do calendário.
 const cal = { mes: '', ref: '' };
 const mesDoCalendario = () => (cal.ref === prefs.data && cal.mes) || prefs.data.slice(0, 7);
+function descricaoDoDia(g) {
+  const itens = [];
+  if (estado.giras[g.data]) itens.push(esc(tituloGira(g)));
+  for (const e of (estado.eventos || []).filter((x) => x.data === g.data)) {
+    if (!itens.includes(esc(e.nome))) itens.push(`${esc(e.nome)} <span class="muted">(${esc(rotuloTipo(e))})</span>`);
+  }
+  const dia = esc(dLong(g.data).replace(/^./, (c) => c.toUpperCase()));
+  return `<p class="di-lua gira-cal-desc"><span aria-hidden="true">📅</span> <b>${dia}</b> · ${itens.length ? itens.join(' · ') : '<span class="muted">nenhuma gira ou evento</span>'}</p>`;
+}
 function seletorData(g) {
-  const anterior = dataGiraAdjacente(g.data, -1);
-  const proxima = dataGiraAdjacente(g.data, 1);
   const marcas = (data) => {
     const x = estado.giras[data];
     return x ? `<i class="di-p ${x.evento ? 'di-p-evento' : 'di-p-gira'}"></i>` : '';
@@ -146,32 +158,12 @@ function seletorData(g) {
   return `<div class="gira-cal">
     ${calendarioMes({ mes: mesDoCalendario(), sel: g.data, acaoDia: 'giradia', acaoMes: 'girames', marcas })}
     <div class="di-leg muted"><span><i class="di-p di-p-gira"></i> gira</span><span><i class="di-p di-p-evento"></i> evento</span></div>
-    <div class="gira-cal-nav">
-      <button class="btn small" data-act="giraanterior" aria-label="Ir para o evento anterior" ${anterior ? '' : 'disabled'}>← Anterior</button>
-      <button class="btn small" data-act="proximoevento" aria-label="Ir para o próximo evento" ${proxima ? '' : 'disabled'}>Próximo →</button>
-    </div>
+    ${descricaoDoDia(g)}
   </div>`;
 }
 
 // Moldura dourada: o que só o admin vê ou edita.
 const ouro = (html) => (html ? `<div class="gira-adm">${html}</div>` : '');
-
-function dataGiraAdjacente(data, direcao) {
-  const datas = girasLista()
-    .filter(g => g != null)
-    .map((g) => g.data)
-    .filter((d) => direcao < 0 ? d < data : d > data)
-    .sort();
-  return direcao < 0 ? datas[datas.length - 1] || '' : datas[0] || '';
-}
-
-function irParaGiraAdjacente(direcao) {
-  const data = dataGiraAdjacente(prefs.data, direcao);
-  if (!data) return;
-  prefs.data = data;
-  salvarPrefs();
-  avisar();
-}
 
 // Quem está logado tem o bloco "Você nesta gira" (lá vai o aviso de pendente).
 const temBlocoEu = () => !!(estado.me?.pessoaId && estado.pessoas.some((x) => x.id === estado.me.pessoaId));
@@ -373,7 +365,9 @@ function renderGira() {
     const passada = g.data < hoje();
     // Ajuste manual: em gira passada fica sempre ligado (registrar como foi);
     // nas outras, o admin liga pelo botão.
-    const manual = editar && (passada || estado.manual === g.data);
+    // O Ajuste manual ligado pelo botão deixa o bloco aberto até Concluir; o da gira passada não impede recolher.
+    const ajuste = editar && estado.manual === g.data;
+    const manual = ajuste || (editar && passada);
     // Escala travada: quem faltou segue na escala, com um selo no lugar do combo e do botão Falta.
     const seloFora = (id) => {
       const p = estado.pessoas.find((x) => x.id === id);
@@ -402,7 +396,7 @@ function renderGira() {
       ${pas.length ? `<select data-act="addpasse" data-m="${x.m.id}" aria-label="Adicionar médium de passe a ${esc(x.m.nome)}"><option value="">+ médium de passe</option>${pas.map((c) => opt(c, 'passes', 'sai de')).join('')}</select>` : ''}
     </div>`;
     };
-    const aberto = manual || duplasAbertas.has(g.data);
+    const aberto = ajuste || duplasAbertas.has(g.data);
     const caixa = editar ? 'gira-adm gira-sec' : 'gira-sec';
     // Depois do sorteio, os botões e o aviso de publicada (ou Publicar) ficam à vista; as duplas vêm recolhidas
     // e tocar no título (ou em Ver mais) expande e recolhe.
@@ -411,7 +405,7 @@ function renderGira() {
     // Depois de sorteado, "Cancelar sorteio" (junto de Remanejar faltas e Ajuste manual) apaga as duplas e volta ao Sortear.
     // Com a escala publicada, o sorteio não se cancela mais (para isso, oculte a escala).
     const cancelaOk = temDuplas && sortearOk && !estado.salvando && !g.publicada;
-    let h = `<div class="${caixa}">${recolhido ? titDobra(false) : `<div class="grp-h">${temDuplas && !manual ? titDobra(true) : tituloSorteio(temDuplas)}</div>`}
+    let h = `<div class="${caixa}">${recolhido ? titDobra(false) : `<div class="grp-h">${temDuplas && !ajuste ? titDobra(true) : tituloSorteio(temDuplas)}</div>`}
       ${temDuplas ? acoesSorteio(g, sortearOk && !g.travada && !estado.salvando, editar && !passada, manual, cancelaOk) : ''}
       ${estado.confirm === 'rem:' + g.data ? confirmaRemenajo() : ''}
       ${cancelaOk && estado.confirm === 'csort:' + g.data ? confirmaSorteio(`<b>Cancelar o sorteio?</b> Todas as duplas são apagadas (também as fixadas). Tudo volta a como estava antes de sortear, com o botão Sortear.`, 'cancelsort', 'Sim, cancelar') : ''}
@@ -450,7 +444,7 @@ function renderGira() {
         ? `<div class="sup-lista">${sup.map((p) => `<div class="sup-l"><span>${esc(p.nome)}</span>${botaoFalta(p.id)}</div>${confirmaFalta(p.id)}`).join('')}</div>`
         : `<p style="margin:0">${sup.map((p) => esc(p.nome)).join(', ')}</p>`}</div>`;
     }
-    return h + `${blocosFora(ps, g)}${manual ? '' : botaoDobrar(true)}</div>`;
+    return h + `${blocosFora(ps, g)}${ajuste ? '' : botaoDobrar(true)}</div>`;
   };
 
   // O que vem entre o bloco de recados/atendimentos e os blocos informativos, conforme quem vê e o estado da gira.
@@ -476,19 +470,13 @@ function renderGira() {
 
   const topo = cabecalhoGira(g) + seletorData(g);
   const informes = blocoBanho(g) + blocoAusencia(ps, g) + blocoFaltas(ps, g) + blocoLicenca(ps, g);
-  const realizado = !g.evento && temDuplas && (g.publicada || encerrada) ? blocoImagemEscala() : '';
+  const realizado = !g.evento && temDuplas && (g.publicada || encerrada) ? blocoImagemEscala(whats) : '';
   const novos = existe ? blocoPedirErvas(g) + blocosOferenda(g) : '';
   setTimeout(atualizarJanela, 0);
 
   if (encerrada) {
     const verResumo = admin ? pode('escala:completa') : whats;
-    const resumo = verResumo ? botaoResumo(g) : '';
-    const escalaWa = whats ? botaoWhats(temDuplas, 'Compartilhar a escala') : '';
-    const painel = verResumo ? painelResumo(g) : '';
-    const botoes = admin
-      ? ouro(`<div class="gira-bts">${resumo}<button class="btn" data-act="reabrir"><span aria-hidden="true">↺</span> Reabrir gira</button></div>${escalaWa ? `<div class="gira-bts">${escalaWa}</div>` : ''}${painel}`)
-      : `${resumo || escalaWa ? `<div class="gira-bts">${escalaWa}${resumo}</div>` : ''}${painel}`;
-    return `<section class="panel">${ano}<div class="card card-gira">${topo}${botoes}${blocoEncerrada(ps, g)}${blocoRecado(g)}${informes}${realizado}${novos}</div>${rodape}</section>`;
+    return `<section class="panel">${ano}<div class="card card-gira">${topo}${blocoEncerrada(ps, g, { resumo: verResumo, reabrir: admin })}${blocoRecado(g)}${informes}${realizado}${novos}</div>${rodape}</section>`;
   }
 
   const btEscala = whats ? botaoWhats(temDuplas, 'Escala Gira') : '';
@@ -612,12 +600,14 @@ async function prepararImagem() {
 }
 
 // Card da gira, abaixo da Licença (escala publicada, para todos): "Sorteio realizado!" com a imagem da escala; tocar amplia.
-function blocoImagemEscala() {
+// comWhats: ícone do WhatsApp ao lado do título, que abre a janela para mandar a escala (texto ou imagem).
+function blocoImagemEscala(comWhats = false) {
   const pronta = imagemPronta();
   // Se a imagem falhou neste aparelho, não tenta de novo a cada redesenho.
   const falhou = !pronta && estado.imgErro === chaveImg();
   if (!pronta && !falhou) setTimeout(prepararImagem, 0);
-  return `<div class="esc-img-sec"><h3 class="sorteio-ok">🚀 Sorteio realizado! ❤️</h3>
+  const wa = comWhats ? `<button class="btn small wa-bt esc-img-wa" data-act="waabrir" title="Compartilhar a escala no WhatsApp" aria-label="Compartilhar a escala no WhatsApp"><span class="wa-ico" aria-hidden="true">${ICONE_WHATS}</span></button>` : '';
+  return `<div class="esc-img-sec"><div class="esc-img-h"><h3 class="sorteio-ok">🚀 Sorteio realizado! ❤️</h3>${wa}</div>
     ${pronta ? `<button class="esc-img-bt" data-act="escimg" aria-label="Ampliar a imagem da escala"><img src="${estado.img.url}" alt="Escala da gira"></button>`
       : falhou ? '<p class="muted" style="margin:0">Não consegui montar a imagem da escala neste aparelho.</p>'
       : '<div class="loading">Preparando a imagem da escala…</div>'}</div>`;
@@ -718,13 +708,6 @@ export const cliques = {
   },
   publicar() { publicarEscala(true); },
   despublicar() { publicarEscala(false); },
-  // A gira cadastrada mais recente antes da data aberta.
-  giraanterior() {
-    const d = Object.keys(estado.giras).filter((x) => x < prefs.data).sort().pop();
-    if (!d) { toast('Não há gira anterior a esta.'); return; }
-    prefs.data = d; salvarPrefs(); avisar();
-  },
-  proximoevento() { irParaGiraAdjacente(1); },
   giradia(el) { prefs.data = el.dataset.d; salvarPrefs(); avisar(); },
   girames(el) { cal.mes = mesMais(mesDoCalendario(), Number(el.dataset.v)); cal.ref = prefs.data; avisar(); },
   encpend(el) {

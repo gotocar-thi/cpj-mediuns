@@ -633,17 +633,25 @@ button.eu-avatar{cursor:zoom-in}
 /* Quadro "Gira encerrada" (só informa) e os atendimentos (campos na gira aberta, números na encerrada) */
 .enc-quadro{display:grid;gap:12px;border:1px solid var(--line);border-left:4px solid var(--ok);border-radius:var(--r);padding:14px;background:var(--bg);font-family:var(--f-body);font-size:1rem}
 .enc-quadro>.enc-titulo{display:flex;align-items:center;justify-content:center;gap:9px;margin:0;padding:10px 12px;border:1px solid color-mix(in srgb,var(--ok) 28%,var(--line));border-radius:10px;background:var(--ok-soft);color:var(--ok);font:700 1.25rem/1.2 var(--f-display);text-align:center;text-transform:uppercase;letter-spacing:.035em}
+.enc-quadro>*{min-width:0}
+.enc-quadro>.enc-titulo:has(.enc-acoes){justify-content:flex-start;gap:6px;padding:6px 6px 6px 10px;font-size:1.05rem;letter-spacing:0}
+.enc-titulo:has(.enc-acoes)>span{width:1.3rem;height:1.3rem;font-size:.8rem}
+.enc-titulo>h3{margin:0;min-width:0;font:inherit;letter-spacing:inherit;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.enc-acoes{display:flex;align-items:center;gap:5px;margin-left:auto;flex:none;text-transform:none;letter-spacing:0}
+.enc-acoes .btn{min-height:34px;padding:0 10px;font-size:.85rem}
+.enc-acoes .wa-ico svg{width:16px;height:16px}
+.enc-acoes .enc-reabrir{width:32px;padding:0;font-size:1rem;opacity:.75}
 .enc-titulo>span{display:inline-grid;place-items:center;flex:none;width:1.55rem;height:1.55rem;border-radius:50%;background:var(--ok);color:var(--surface);font:800 .95rem/1 var(--f-body)}
 .enc-totais{display:grid;gap:8px}
-.enc-func-totais{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:5px}
-.enc-func-totais>span{--fn:var(--accent);display:flex;flex-direction:column-reverse;align-items:center;justify-content:flex-end;gap:3px;min-width:0;padding:7px 3px 6px;border:1px solid var(--line);border-top:3px solid var(--fn);border-radius:9px;background:var(--surface);text-align:center}
+.enc-func-totais{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:4px}
+.enc-func-totais>span{--fn:var(--accent);display:flex;flex-direction:column-reverse;align-items:center;justify-content:flex-end;gap:1px;min-width:0;padding:4px 2px 3px;border:1px solid var(--line);border-top:3px solid var(--fn);border-radius:9px;background:var(--surface);text-align:center}
 .enc-func-totais .fn-medium{--fn:var(--gold)}
 .enc-func-totais .fn-extra{--fn:var(--orange)}
 .enc-func-totais .fn-passe{--fn:var(--accent)}
 .enc-func-totais .fn-cambone{--fn:var(--ok)}
 .enc-func-totais .fn-senha,.enc-func-totais .fn-suporte{--fn:var(--muted)}
-.enc-func-totais b{font:700 1.3rem/1 var(--f-display);color:var(--fn)}
-.enc-func-totais .muted{font-size:.68rem;line-height:1.15;letter-spacing:.02em;text-transform:uppercase;overflow-wrap:anywhere}
+.enc-func-totais b{font:700 1.05rem/1 var(--f-display);color:var(--fn)}
+.enc-func-totais .muted{font-size:.52rem;line-height:1.15;letter-spacing:0;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
 .enc-situacoes{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:5px}
 .enc-situacao{--fn:var(--accent);display:grid;justify-items:center;align-content:center;gap:3px;min-width:0;padding:8px 3px;border:1px solid color-mix(in srgb,var(--fn) 30%,var(--line));border-top:3px solid var(--fn);border-radius:9px;background:color-mix(in srgb,var(--fn) 7%,var(--surface));text-align:center}
 .enc-situacao.ok{--fn:var(--ok)}
@@ -1588,6 +1596,9 @@ button.eu-av{cursor:zoom-in}
 /* Card da gira, abaixo da Licença: "Sorteio realizado!" com a imagem da escala (a mesma do WhatsApp); tocar amplia */
 .esc-img-sec{display:grid;gap:8px}
 .esc-img-sec h3{margin:0}
+.esc-img-h{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.esc-img-wa{width:40px;min-height:40px;padding:0;justify-content:center}
+.esc-img-wa .wa-ico svg{width:20px;height:20px}
 .esc-img-bt{display:block;width:100%;padding:0;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:none;cursor:zoom-in}
 .esc-img-bt img{display:block;width:100%;height:auto}
 .esc-fundo{background:rgba(0,0,0,.85);align-items:flex-start;justify-content:flex-start;overflow:auto;cursor:zoom-out;padding:12px}
@@ -2171,7 +2182,6 @@ div.pf-of-total{cursor:default}
 .di-p-dia{background:var(--di-lilas)}
 .di-p-evento{background:var(--accent)}
 .gira-cal{display:grid;gap:8px;width:100%}
-.gira-cal-nav{display:flex;justify-content:space-between;gap:8px}
 .di-folha{font-style:normal;font-size:.7rem;line-height:1}
 .di-leg{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:.78rem}
 .di-leg span{display:inline-flex;align-items:center;gap:4px}

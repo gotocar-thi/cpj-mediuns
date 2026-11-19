@@ -244,3 +244,25 @@ test('prévia da gira para o WhatsApp: cabeçalho, turma, ajudantes e licença, 
   assert.deepEqual(sem.slice(3, 7), ['🕯️ *Gira:* Caboclo', '🗓️ *Data:* 31/10/2026', '', '━━━━━━━━━━━━━━━']);
   assert.equal(textoLimpeza(pessoas, { ...g, limpeza: null }, []), '', 'sem turma, sem mensagem');
 });
+
+test('resumo: ausências e faltas repetidas nas últimas 12 giras (só a partir de 2, eventos fora)', async () => {
+  const { textoResumo, recorrencia } = await import('../shared/resumoGira.js');
+  const pessoas = [{ id: 'a', nome: 'Ana' }, { id: 'b', nome: 'Bia' }, { id: 'c', nome: 'Caio' }];
+  const dia = (n) => `2026-${String(Math.floor(n / 28) + 1).padStart(2, '0')}-${String((n % 28) + 1).padStart(2, '0')}`;
+  // 14 giras antes: a mais antiga (fora da janela) tem falta da Bia; Ana falta em duas dentro; um evento com falta do Caio não conta.
+  const giras = Array.from({ length: 14 }, (_, i) => ({ data: dia(i * 7), entidade: 'Caboclo', encerrada: true, presenca: {} }));
+  giras[0].presenca = { b: 'f' };
+  giras[2].presenca = { b: 'f' };
+  giras[5].presenca = { a: 'f', c: 'a' };
+  giras[9].presenca = { a: 'f' };
+  giras.push({ data: dia(13 * 7 + 3), entidade: 'Festa', evento: true, encerrada: true, presenca: { c: 'f' } });
+  const g = { data: dia(15 * 7), entidade: 'Caboclo', encerrada: true, presenca: { a: 'f', b: 'f', c: 'a' } };
+  const rec = recorrencia(pessoas, g, giras);
+  assert.deepEqual(rec.f, { a: 3 }, 'Bia: a falta de giras[0] e giras[2] saíram da janela de 12; só a de hoje conta');
+  assert.deepEqual(rec.a, { c: 2 });
+  const t = textoResumo(pessoas, g, 'Terreiro', giras);
+  assert.match(t, /AUSENTES\n❌ Caio - 2 ausências nas últimas 12 giras\n\nFALTAS\n🚫 Ana - 3 faltas nas últimas 12 giras\n🚫 Bia\n/);
+  const r = lerResumo(t);
+  assert.deepEqual(r.ausentes, ['Caio']);
+  assert.deepEqual(r.faltas, ['Ana', 'Bia']);
+});

@@ -173,18 +173,27 @@ function desenhar(ctx, d, logo, pintar) {
     return H;
   };
 
-  // Pílulas: uma ao lado da outra, quebrando a linha quando não cabem.
+  // Pílulas: uma ao lado da outra, quebrando a linha quando não cabem. it.n: selo redondo com o número (cor it.corN).
   const pilulas = (lista, x, w, y0) => {
-    const H = 30, GAP = 6;
+    const H = 30, GAP = 6, SH = 20;
     let px = x, py = y0;
     lista.forEach((it) => {
+      fonte(700, 13);
+      const sw = it.n ? Math.max(SH, ctx.measureText(String(it.n)).width + 10) : 0;
       fonte(it.cor ? 700 : 500, 17);
-      const pw = Math.min(ctx.measureText(it.texto).width + 24, w);
+      const tw = ctx.measureText(it.texto).width;
+      const pw = Math.min(tw + 24 + (sw ? sw + 6 : 0), w);
       if (px > x && px + pw > x + w) { px = x; py += H + GAP; }
       if (pintar) {
         ctx.fillStyle = C.card; retangulo(ctx, px, py, pw, H, H / 2); ctx.fill();
         ctx.strokeStyle = it.cor || C.line; ctx.lineWidth = it.cor ? 1.5 : 1; ctx.stroke();
         ctx.fillStyle = it.cor || C.ink; ctx.fillText(it.texto, px + 12, py + 6);
+        if (sw) {
+          const sx = px + pw - 6 - sw, sy = py + (H - SH) / 2;
+          ctx.fillStyle = it.corN || C.muted; retangulo(ctx, sx, sy, sw, SH, SH / 2); ctx.fill();
+          fonte(700, 13); ctx.fillStyle = '#ffffff'; ctx.textAlign = 'center'; ctx.fillText(String(it.n), sx + sw / 2, sy + 3);
+          ctx.textAlign = 'left';
+        }
       }
       px += pw + GAP;
     });
@@ -212,6 +221,7 @@ function desenhar(ctx, d, logo, pintar) {
       ctx.fillStyle = g.cor; ctx.fillRect(x, y0, 4, h);
       ctx.restore();
       fonte(700, 17); ctx.fillStyle = g.cor; ctx.fillText(g.titulo, ix, y0 + 10);
+      if (g.legenda) { fonte(500, 14); ctx.fillStyle = C.muted; ctx.textAlign = 'right'; ctx.fillText(g.legenda, ix + iw, y0 + 12); ctx.textAlign = 'left'; }
       medirCorpo(g, ix, iw, y0 + 10 + 22 + 6);
     }
     return h;
