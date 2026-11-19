@@ -233,14 +233,19 @@ export async function mudarVisaoRoot(visao) {
 
 // Busca o que outras pessoas mudaram (ao voltar para a aba do app).
 let ultimaAtualizacao = 0;
+let intervaloAtual = 120000; // 2 min — intervalo normal entre atualizações
+const INTERVALO_NORMAL = 120000;
+const INTERVALO_MAX = 10 * 60 * 1000; // 10 min — backoff máximo após erros seguidos
+
 export async function atualizarDoServidor() {
   if (!estado.pronto || estado.salvando || Object.keys(pendente).length) return;
   // Evita buscar de novo a cada foco (no celular, abrir e fechar o seletor de data dispara foco).
-  if (Date.now() - ultimaAtualizacao < 15000) return;
+  if (Date.now() - ultimaAtualizacao < intervaloAtual) return;
   ultimaAtualizacao = Date.now();
   try {
     if (estado.me?.grupo === 'alunos') {
       estado.alunos = await api('GET', '/pessoas?lista=alunos');
+      intervaloAtual = INTERVALO_NORMAL; // sucesso: volta ao intervalo normal
       avisar();
       return;
     }
@@ -248,6 +253,7 @@ export async function atualizarDoServidor() {
     // Uma gravação feita daqui também muda a versão: na volta seguinte, baixa tudo uma vez.
     const versao = estado.me?.grupo ? '' : estado.versaoDados || '';
     const r = await api('GET', '/auth/inicio?atualizar=1' + (versao ? '&versao=' + encodeURIComponent(versao) : ''));
+    intervaloAtual = INTERVALO_NORMAL; // sucesso: volta ao intervalo normal
     if (r.semMudanca) { await atualizarAbaAberta(); return; }
     if (r.versao) estado.versaoDados = r.versao;
     if (r.config) definirConfig(r.config);
@@ -260,7 +266,10 @@ export async function atualizarDoServidor() {
     estado.entidadesApelidos = r.entidadesApelidos || estado.entidadesApelidos;
     definirGiras(r.giras);
     await atualizarAbaAberta();
-  } catch { /* silencioso: tenta de novo na próxima vez */ }
+  } catch {
+    // Backoff: dobra o intervalo a cada erro (até o máximo), para não enxurrar o banco quando a quota estoura.
+    intervaloAtual = Math.min(intervaloAtual * 2, INTERVALO_MAX);
+  }
 }
 
 // O que não entra na versão dos dados (oferendas, ervas, Iemanjá, relatos): só da aba aberta, como antes.
