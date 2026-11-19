@@ -53,13 +53,18 @@ async function enviar(corpo, extras = {}) {
 }
 
 let esquemaPronto = null;
+let esquemaChecadoEm = 0;
+const ESQUEMA_TTL = 5 * 60 * 1000; // 5 min: dentro da mesma instância, não checa de novo
 const JA_MIGRADO = 'SM001'; // SQLSTATE nosso: outro acesso terminou a migração enquanto este esperava a trava
 
 async function garantirEsquema() {
-  esquemaPronto ||= (async () => {
+  // Já confirmou nesta instância e ainda está dentro do TTL: pula a ida ao banco.
+  if (esquemaPronto && Date.now() - esquemaChecadoEm < ESQUEMA_TTL) return esquemaPronto;
+
+  esquemaPronto = (async () => {
     try {
       const r = await enviar({ query: "select valor from sistema where chave = 'versao_esquema'", params: [] });
-      if (Number(r?.rows?.[0]?.[0]) >= VERSAO) return;
+      if (Number(r?.rows?.[0]?.[0]) >= VERSAO) { esquemaChecadoEm = Date.now(); return; }
     } catch (e) {
       if (e.code !== '42P01') throw e; // 42P01 = tabela ainda não existe
     }
@@ -90,7 +95,8 @@ async function garantirEsquema() {
     } catch (e) {
       if (e.code !== JA_MIGRADO) throw e;
     }
-  })().catch((e) => { esquemaPronto = null; throw e; });
+    esquemaChecadoEm = Date.now();
+  })().catch((e) => { esquemaPronto = null; esquemaChecadoEm = 0; throw e; });
   return esquemaPronto;
 }
 
