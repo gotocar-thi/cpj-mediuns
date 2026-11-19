@@ -950,7 +950,6 @@ body.deslogado .rodape{display:none}
 .mp-st{flex:none;font-size:.75rem;font-weight:700;border-radius:20px;padding:2px 9px;background:var(--off-soft);color:var(--off)}
 .mp-st.a{background:#fbefc4;color:#7a5600}
 /* aba Gira (quem não é admin): gira anterior, próxima e calendário */
-.ev-seta-adm:disabled{opacity:.4;cursor:default}
 .nav-bt{flex:1 1 0;min-width:0;height:44px;padding:0 10px;font-size:.98rem;white-space:nowrap}
 .ev-wa{display:inline-flex;align-items:center;gap:6px;flex:none}
 .ev-wa .wa-ico svg{width:18px;height:18px}
@@ -1602,9 +1601,6 @@ button.eu-av{cursor:zoom-in}
 .adm-sec + .adm-sec{border-top:1px dashed color-mix(in srgb,var(--gold) 55%,var(--line))}
 .datehead input.gira-nome-ed{font-family:var(--f-display);font-size:1.5rem;font-weight:700;line-height:1.25;background:transparent;border-color:var(--gold);padding:3px 9px;margin-top:2px}
 .cab-gira{padding-bottom:12px;border-bottom:1px dashed color-mix(in srgb,var(--muted) 55%,var(--line))}
-.seletor-data{display:flex;width:100%;gap:6px}
-.seletor-data .ev-seta-adm{flex:0 0 44px;width:44px;height:44px}
-.seletor-data .ev-data-adm{flex:1 1 auto;min-width:0;justify-content:center;height:44px;box-sizing:border-box;font-size:.95rem}
 .gira-sec{display:grid;gap:14px;min-width:0}
 .gira-adm{display:grid;gap:10px;min-width:0;padding:10px;border:2px solid var(--gold);border-radius:12px;background:color-mix(in srgb,var(--gold) 5%,var(--surface))}
 .gira-adm>.row{margin:0}
@@ -1708,12 +1704,6 @@ button.iem-tot-n{cursor:pointer}
 .or-modal h3{display:flex;align-items:center;gap:8px}
 .or-previa{max-height:55vh;overflow:auto;border-radius:10px;border:1px solid var(--line)}
 .or-previa img{display:block;width:100%;height:auto}
-/* Parte ⚙️ Evento: a data é um botão que abre o calendário para ir a outro dia */
-.ev-nav-adm{display:flex;align-items:center;gap:2px;flex:none}
-.ev-seta-adm{width:30px;height:30px;padding:0;font-size:1.1rem}
-.ev-data-adm{position:relative;display:inline-flex;align-items:center;gap:3px;font-size:.82rem;font-weight:700;color:var(--accent);border:1px solid color-mix(in srgb,var(--accent) 45%,var(--line));background:var(--accent-soft);border-radius:20px;padding:2px 6px;cursor:pointer;white-space:nowrap;overflow:hidden}
-.ev-data-adm .seta{font-size:.75rem}
-.ev-data-adm input[type=date]{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;padding:0;border:0}
 
 /* Oferenda (admin): o botão Encerrar fica no topo, à direita do título; título longo termina em "…" */
 .of-card.com-enc{position:relative}
@@ -2179,6 +2169,9 @@ div.pf-of-total{cursor:default}
 .di-p{display:inline-block;width:8px;height:8px;border-radius:50%}
 .di-p-gira{background:var(--gold)}
 .di-p-dia{background:var(--di-lilas)}
+.di-p-evento{background:var(--accent)}
+.gira-cal{display:grid;gap:8px;width:100%}
+.gira-cal-nav{display:flex;justify-content:space-between;gap:8px}
 .di-folha{font-style:normal;font-size:.7rem;line-height:1}
 .di-leg{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:.78rem}
 .di-leg span{display:inline-flex;align-items:center;gap:4px}

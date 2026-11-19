@@ -17,6 +17,7 @@ import {
   ORIXAS_BANHO, ERVAS_APOSTILA, MAX_ERVAS_BANHO, litros, temperaturaDaErva, sugestaoOrientador, faseDaLua, deltaAxe,
 } from '/shared/diario.js';
 import { BANHO_ORIXA } from '/shared/banhos.js';
+import { calendarioMes, mesMais } from '../calendario.js';
 
 // dia: data aberta; mes: mês do calendário; rasc: textos ainda não salvos por data; ouvindo: campo com o microfone ligado;
 // gal: foto escolhida para a galeria (base64), descrição e envio.
@@ -24,7 +25,6 @@ const ui = { dia: hoje(), mes: hoje().slice(0, 7), rasc: {}, ouvindo: null, gal:
 let reconhecimento = null;
 export function limpar() { ui.dia = hoje(); ui.mes = ui.dia.slice(0, 7); }
 
-const MESES = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
 const SR = typeof window !== 'undefined' ? (window.SpeechRecognition || window.webkitSpeechRecognition) : null;
 const LINHAS_OK = new Set(LINHAS_DIARIO.map(([k]) => k));
 const copia = (o) => JSON.parse(JSON.stringify(o || {}));
@@ -185,32 +185,20 @@ function pendencias(D) {
 }
 
 function calendario(D) {
-  const [y, m] = ui.mes.split('-').map(Number);
-  const primeiro = new Date(y, m - 1, 1).getDay();
-  const total = new Date(y, m, 0).getDate();
-  const hj = hoje();
   const porData = Object.fromEntries(D.dias.map((x) => [x.data, x.dados]));
-  let cel = '';
-  for (let i = 0; i < primeiro; i++) cel += '<span></span>';
-  for (let d = 1; d <= total; d++) {
-    const data = `${ui.mes}-${String(d).padStart(2, '0')}`;
+  const marcas = (data) => {
     const x = porData[data];
-    const marcas = [];
-    if (x && ehGira(data, x)) marcas.push('<i class="di-p di-p-gira"></i>');
-    else if (x && completo(x.antes) && completo(x.depois)) marcas.push('<i class="di-p di-p-dia"></i>');
-    if (x?.banho?.feito || x?.habitos?.banho) marcas.push('<i class="di-folha">🌿</i>');
-    if (x?.habitos?.atividade) marcas.push('<i class="di-folha">🏋️</i>');
-    if (amaciNaAgenda(data)) marcas.push('<i class="di-folha">🕊️</i>');
-    const cls = ['di-d', data === ui.dia ? 'sel' : '', data === hj ? 'hoje' : '', !x && agendaTemGira(data) ? 'agenda' : ''].filter(Boolean).join(' ');
-    cel += `<button type="button" class="${cls}" data-act="didia" data-d="${data}" ${data > hj ? 'disabled' : ''} aria-label="${dLong(data)}" aria-pressed="${data === ui.dia}">
-      <span>${d}</span><span class="di-marcas">${marcas.join('')}</span></button>`;
-  }
+    const M = [];
+    if (x && ehGira(data, x)) M.push('<i class="di-p di-p-gira"></i>');
+    else if (x && completo(x.antes) && completo(x.depois)) M.push('<i class="di-p di-p-dia"></i>');
+    if (x?.banho?.feito || x?.habitos?.banho) M.push('<i class="di-folha">🌿</i>');
+    if (x?.habitos?.atividade) M.push('<i class="di-folha">🏋️</i>');
+    if (amaciNaAgenda(data)) M.push('<i class="di-folha">🕊️</i>');
+    return M.join('');
+  };
   const [, nomeLua, iconeLua, textoLua] = faseDaLua(ui.dia);
   return `<div class="card di-cal">
-    <div class="di-cal-h"><button class="btn small" data-act="dimes" data-v="-1" aria-label="Mês anterior">◂</button>
-      <h2>${MESES[m - 1].replace(/^./, (c) => c.toUpperCase())} de ${y}</h2>
-      <button class="btn small" data-act="dimes" data-v="1" aria-label="Próximo mês" ${ui.mes >= hj.slice(0, 7) ? 'disabled' : ''}>▸</button></div>
-    <div class="di-grade">${['D', 'S', 'T', 'Q', 'Q', 'S', 'S'].map((s) => `<b>${s}</b>`).join('')}${cel}</div>
+    ${calendarioMes({ mes: ui.mes, sel: ui.dia, acaoDia: 'didia', acaoMes: 'dimes', ate: hoje(), marcas, classe: (data) => (!porData[data] && agendaTemGira(data) ? 'agenda' : '') })}
     <div class="di-leg muted"><span><i class="di-p di-p-gira"></i> gira</span><span><i class="di-p di-p-dia"></i> manhã e noite</span><span>🌿 banho tomado</span><span>🏋️ atividade física</span><span>🕊️ amaci</span></div>
     <p class="di-lua" title="${esc(textoLua)}"><span aria-hidden="true">${iconeLua}</span> <b>${nomeLua}</b> · ${esc(textoLua)}</p></div>`;
 }
@@ -393,9 +381,7 @@ export const cliques = {
   direcarregar() { estado.diario = null; avisar(); },
   didia(el) { if (reconhecimento) reconhecimento.stop(); ui.dia = el.dataset.d; avisar(); },
   dimes(el) {
-    const [y, m] = ui.mes.split('-').map(Number);
-    const dt = new Date(y, m - 1 + Number(el.dataset.v), 1);
-    const mes = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}`;
+    const mes = mesMais(ui.mes, Number(el.dataset.v));
     if (mes <= hoje().slice(0, 7)) ui.mes = mes;
     avisar();
   },

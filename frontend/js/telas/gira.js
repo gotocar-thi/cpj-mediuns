@@ -2,8 +2,9 @@
 
 import { FUNCOES, STATUS, opcoesGira, giraEspecial, nomeGira, nomeEntidadeGira, tituloGira, tituloAutomaticoGira, contaNaPresenca, pendentesDaGira, ORIXAS, temOrixa, orixaDaGira, temLimpeza, limpezaDaGira, proximaTurma, status, presencaDe, papelDe, daGira, foraDaLinha, licencaEm, presente, cambonaHoje, paresPorMedium, escalaDaGira, custos, pessoasDaGira, linhaDaEntidade } from '/shared/regras.js';
 import { estado, prefs, salvarPrefs, pode, visaoAtiva, pessoasOrd, pessoasComSaidas, nome, nomeNaGira, girasLista, giraAtual, editarGira, sortear, remanejar, encerrarGira, reabrirGira, mudarDataGira, cancelarSorteio, declararAusencia, acaoAusPrevia, publicarEscala, travarEscala, salvarRecado, acaoOracoes, doarItem, escolherEntidade, avisar } from '../estado.js';
-import { esc, dLong, dDM, toast, baixar, hoje, pd } from '../util.js';
+import { esc, dLong, dDM, toast, baixar, hoje } from '../util.js';
 import { textoWhats } from '../exportar.js';
+import { calendarioMes, mesMais } from '../calendario.js';
 import { botaoResumo, painelResumo, cliquesResumo } from '../compartilharResumo.js';
 import { dadosResumo, textoLimpeza } from '/shared/resumoGira.js';
 import { config } from '/shared/config.js';
@@ -130,16 +131,25 @@ function cabecalhoGira(g) {
   return `<div class="datehead cab-gira"><span class="eyebrow">${esc(dLong(g.data))}</span>${titulo}${orixaDaGira(g) ? `<span class="ent">Orixá: ${esc(orixaDaGira(g))}</span>` : ''}</div>`;
 }
 
-// Seta, data (abre o calendário) e seta: para todos, em qualquer estado da gira.
+// Calendário do mês (o mesmo do Diário) com as giras e os eventos marcados; tocar num dia abre esse dia.
+// Embaixo, as setas para o evento anterior e o próximo. Para todos, em qualquer estado da gira.
+// O mês mostrado segue o dia aberto até a pessoa trocar de mês nas setas do calendário.
+const cal = { mes: '', ref: '' };
+const mesDoCalendario = () => (cal.ref === prefs.data && cal.mes) || prefs.data.slice(0, 7);
 function seletorData(g) {
   const anterior = dataGiraAdjacente(g.data, -1);
   const proxima = dataGiraAdjacente(g.data, 1);
-  const d = pd(g.data);
-  const rotulo = `${d.toLocaleDateString('pt-BR', { weekday: 'long' }).replace(/^./, (c) => c.toLocaleUpperCase('pt-BR'))}, ${d.getDate()}/${d.getMonth() + 1}`;
-  return `<div class="ev-nav-adm seletor-data">
-    <button class="btn ev-seta-adm" data-act="giraanterior" title="Evento anterior" aria-label="Ir para o evento anterior" ${anterior ? '' : 'disabled'}>←</button>
-    <label class="ev-data-adm" title="${esc(dLong(g.data))} · Escolher outro dia: giras passadas ou futuras"><span aria-hidden="true">📅</span> ${esc(rotulo)} <span class="seta" aria-hidden="true">▾</span><input type="date" data-act="irdata" value="${esc(g.data)}" aria-label="Ir para outro dia"></label>
-    <button class="btn ev-seta-adm" data-act="proximoevento" title="Próximo evento" aria-label="Ir para o próximo evento" ${proxima ? '' : 'disabled'}>→</button>
+  const marcas = (data) => {
+    const x = estado.giras[data];
+    return x ? `<i class="di-p ${x.evento ? 'di-p-evento' : 'di-p-gira'}"></i>` : '';
+  };
+  return `<div class="gira-cal">
+    ${calendarioMes({ mes: mesDoCalendario(), sel: g.data, acaoDia: 'giradia', acaoMes: 'girames', marcas })}
+    <div class="di-leg muted"><span><i class="di-p di-p-gira"></i> gira</span><span><i class="di-p di-p-evento"></i> evento</span></div>
+    <div class="gira-cal-nav">
+      <button class="btn small" data-act="giraanterior" aria-label="Ir para o evento anterior" ${anterior ? '' : 'disabled'}>← Anterior</button>
+      <button class="btn small" data-act="proximoevento" aria-label="Ir para o próximo evento" ${proxima ? '' : 'disabled'}>Próximo →</button>
+    </div>
   </div>`;
 }
 
@@ -715,6 +725,8 @@ export const cliques = {
     prefs.data = d; salvarPrefs(); avisar();
   },
   proximoevento() { irParaGiraAdjacente(1); },
+  giradia(el) { prefs.data = el.dataset.d; salvarPrefs(); avisar(); },
+  girames(el) { cal.mes = mesMais(mesDoCalendario(), Number(el.dataset.v)); cal.ref = prefs.data; avisar(); },
   encpend(el) {
     const n = Number(el.dataset.n);
     toast(`Não dá para encerrar: ${n} pessoa${n > 1 ? 's' : ''} ainda com presença pendente. Marque Presente, Falta ou Ausente.`);
@@ -1064,8 +1076,6 @@ export const mudancas = {
     avisar();
   },
   data(t) { if (t.value) { prefs.data = t.value; salvarPrefs(); avisar(); } },
-  // Seletor de data: vai para o dia escolhido.
-  irdata(t) { mudancas.data(t); },
   async recadogira(t) {
     const texto = t.value.replace(/\r/g, '').split('\n').map((l) => l.trim()).join('\n').trim();
     const data = t.dataset.d;

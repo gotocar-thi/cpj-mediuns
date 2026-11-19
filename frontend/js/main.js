@@ -338,7 +338,7 @@ main.addEventListener('click', async (e) => {
   if (e.target.closest('[data-conta="recarregar"]')) { iniciar(); return; }
   if (e.target.closest('[data-conta="recarregar-pagina"]')) { location.reload(); return; }
   // Calendário da aba Gira: abre o seletor de data também no computador.
-  if (e.target.dataset.act === 'irdata' || e.target.dataset.act === 'iemdata') { try { e.target.showPicker(); } catch { /* o toque já abre */ } return; }
+  if (e.target.dataset.act === 'iemdata') { try { e.target.showPicker(); } catch { /* o toque já abre */ } return; }
   // Sub-aba: o mesmo que tocar na aba (cada tela se prepara como sempre).
   const sub = e.target.closest('[data-sub]');
   if (sub) {
