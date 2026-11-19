@@ -929,6 +929,14 @@ export async function publicarDiario(publicada) {
     return true;
   } catch (e) { toast(e.message); avisar(); return false; }
 }
+// Orientador do card Banho: o root liga e desliga para todos.
+export async function orientadorDiario(visivel) {
+  try {
+    estado.diario = await api('POST', '/pessoas', { acao: 'diario', op: 'orientador', visivel });
+    avisar();
+    return true;
+  } catch (e) { toast(e.message); avisar(); return false; }
+}
 export const veTransparencia = () => !estado.me?.grupo && (pode('transparencia:ver') || pode('transparencia:editar') || !!estado.me?.transparenciaPublicada);
 export async function carregarTransparencia(mes = '', atualizar = false) {
   const q = new URLSearchParams({ lista: 'transparencia', ...(mes ? { mes } : {}), ...(atualizar ? { atualizar: '1' } : {}) });

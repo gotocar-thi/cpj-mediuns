@@ -7,8 +7,9 @@
 // Cada check-in tem a escala de rostos (1 a 5), as emoções em dois grupos (leve e densa; até 3) e a energia (barra de
 // 1 a 5, do vermelho ao verde).
 // Toques salvam na hora; os textos salvam ao sair do campo. O root liga "Visível para todos"; desligado, só ele vê.
+// No card Banho, o root também liga e desliga o Orientador para todos (desligado, só ele vê).
 
-import { estado, avisar, carregarDiario, salvarDiaDiario, publicarDiario, acaoGaleriaDiario } from '../estado.js';
+import { estado, avisar, carregarDiario, salvarDiaDiario, publicarDiario, orientadorDiario, acaoGaleriaDiario } from '../estado.js';
 import { esc, toast, hoje, dLong, dDM, pd } from '../util.js';
 import { linhaDaEntidade, LINHA_LABEL } from '/shared/regras.js';
 import {
@@ -237,12 +238,16 @@ function banho(d, gira) {
     return `<span class="di-erva di-t-${t || 'x'}">${esc(e)}${t ? ` <small>${TEMPERATURAS[t][0]}</small>` : ''}<button type="button" data-act="dirmerva" data-i="${i}" aria-label="Tirar ${esc(e)}">×</button></span>`;
   }).join('');
   const quente = temps.includes('quente') ? `<p class="di-aviso">⚠️ ${AVISO_QUENTE}</p>` : '';
-  const sug = !gira && sugestaoOrientador(d);
+  const D = estado.diario || {};
+  const oriOn = D.orientador !== false;
+  const sug = !gira && (oriOn || D.root) && sugestaoOrientador(d);
+  const chave = D.root && !gira ? `<label class="of-sw"><input type="checkbox" role="switch" data-act="diori" ${oriOn ? 'checked' : ''}><span class="of-sw-t" aria-hidden="true"></span><b>Orientador visível para todos</b></label>
+    ${oriOn ? '' : '<p class="muted" style="margin:0;font-size:.85rem">Desligado: só o root vê a sugestão de banho.</p>'}` : '';
   const orientador = sug ? `<div class="di-ori"><p class="eyebrow">🧭 Orientador</p>
       <p>Você registrou <b>${esc(EMOCOES.find(([k]) => k === sug.emo)[1])}</b>. Sugestão de banho de manutenção: <b>${sug.nome}</b>.</p>
       <p class="muted">${sug.fundamento}</p>
       ${B.ervas.some((e) => e.toLowerCase() === sug.nome.toLowerCase()) ? '' : `<button class="btn small" data-act="disugestao">Quero esse banho</button>`}</div>` : '';
-  return `<div class="card di-banho"><h3>🌿 ${gira ? 'Banho recomendado pelo guia' : 'Banho'}</h3>${orientador}
+  return `<div class="card di-banho"><h3>🌿 ${gira ? 'Banho recomendado pelo guia' : 'Banho'}</h3>${chave}${orientador}
     ${lista ? `<div class="di-ervas">${lista}</div>` : '<p class="muted" style="margin:0">Nenhuma erva anotada.</p>'}${quente}
     <form id="f-di-erva" class="di-add"><input type="text" id="di-erva" list="di-ervas-lista" placeholder="Erva (ex.: alecrim)" maxlength="60" autocomplete="off">
       <button class="btn small">Adicionar</button></form>
@@ -453,6 +458,10 @@ export const cliques = {
 export const mudancas = {
   async dipub(t) {
     if (await publicarDiario(t.checked)) toast(t.checked ? 'Diário visível para todos.' : 'Diário: só o root vê.');
+    else t.checked = !t.checked;
+  },
+  async diori(t) {
+    if (await orientadorDiario(t.checked)) toast(t.checked ? 'Orientador visível para todos.' : 'Orientador: só o root vê.');
     else t.checked = !t.checked;
   },
   digira(t) {

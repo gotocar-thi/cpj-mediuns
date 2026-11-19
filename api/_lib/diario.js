@@ -2,9 +2,11 @@
 // próprio diário, pela chave da sessão; nem o root lê o dos outros (no "Ver como", a aba não abre). Só o root vê a aba
 // até ligar "Visível para todos". Acesso da curimba (login do grupo, sem pessoa) não tem diário.
 //
-//   GET  /api/pessoas?lista=diario  → { publicada, root, dias: [{ data, dados }] }
+//   GET  /api/pessoas?lista=diario  → { publicada, orientador, root, dias: [{ data, dados }] }
 //   POST /api/pessoas { acao: 'diario', op: 'salvar', data, dados }  → { data, dados }  (dados limpos; {} apaga o dia)
 //                     { acao: 'diario', op: 'publicar', publicada }    (só o root) → o mesmo do GET
+//                     { acao: 'diario', op: 'orientador', visivel }    (só o root) → o mesmo do GET
+// orientador: o Orientador (sugestão de banho no card Banho) aparece para todos; desligado, só o root vê.
 //
 // Galeria de fotos (bloco da corrente): só a corrente, os alunos (sem os consulentes) e o root. Uma foto por pessoa;
 // a própria pessoa apaga a sua e o root apaga qualquer uma. As fotos da semana somem toda terça (db: diario_fotos_limpar).
@@ -34,9 +36,9 @@ async function exigirDiario(eu) {
 
 export async function diario(eu) {
   const galeria = veGaleria(eu);
-  const [publicada, dias, fotos] = await Promise.all([exigirDiario(eu), db.rpc('diario_listar', { chave: chavePessoa(eu) }),
-    galeria ? db.rpc('diario_fotos', { chave: chavePessoa(eu) }) : null]);
-  return { publicada, root: ehRoot(eu), dias, ...(galeria ? { galeria: fotos } : {}) };
+  const [publicada, orientador, dias, fotos] = await Promise.all([exigirDiario(eu), db.rpc('diario_orientador'),
+    db.rpc('diario_listar', { chave: chavePessoa(eu) }), galeria ? db.rpc('diario_fotos', { chave: chavePessoa(eu) }) : null]);
+  return { publicada, orientador: orientador !== false, root: ehRoot(eu), dias, ...(galeria ? { galeria: fotos } : {}) };
 }
 
 export async function fotoGaleria(req, res) {
@@ -70,6 +72,12 @@ export async function acaoDiario(eu, b) {
     if (!ehRoot(eu)) throw new HttpError(403, 'Só o admin root muda a visibilidade do Diário.');
     if (typeof b.publicada !== 'boolean') throw new HttpError(400, 'Informe se a aba fica visível para todos.');
     await db.rpc('diario_publicar', { publicada: b.publicada });
+    return diario(eu);
+  }
+  if (b.op === 'orientador') {
+    if (!ehRoot(eu)) throw new HttpError(403, 'Só o admin root liga ou desliga o Orientador.');
+    if (typeof b.visivel !== 'boolean') throw new HttpError(400, 'Informe se o Orientador fica visível.');
+    await db.rpc('diario_orientador_mudar', { visivel: b.visivel });
     return diario(eu);
   }
   if (['fotoEnviar', 'fotoExcluir', 'fotoCurtir'].includes(b.op)) return acaoGaleria(eu, b);

@@ -9,7 +9,7 @@
 // Estrutura: veja db/ESTRUTURA-ESQUEMA.md para o mapa de versões, domínios e
 // quais migrações foram testadas no Postgres.
 
-export const VERSAO = 149;  // v149: Diário com a Galeria de fotos da corrente
+export const VERSAO = 150;  // v150: Diário com o interruptor do Orientador (root)
 
 import { PERFIS_PADRAO } from '../shared/permissoes.js';
 
@@ -6410,6 +6410,19 @@ export const MIGRACOES = [
      delete from diario_fotos where chave = tg_argv[0] || old.id::text;
      delete from diario_curtidas where chave = tg_argv[0] || old.id::text;
      return old;
+   end;
+   $$`,
+  // Orientador do Diário (sugestão de banho no card Banho): o root liga e desliga; sem a chave, fica visível.
+  `create or replace function diario_orientador(p jsonb default '{}'::jsonb)
+   returns jsonb language sql stable as $$
+     select to_jsonb(coalesce((select valor = 'true' from sistema where chave = 'diario_orientador'), true))
+   $$`,
+  `create or replace function diario_orientador_mudar(p jsonb)
+   returns jsonb language plpgsql as $$
+   begin
+     insert into sistema (chave, valor) values ('diario_orientador', case when (p ->> 'visivel')::boolean then 'true' else 'false' end)
+     on conflict (chave) do update set valor = excluded.valor;
+     return diario_orientador();
    end;
    $$`,
 ];

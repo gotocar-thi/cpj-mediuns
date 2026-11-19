@@ -225,6 +225,7 @@ function amaci() {
 
 // Aba Diário: alguns dias de exemplo do próprio root (um dia de gira com conselho e banho pendente, um dia comum).
 let diarioPublicado = false;
+let diarioOrientador = true;
 const diarioDias = [
   { data: dia(-6), dados: { gira: true, antes: { humor: 2, emo: ['drenado'], energia: 2 }, depois: { humor: 4, emo: ['paz', 'grato'], energia: 4, sensacao: 'leve' }, linha: 'preto-velho',
     conselho: 'Firma o teu pensamento antes de dormir e não carrega o que não é teu.', banho: { ervas: ['arruda', 'alecrim', 'manjericão'], feito: false, origem: 'guia' } } },
@@ -239,10 +240,11 @@ const galeriaDemo = [
 ];
 const diarioDemo = () => {
   if (vcAtual) throw new ErroDemo(403, 'O Diário é pessoal: não abre no "Ver como".');
-  return { publicada: diarioPublicado, root: true, dias: copia(diarioDias), galeria: copia(galeriaDemo) };
+  return { publicada: diarioPublicado, orientador: diarioOrientador, root: true, dias: copia(diarioDias), galeria: copia(galeriaDemo) };
 };
 function acaoDiarioDemo(b) {
   if (b.op === 'publicar') { diarioPublicado = !!b.publicada; return diarioDemo(); }
+  if (b.op === 'orientador') { diarioOrientador = !!b.visivel; return diarioDemo(); }
   if (b.op === 'fotoCurtir') {
     const f = galeriaDemo.find((x) => x.id === b.id);
     if (f) { f.curti = !f.curti; f.curtidas += f.curti ? 1 : -1; }
